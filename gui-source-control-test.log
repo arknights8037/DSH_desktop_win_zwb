@@ -1,0 +1,373 @@
+$ vitest run packages/client packages/host
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+
+ RUN  v4.1.8 F:/DSH_desktop_win_zwb/upstream-dsh
+
+ ❯ |thread-safe| packages/client/ui-sidebar/tests/apply.client.spec.tsx (4 tests | 3 failed) 54ms
+     × declares only the services it uses 8ms
+     × registers the shell and declares its child seats 24ms
+     × fails when no live owner declared the sidebar slot 16ms
+ ❯ |thread-safe| packages/client/ui-workspace/tests/apply.client.spec.ts (6 tests | 5 failed) 50ms
+     × declares the services it drives 8ms
+     × registers browser and pickers for declarations arriving before or after apply 23ms
+     × routes browser actions and picker creation to the services 4ms
+     × declares the two directory-flow holes and reports their occupancy per surface 6ms
+     × rejects the browser search callback on a runtime business error 3ms
+ ❯ |thread-safe| packages/client/ui-workspace/tests/rename-assembly.client.spec.tsx (2 tests | 2 failed) 55ms
+     × renames via the row menu: binding.session.rename fires, the dialog closes, the row re-labels from the list 43ms
+     × a rejected rename keeps the dialog open with the error surfaced 10ms
+ ❯ |thread-safe| packages/client/ui-sidebar/tests/sidebar-snapshot.client.spec.tsx (4 tests | 4 failed) 71ms
+     × renders the expanded column in the default locale (zh, no setLocale) 37ms
+     × renders the expanded column (wordmark, capsule, empty holes) 10ms
+     × renders the collapsed rail after the crossfade settles, in place 11ms
+     × a locale switch refreshes mounted copy without re-registration 12ms
+Error: renderSlot('root') before any 'root' registration (boot order)
+    at RootOutlet (F:/DSH_desktop_win_zwb/upstream-dsh/packages/client/ui-renderer/src/client/scoped-slots.tsx:867:11)
+    at renderWithHooks (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:20103:13)
+    at beginWork (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\generated\idl\EventListener.js:26:30)
+    at innerInvokeEventListeners (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:360:16)
+    at invokeEventListeners (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:296:3)
+    at HTMLUnknownElementImpl._dispatch (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:243:9)
+    at HTMLUnknownElementImpl.dispatchEvent (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:114:17)
+Error: renderSlot('root') before any 'root' registration (boot order)
+    at RootOutlet (F:/DSH_desktop_win_zwb/upstream-dsh/packages/client/ui-renderer/src/client/scoped-slots.tsx:867:11)
+    at renderWithHooks (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:20103:13)
+    at beginWork (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\generated\idl\EventListener.js:26:30)
+    at innerInvokeEventListeners (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:360:16)
+    at invokeEventListeners (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:296:3)
+    at HTMLUnknownElementImpl._dispatch (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:243:9)
+    at HTMLUnknownElementImpl.dispatchEvent (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:114:17)
+Error: entry boom
+    at component (F:/DSH_desktop_win_zwb/upstream-dsh/packages/client/ui-renderer/tests/scoped-slots.client.spec.tsx:336:48)
+    at renderWithHooks (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:20103:13)
+    at beginWork (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\generated\idl\EventListener.js:26:30)
+    at innerInvokeEventListeners (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:360:16)
+    at invokeEventListeners (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:296:3)
+    at HTMLUnknownElementImpl._dispatch (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:243:9)
+    at HTMLUnknownElementImpl.dispatchEvent (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:114:17)
+Error: entry boom
+    at component (F:/DSH_desktop_win_zwb/upstream-dsh/packages/client/ui-renderer/tests/scoped-slots.client.spec.tsx:336:48)
+    at renderWithHooks (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:20103:13)
+    at beginWork (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\generated\idl\EventListener.js:26:30)
+    at innerInvokeEventListeners (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:360:16)
+    at invokeEventListeners (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:296:3)
+    at HTMLUnknownElementImpl._dispatch (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:243:9)
+    at HTMLUnknownElementImpl.dispatchEvent (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:114:17)
+Error: entry A boom
+    at component (F:/DSH_desktop_win_zwb/upstream-dsh/packages/client/ui-renderer/tests/scoped-slots.client.spec.tsx:395:32)
+    at renderWithHooks (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:20103:13)
+    at beginWork (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\generated\idl\EventListener.js:26:30)
+    at innerInvokeEventListeners (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:360:16)
+    at invokeEventListeners (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:296:3)
+    at HTMLUnknownElementImpl._dispatch (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:243:9)
+    at HTMLUnknownElementImpl.dispatchEvent (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:114:17)
+Error: entry A boom
+    at component (F:/DSH_desktop_win_zwb/upstream-dsh/packages/client/ui-renderer/tests/scoped-slots.client.spec.tsx:395:32)
+    at renderWithHooks (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:20103:13)
+    at beginWork (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\generated\idl\EventListener.js:26:30)
+    at innerInvokeEventListeners (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:360:16)
+    at invokeEventListeners (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:296:3)
+    at HTMLUnknownElementImpl._dispatch (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:243:9)
+    at HTMLUnknownElementImpl.dispatchEvent (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:114:17)
+Error: inject boom
+    at inject (F:/DSH_desktop_win_zwb/upstream-dsh/packages/client/ui-renderer/tests/scoped-slots.client.spec.tsx:935:29)
+    at runInject (F:/DSH_desktop_win_zwb/upstream-dsh/packages/client/ui-renderer/src/client/scoped-slots.tsx:110:27)
+    at cachedRootInject (F:/DSH_desktop_win_zwb/upstream-dsh/packages/client/ui-renderer/src/client/scoped-slots.tsx:179:13)
+    at RootEntry (F:/DSH_desktop_win_zwb/upstream-dsh/packages/client/ui-renderer/src/client/scoped-slots.tsx:614:20)
+    at renderWithHooks (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:20103:13)
+    at beginWork (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\generated\idl\EventListener.js:26:30)
+    at innerInvokeEventListeners (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:360:16)
+Error: inject boom
+    at inject (F:/DSH_desktop_win_zwb/upstream-dsh/packages/client/ui-renderer/tests/scoped-slots.client.spec.tsx:935:29)
+    at runInject (F:/DSH_desktop_win_zwb/upstream-dsh/packages/client/ui-renderer/src/client/scoped-slots.tsx:110:27)
+    at cachedRootInject (F:/DSH_desktop_win_zwb/upstream-dsh/packages/client/ui-renderer/src/client/scoped-slots.tsx:179:13)
+    at RootEntry (F:/DSH_desktop_win_zwb/upstream-dsh/packages/client/ui-renderer/src/client/scoped-slots.tsx:614:20)
+    at renderWithHooks (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:20103:13)
+    at beginWork (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\generated\idl\EventListener.js:26:30)
+    at innerInvokeEventListeners (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:360:16)
+Error: slot machinery rendered outside the installed renderer tree
+    at useHost (F:/DSH_desktop_win_zwb/upstream-dsh/packages/client/ui-renderer/src/client/session-provider.tsx:27:20)
+    at SessionProvider (F:/DSH_desktop_win_zwb/upstream-dsh/packages/client/ui-renderer/src/client/session-provider.tsx:151:16)
+    at renderWithHooks (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:20103:13)
+    at beginWork (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\generated\idl\EventListener.js:26:30)
+    at innerInvokeEventListeners (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:360:16)
+    at invokeEventListeners (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:296:3)
+    at HTMLUnknownElementImpl._dispatch (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:243:9)
+Error: slot machinery rendered outside the installed renderer tree
+    at useHost (F:/DSH_desktop_win_zwb/upstream-dsh/packages/client/ui-renderer/src/client/session-provider.tsx:27:20)
+    at SessionProvider (F:/DSH_desktop_win_zwb/upstream-dsh/packages/client/ui-renderer/src/client/session-provider.tsx:151:16)
+    at renderWithHooks (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:20103:13)
+    at beginWork (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\react-dom@18.3.1_react@18.3.1\node_modules\react-dom\cjs\react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\generated\idl\EventListener.js:26:30)
+    at innerInvokeEventListeners (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:360:16)
+    at invokeEventListeners (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:296:3)
+    at HTMLUnknownElementImpl._dispatch (F:\DSH_desktop_win_zwb\upstream-dsh\node_modules\.pnpm\jsdom@29.1.1\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:243:9)
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 14 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |thread-safe| packages/client/ui-sidebar/tests/apply.client.spec.tsx > ui-sidebar apply > declares only the services it uses
+AssertionError: expected [ 'slots', 'layout', …(4) ] to deeply equal [ 'slots', 'layout', 'sessions', …(2) ]
+
+- Expected
++ Received
+
+  [
+    "slots",
+    "layout",
++   "pageNavigation",
+    "sessions",
+    "workspaces",
+    "locale",
+  ]
+
+ ❯ packages/client/ui-sidebar/tests/apply.client.spec.tsx:31:20
+     29| describe('ui-sidebar apply', () => {
+     30|   it('declares only the services it uses', () => {
+     31|     expect(inject).toEqual(['slots', 'layout', 'sessions', 'workspaces…
+       |                    ^
+     32|   })
+     33|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/14]⎯
+
+ FAIL  |thread-safe| packages/client/ui-sidebar/tests/apply.client.spec.tsx > ui-sidebar apply > registers the shell and declares its child seats
+AssertionError: expected [] to have a length of 1 but got +0
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ packages/client/ui-sidebar/tests/apply.client.spec.tsx:37:40
+     35|     const b = await bench()
+     36|     await b.ctx.plugin({ inject: [...inject], apply }).await()
+     37|     expect(b.slots.entries('sidebar')).toHaveLength(1)
+       |                                        ^
+     38|     expect(b.slots.spec('sidebar.brand.mark')).toEqual({ kind: 'single…
+     39|     expect(b.slots.spec('sidebar.brand.name')).toEqual({ kind: 'single…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/14]⎯
+
+ FAIL  |thread-safe| packages/client/ui-sidebar/tests/apply.client.spec.tsx > ui-sidebar apply > fails when no live owner declared the sidebar slot
+PrettyFormatPluginError: cannot get property "$$typeof" without inject
+ ❯ Object.test node_modules/.pnpm/@vitest+pretty-format@4.1.8/node_modules/@vitest/pretty-format/dist/index.js:722:34
+ ❯ findPlugin node_modules/.pnpm/@vitest+pretty-format@4.1.8/node_modules/@vitest/pretty-format/dist/index.js:914:15
+ ❯ printer node_modules/.pnpm/@vitest+pretty-format@4.1.8/node_modules/@vitest/pretty-format/dist/index.js:925:17
+ ❯ printObjectProperties node_modules/.pnpm/@vitest+pretty-format@4.1.8/node_modules/@vitest/pretty-format/dist/index.js:138:18
+ ❯ printComplexValue node_modules/.pnpm/@vitest+pretty-format@4.1.8/node_modules/@vitest/pretty-format/dist/index.js:868:195
+ ❯ printer node_modules/.pnpm/@vitest+pretty-format@4.1.8/node_modules/@vitest/pretty-format/dist/index.js:933:13
+ ❯ printObjectProperties node_modules/.pnpm/@vitest+pretty-format@4.1.8/node_modules/@vitest/pretty-format/dist/index.js:138:18
+ ❯ printComplexValue node_modules/.pnpm/@vitest+pretty-format@4.1.8/node_modules/@vitest/pretty-format/dist/index.js:868:195
+ ❯ printer node_modules/.pnpm/@vitest+pretty-format@4.1.8/node_modules/@vitest/pretty-format/dist/index.js:933:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/14]⎯
+
+ FAIL  |thread-safe| packages/client/ui-sidebar/tests/sidebar-snapshot.client.spec.tsx > sidebar shell snapshots > renders the expanded column in the default locale (zh, no setLocale)
+Error: mount would suspend: missing service(s) pageNavigation — provide() them first
+ ❯ SlotTestRuntime.mount packages/test-support/client-runtime/src/index.ts:277:13
+    275|     const missing = required.filter(name => this.ctx.get(name) === und…
+    276|     if (missing.length > 0) {
+    277|       throw new Error(`mount would suspend: missing service(s) ${missi…
+       |             ^
+    278|     }
+    279|     const fiber = this.ctx.plugin(plugin)
+ ❯ bench packages/client/ui-sidebar/tests/sidebar-snapshot.client.spec.tsx:42:17
+ ❯ packages/client/ui-sidebar/tests/sidebar-snapshot.client.spec.tsx:48:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/14]⎯
+
+ FAIL  |thread-safe| packages/client/ui-sidebar/tests/sidebar-snapshot.client.spec.tsx > sidebar shell snapshots > renders the expanded column (wordmark, capsule, empty holes)
+Error: mount would suspend: missing service(s) pageNavigation — provide() them first
+ ❯ SlotTestRuntime.mount packages/test-support/client-runtime/src/index.ts:277:13
+    275|     const missing = required.filter(name => this.ctx.get(name) === und…
+    276|     if (missing.length > 0) {
+    277|       throw new Error(`mount would suspend: missing service(s) ${missi…
+       |             ^
+    278|     }
+    279|     const fiber = this.ctx.plugin(plugin)
+ ❯ bench packages/client/ui-sidebar/tests/sidebar-snapshot.client.spec.tsx:42:17
+ ❯ packages/client/ui-sidebar/tests/sidebar-snapshot.client.spec.tsx:57:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/14]⎯
+
+ FAIL  |thread-safe| packages/client/ui-sidebar/tests/sidebar-snapshot.client.spec.tsx > sidebar shell snapshots > renders the collapsed rail after the crossfade settles, in place
+Error: mount would suspend: missing service(s) pageNavigation — provide() them first
+ ❯ SlotTestRuntime.mount packages/test-support/client-runtime/src/index.ts:277:13
+    275|     const missing = required.filter(name => this.ctx.get(name) === und…
+    276|     if (missing.length > 0) {
+    277|       throw new Error(`mount would suspend: missing service(s) ${missi…
+       |             ^
+    278|     }
+    279|     const fiber = this.ctx.plugin(plugin)
+ ❯ bench packages/client/ui-sidebar/tests/sidebar-snapshot.client.spec.tsx:42:17
+ ❯ packages/client/ui-sidebar/tests/sidebar-snapshot.client.spec.tsx:66:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/14]⎯
+
+ FAIL  |thread-safe| packages/client/ui-sidebar/tests/sidebar-snapshot.client.spec.tsx > sidebar shell snapshots > a locale switch refreshes mounted copy without re-registration
+Error: mount would suspend: missing service(s) pageNavigation — provide() them first
+ ❯ SlotTestRuntime.mount packages/test-support/client-runtime/src/index.ts:277:13
+    275|     const missing = required.filter(name => this.ctx.get(name) === und…
+    276|     if (missing.length > 0) {
+    277|       throw new Error(`mount would suspend: missing service(s) ${missi…
+       |             ^
+    278|     }
+    279|     const fiber = this.ctx.plugin(plugin)
+ ❯ bench packages/client/ui-sidebar/tests/sidebar-snapshot.client.spec.tsx:42:17
+ ❯ packages/client/ui-sidebar/tests/sidebar-snapshot.client.spec.tsx:82:33
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/14]⎯
+
+ FAIL  |thread-safe| packages/client/ui-workspace/tests/apply.client.spec.ts > ui-workspace apply > declares the services it drives
+AssertionError: expected [ 'slots', 'pageNavigation', …(4) ] to deeply equal [ 'slots', 'sessions', …(3) ]
+
+- Expected
++ Received
+
+  [
+    "slots",
++   "pageNavigation",
+    "sessions",
+    "workspaces",
+    "locale",
+    "connection",
+  ]
+
+ ❯ packages/client/ui-workspace/tests/apply.client.spec.ts:59:20
+     57| describe('ui-workspace apply', () => {
+     58|   it('declares the services it drives', () => {
+     59|     expect(inject).toEqual(['slots', 'sessions', 'workspaces', 'locale…
+       |                    ^
+     60|   })
+     61|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/14]⎯
+
+ FAIL  |thread-safe| packages/client/ui-workspace/tests/apply.client.spec.ts > ui-workspace apply > registers browser and pickers for declarations arriving before or after apply
+TypeError: Cannot read properties of undefined (reading 'component')
+ ❯ packages/client/ui-workspace/tests/apply.client.spec.ts:66:55
+     64|     declare(before.slots, 'sidebar.workspaces')
+     65|     await before.ctx.plugin({ inject: [...inject], apply }).await()
+     66|     expect(before.slots.entries('sidebar.workspaces')[0]!.component).t…
+       |                                                       ^
+     67|     // Copy rides the standard locale seat: the entry declares the nam…
+     68|     // and apply registered both dictionaries.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/14]⎯
+
+ FAIL  |thread-safe| packages/client/ui-workspace/tests/apply.client.spec.ts > ui-workspace apply > routes browser actions and picker creation to the services
+TypeError: Cannot read properties of undefined (reading 'inject')
+ ❯ packages/client/ui-workspace/tests/apply.client.spec.ts:85:60
+     83|     await b.ctx.plugin({ inject: [...inject], apply }).await()
+     84|
+     85|     const browser = (b.slots.entries('sidebar.workspaces')[0]!.inject …
+       |                                                            ^
+     86|     // Both arms delegate to the runtime's shared New Session action.
+     87|     browser.startSession('ws' as never)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/14]⎯
+
+ FAIL  |thread-safe| packages/client/ui-workspace/tests/apply.client.spec.ts > ui-workspace apply > declares the two directory-flow holes and reports their occupancy per surface
+AssertionError: expected undefined to match object { kind: 'single' }
+
+- Expected:
+{
+  "kind": "single",
+}
+
++ Received:
+undefined
+
+ ❯ packages/client/ui-workspace/tests/apply.client.spec.ts:125:62
+    123|     await b.ctx.plugin({ inject: [...inject], apply }).await()
+    124|     // Registration declared the child holes (declaration = render aut…
+    125|     expect(b.slots.spec('sidebar.workspaces.directoryFlow')).toMatchOb…
+       |                                                              ^
+    126|     expect(b.slots.spec('conversation.hero.workspace.directoryFlow')).…
+    127|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/14]⎯
+
+ FAIL  |thread-safe| packages/client/ui-workspace/tests/apply.client.spec.ts > ui-workspace apply > rejects the browser search callback on a runtime business error
+TypeError: Cannot read properties of undefined (reading 'inject')
+ ❯ packages/client/ui-workspace/tests/apply.client.spec.ts:154:60
+    152|     declare(b.slots, 'sidebar.workspaces')
+    153|     await b.ctx.plugin({ inject: [...inject], apply }).await()
+    154|     const browser = (b.slots.entries('sidebar.workspaces')[0]!.inject …
+       |                                                            ^
+    155|     await expect(browser.searchSessions('needle', new AbortController(…
+    156|       .rejects.toThrow('index unavailable')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/14]⎯
+
+ FAIL  |thread-safe| packages/client/ui-workspace/tests/rename-assembly.client.spec.tsx > session rename through the assembled browser > renames via the row menu: binding.session.rename fires, the dialog closes, the row re-labels from the list
+Error: mount would suspend: missing service(s) pageNavigation — provide() them first
+ ❯ SlotTestRuntime.mount packages/test-support/client-runtime/src/index.ts:277:13
+    275|     const missing = required.filter(name => this.ctx.get(name) === und…
+    276|     if (missing.length > 0) {
+    277|       throw new Error(`mount would suspend: missing service(s) ${missi…
+       |             ^
+    278|     }
+    279|     const fiber = this.ctx.plugin(plugin)
+ ❯ packages/client/ui-workspace/tests/rename-assembly.client.spec.tsx:70:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/14]⎯
+
+ FAIL  |thread-safe| packages/client/ui-workspace/tests/rename-assembly.client.spec.tsx > session rename through the assembled browser > a rejected rename keeps the dialog open with the error surfaced
+Error: mount would suspend: missing service(s) pageNavigation — provide() them first
+ ❯ SlotTestRuntime.mount packages/test-support/client-runtime/src/index.ts:277:13
+    275|     const missing = required.filter(name => this.ctx.get(name) === und…
+    276|     if (missing.length > 0) {
+    277|       throw new Error(`mount would suspend: missing service(s) ${missi…
+       |             ^
+    278|     }
+    279|     const fiber = this.ctx.plugin(plugin)
+ ❯ packages/client/ui-workspace/tests/rename-assembly.client.spec.tsx:117:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/14]⎯
+
+
+  Snapshots  3 obsolete
+             ↳ packages/client/ui-sidebar/tests/sidebar-snapshot.client.spec.tsx
+               · sidebar shell snapshots > renders the collapsed rail after the crossfade settles, in place 1
+               · sidebar shell snapshots > renders the expanded column (wordmark, capsule, empty holes) 1
+               · sidebar shell snapshots > renders the expanded column in the default locale (zh, no setLocale) 1
+
+ Test Files  4 failed | 284 passed (288)
+      Tests  14 failed | 4003 passed | 1 skipped (4018)
+   Start at  14:02:51
+   Duration  90.89s (transform 76.73s, setup 37.36s, import 520.55s, tests 124.19s, environment 458.15s)
+
+[ELIFECYCLE] Command failed with exit code 1.
