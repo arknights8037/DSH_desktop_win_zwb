@@ -1,5 +1,14 @@
 /** Typed copy for the instance manager shell. */
 const en = {
+  wallpaperTitle: 'Background image', wallpaperHint: 'PNG, JPEG or WebP, up to 20 MB. Images are resized and saved locally, then synchronized to connected instances when you apply.',
+  chooseWallpaper: 'Choose image', removeWallpaper: 'Remove image', wallpaperEnabled: 'Show background image', wallpaperMask: 'Enable color mask',
+  maskColor: 'Mask color', maskOpacity: 'Mask strength', surfaceOpacity: 'Panel opacity', readingWallpaper: 'Processing image…', wallpaperReady: 'Image selected', wallpaperEmpty: 'No background image',
+  personalColors: 'Custom colors', personalColorsHint: 'Set colors for each region, or follow the selected light/dark theme. Text colors apply across the application.',
+  colorPreset: 'Color scheme', choosePreset: 'Choose a preset…', presetOcean: 'Ocean · light', presetForest: 'Forest · light', presetPlum: 'Plum · dark',
+  colorCanvas: 'Global background', colorTabs: 'Top tabs', colorSidebar: 'Sidebar', colorContent: 'Chat content', colorInput: 'Input box', colorAccent: 'Accent', colorText: 'Primary text', colorMuted: 'Secondary text',
+  followTheme: 'Follow theme', followingTheme: 'Theme default', importColors: 'Import colors', exportColors: 'Export colors',
+  appearancePreview: 'Appearance preview', previewText: 'Secondary text and region colors', previewInput: 'Type a message…', appearanceSaved: 'Saved · applies to all instances',
+  wallpaperInvalid: 'Choose a PNG, JPEG or WebP image under 20 MB that can be compressed to 512 KB.', colorsInvalid: 'Invalid color scheme. Import a version 1 DSH colors JSON file.',
   minimizeWindow: 'Minimize', maximizeWindow: 'Maximize', restoreWindow: 'Restore', closeWindow: 'Close window', closeSettings: 'Close settings',
   pluginSettingsHint: 'The shell owns plugin packages and versions. Each instance receives an independent copy and keeps its own configuration. Library updates apply only when you inject them.',
   pluginLibrary: 'Shell plugin library',
@@ -120,6 +129,15 @@ const en = {
 /** Complete locale key set used by the shell and native manager dialogs. */
 export type ManagerMessages = { [K in keyof typeof en]: string }
 const zh: ManagerMessages = {
+  wallpaperTitle: '图片背景', wallpaperHint: '支持 PNG、JPEG、WebP，最大 20 MB。图片会缩放并保存在本地，点击保存后同步至已连接的实例。',
+  chooseWallpaper: '选择图片', removeWallpaper: '移除图片', wallpaperEnabled: '显示图片背景', wallpaperMask: '启用颜色蒙版',
+  maskColor: '蒙版颜色', maskOpacity: '蒙版强度', surfaceOpacity: '面板不透明度', readingWallpaper: '正在处理图片…', wallpaperReady: '已选择图片', wallpaperEmpty: '尚未设置背景图片',
+  personalColors: '自定义配色', personalColorsHint: '各区域可以独立配色，也可以跟随浅色／深色主题。文本颜色应用于整个界面。',
+  colorPreset: '配色方案', choosePreset: '选择预设方案…', presetOcean: '海蓝 · 浅色', presetForest: '森林 · 浅色', presetPlum: '紫夜 · 深色',
+  colorCanvas: '全局背景', colorTabs: '顶部标签栏', colorSidebar: '左侧栏', colorContent: '聊天内容', colorInput: '输入框', colorAccent: '强调色', colorText: '主要文本', colorMuted: '次要文本',
+  followTheme: '跟随主题', followingTheme: '主题默认', importColors: '导入配色', exportColors: '导出配色',
+  appearancePreview: '外观预览', previewText: '次要文本与各区域配色', previewInput: '输入一条消息…', appearanceSaved: '已保存 · 所有实例统一继承',
+  wallpaperInvalid: '请选择小于 20 MB、可压缩至 512 KB 的 PNG、JPEG 或 WebP 图片。', colorsInvalid: '配色方案无效，请导入版本为 1 的 DSH 配色 JSON 文件。',
   minimizeWindow: '最小化', maximizeWindow: '最大化', restoreWindow: '还原', closeWindow: '关闭窗口', closeSettings: '关闭设置',
   pluginSettingsHint: '外壳统一管理插件包和版本，各实例接收独立副本并保留自己的配置。插件库更新仅在再次注入后应用。',
   pluginLibrary: '外壳插件库',

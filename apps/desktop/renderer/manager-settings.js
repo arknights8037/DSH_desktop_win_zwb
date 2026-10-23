@@ -52,6 +52,7 @@ function renderSettings() {
   if (shortcutBindings) renderShortcuts()
   renderSources()
   renderPluginSettings()
+  renderPersonalAppearance()
 }
 function renderPluginSettings() {
   $('open-plugin-library').disabled = !state.packaged
@@ -85,6 +86,7 @@ $('plugin-add-instance').onclick = () => { void perform(showManager) }
 async function loadSoftwareSettings() {
   softwareDocument = await settingsCall('read')
   setShellTheme(softwareDocument.appearance.theme)
+  setShellPersonalAppearance(personalDirty ? personalDraft : softwareDocument.personalization)
   const refs = new Set(['DEEPSEEK_API_KEY', ...softwareDocument.credentials])
   $('credential-refs').replaceChildren(...[...refs].map(ref => { const option = document.createElement('option'); option.value = ref; return option }))
   renderSettings()
@@ -275,3 +277,4 @@ api.onShortcut(action => {
 window.addEventListener('focus', () => {
   if (managerVisible && shellPage === 'settings') void perform(loadSoftwareSettings)
 })
+void perform(loadSoftwareSettings)

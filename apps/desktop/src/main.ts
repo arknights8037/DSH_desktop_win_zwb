@@ -1,5 +1,5 @@
 /** Electron manager owns tab views and independently scoped local/SSH runtimes. */
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,6 +16,7 @@ import { DESKTOP_IPC } from './ipc.ts'
 import { DesktopProfileMutationError, type DesktopProjectMutation, type DesktopRuntimeExecutables } from './project-manager.ts'
 import { inspectPluginInstall, queryPluginCatalog, type DesktopInstallPlanId, type DesktopPluginInstallPlan } from './plugin-market.ts'
 import { SoftwareSettings } from './software-settings.ts'
+import { DEFAULT_PERSONAL_APPEARANCE, parsePersonalAppearance } from './personal-appearance.ts'
 import { dshSettingsEdits } from './dsh-settings.ts'
 import { instanceSettings } from './manager-settings.ts'
 import { DEFAULT_SHORTCUTS, shortcutBinding, type ManagerShortcuts } from './manager-shortcuts.ts'
@@ -201,7 +202,7 @@ async function main(): Promise<void> {
       const values = preferences.appearance
       const failures: string[] = []
       for (const [namespace, edits] of [
-        ['ui-theme', { preference: values.theme, fontSize: values.fontSize }],
+        ['ui-theme', { preference: values.theme, fontSize: values.fontSize, customization: preferences.personalization }],
         ['locale', { preference: values.language || locale.id }],
         ['ui-conversation', { busyEnter: values.busyEnter }],
         ...dshSettingsEdits(preferences.dsh),
@@ -378,6 +379,13 @@ async function main(): Promise<void> {
       const input = payload(args.input)
       switch (args.action) {
         case 'read': return softwareSnapshot()
+        case 'exportColors': {
+          const { colors } = parsePersonalAppearance({ ...DEFAULT_PERSONAL_APPEARANCE, colors: input.colors })
+          const result = await dialog.showSaveDialog(window, { title: messages.exportColors,
+            defaultPath: 'dsh-colors.json', filters: [{ name: 'JSON', extensions: ['json'] }] })
+          if (!result.canceled && result.filePath) await writeFile(result.filePath, `${JSON.stringify({ version: 1, colors }, null, 2)}\n`, 'utf8')
+          return
+        }
         case 'update':
           software.update(input.field, input.value)
           locale = resolveDesktopLocale(software.snapshot().appearance.language || app.getLocale())
@@ -391,6 +399,7 @@ async function main(): Promise<void> {
         case 'credentialSet': software.setCredential(input.ref, input.value); break
         case 'credentialRemove': software.removeCredential(input.ref); break
         case 'dshUpdate': software.updateDsh(input.value); break
+        case 'personalize': software.personalize(input.value); break
         case 'sourceSave': software.saveSource(input.id, input.config, input.key); break
         case 'sourceRemove': software.removeSource(input.id); break
         default: throw new Error('Unsupported software settings operation')

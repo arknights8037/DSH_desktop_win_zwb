@@ -33,6 +33,8 @@ The plugin registers Appearance preference cubes and a font-size stepper in the 
 
 ### Registering a theme
 
+Desktop can deliver an optional `customization` section in the same `ui-theme` namespace. It carries an embedded raster wallpaper, an optional color mask, panel opacity, and region and text colors; an empty color follows the selected palette. ThemeRuntime folds these settings into semantic tokens before registered override layers, and the layout presenter retracts them when defaults return. Old settings without this section keep the base palette. Wallpaper and colors affect presentation only and do not enter Session logs. The [desktop appearance controls](../../../apps/desktop/README.md#instances) own editing and color-file import/export.
+
 A composition can register a third-party theme id with alias-token overrides through `ctx.theme`; the override layer folds into the active snapshot's tokens in registration order. Removing one never overwrites the last durable built-in preference. Third-party theme ids remain an in-process extension and do not cross the built-in settings schema.
 
 ### Pre-plugin palette

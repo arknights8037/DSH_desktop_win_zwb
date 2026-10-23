@@ -4,7 +4,7 @@
   flex-direction: column;
   height: 100%;
   min-width: 0;
-  background: var(--dsw-alias-bg-base);
+  background: var(--dsw-alias-content-fill, var(--dsw-alias-bg-base));
 
   /* Shared width axis for the whole column: one content width W
      (--dsh-chat-content-width) for the transcript, the dock cards
@@ -40,6 +40,7 @@
    title row, the tab strip's 10px margin, a 16px tab line, and its 9px bottom
    inset — so no row below may grow past its figure. */
 .header {
+  background: var(--dsw-alias-header-fill, transparent);
   flex: none;
   box-sizing: border-box;
   min-height: 76px;

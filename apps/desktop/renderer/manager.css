@@ -198,7 +198,7 @@ dialog { width: min(560px, 90vw); max-height: 88vh; padding: 29px; overflow: aut
 dialog::backdrop { background: rgb(15 17 21 / 32%); }
 dialog h2 { margin: 0 0 20px; font-size: 22px; font-weight: 560; }
 label { display: flex; flex-direction: column; gap: 7px; margin-bottom: 15px; color: var(--muted); font-size: 12px; }
-input, select { width: 100%; min-width: 0; padding: 10px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+input, select { width: 100%; min-width: 0; padding: 10px; color: var(--text); background: var(--personal-input, var(--bg)); border: 1px solid var(--line); border-radius: 6px; }
 fieldset { padding: 0; margin: 0; border: 0; }
 fieldset[hidden] { display: none; }
 .columns { display: grid; grid-template-columns: 3fr 1fr; gap: 12px; }
@@ -302,3 +302,29 @@ main[data-page="settings"] { display: block; padding: 0; overflow: hidden; }
 #standalone-keys summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-bottom: 20px; }
 @media (max-width: 760px) { .model-source { align-items: flex-start; flex-direction: column; gap: 12px; } .source-actions { flex-wrap: wrap; } }
 @media (max-width: 640px) { #source-form textarea, #source-form select { width: 100%; } }
+
+body { background-image: var(--personal-wallpaper, none); background-size: cover; background-position: center; background-attachment: fixed; }
+.settings-nav { background: var(--personal-sidebar, transparent); }
+.settings-content { background: var(--personal-content, transparent); }
+#personal-appearance-form h3 { margin-top: 32px; }
+.appearance-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 16px 0; }
+.appearance-actions span[role="status"] { color: var(--muted); font-size: 12px; }
+.file-button { display: inline-flex; margin: 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 5px; color: var(--text); cursor: pointer; }
+.file-button:focus-within { outline: 2px solid var(--brand); outline-offset: 2px; }
+.file-button input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.range-control { display: flex; align-items: center; gap: 12px; }
+.range-control input { width: 150px; accent-color: var(--brand); }
+.range-control output { min-width: 38px; color: var(--muted); text-align: right; }
+.personal-colors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.color-row { display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 6px; }
+.color-row label { flex: 1; display: flex; flex-direction: row; align-items: center; gap: 10px; margin: 0; color: var(--text); }
+.color-row input[type="color"], #wallpaper-mask-color { width: 36px; height: 30px; padding: 2px; flex-shrink: 0; }
+.color-row button { padding: 5px 7px; font-size: 11px; }
+.appearance-preview { display: grid; grid-template-columns: 22% 1fr; grid-template-rows: 26px 155px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); background-image: var(--personal-wallpaper, none); background-size: cover; background-position: center; }
+.preview-tabs { grid-column: 1 / -1; background: var(--tab-strip); border-bottom: 2px solid var(--brand); }
+.preview-sidebar { background: var(--personal-sidebar, var(--panel)); border-right: 1px solid var(--line); }
+.preview-chat { padding: 18px; background: var(--personal-content, var(--panel)); }
+.preview-chat p { margin: 8px 0 12px; font-size: 12px; color: var(--muted); }
+.preview-input { background: var(--personal-input, var(--panel)); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; font-size: 12px; }
+.appearance-save { position: sticky; bottom: -60px; padding: 14px 0; background: var(--personal-content, var(--bg)); }
+@media (max-width: 1050px) { .personal-colors { grid-template-columns: 1fr; } }

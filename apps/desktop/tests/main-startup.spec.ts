@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -9,6 +9,7 @@ import type { InstanceConfig } from '../src/instances.ts'
 import { DESKTOP_IPC } from '../src/ipc.ts'
 import type { DesktopPluginInstallPlan } from '../src/plugin-market.ts'
 import type { DesktopPluginRecord } from '../src/project-manager.ts'
+import { DEFAULT_PERSONAL_APPEARANCE } from '../src/personal-appearance.ts'
 
 const harness = await vi.hoisted(async () => {
   const { EventEmitter } = await import('node:events')
@@ -125,7 +126,8 @@ const harness = await vi.hoisted(async () => {
     runtime: () => ({ release: { version: '1.0.0', nodeVersion: '24.17.0' }, sharedPackages: [] }),
   }
   return { Window, View, Local, handlers, partitions, app, library, root: '', fetch: vi.fn(),
-    dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn(async () => ({ response: 1 })) } }
+    dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn(async () => ({ response: 1 })),
+      showSaveDialog: vi.fn(async () => ({ canceled: true, filePath: undefined as string | undefined })) } }
 })
 vi.mock('electron', () => ({
   app: harness.app, BrowserWindow: harness.Window, WebContentsView: harness.View, dialog: harness.dialog,
@@ -173,6 +175,17 @@ it('opens the manager immediately without starting any backend', async () => {
   expect((await invoke('snapshot') as ManagerSnapshot).instances).toEqual([])
   expect(harness.dialog.showErrorBox).not.toHaveBeenCalled()
 })
+it('exports validated colors through a native save dialog without changing software settings', async () => {
+  const filePath = join(harness.root, 'colors.json')
+  const colors = { ...DEFAULT_PERSONAL_APPEARANCE.colors, text: '#abcdef' }
+  await invoke('softwareSettings', { action: 'exportColors', input: { colors } })
+  expect(existsSync(filePath)).toBe(false)
+  harness.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath })
+  await invoke('softwareSettings', { action: 'exportColors', input: { colors } })
+  expect(JSON.parse(readFileSync(filePath, 'utf8'))).toEqual({ version: 1, colors })
+  expect(await invoke('softwareSettings', { action: 'read' })).toMatchObject({ revision: 0 })
+  await expect(invoke('softwareSettings', { action: 'exportColors', input: { colors: { text: 'red' } } })).rejects.toThrow('Invalid personal appearance')
+})
 it('isolates two local homes, browser partitions, and protocol dispatch', async () => {
   const a = await create('A')
   const b = await create('B')
@@ -198,13 +211,17 @@ it('applies software preferences to existing and future instances without import
   await invoke('softwareSettings', { action: 'update', input: { field: 'fontSize', value: 16 } })
   const a = await create('A')
   await invoke('open', { id: a.id })
-  expect(harness.Local.all[0]!.settings.namespaces[0]!.value).toEqual({ preference: 'light', fontSize: 16 })
+  expect(harness.Local.all[0]!.settings.namespaces[0]!.value).toMatchObject({ preference: 'light', fontSize: 16 })
+  const software = await invoke('softwareSettings', { action: 'read' }) as { personalization: { colors: { text: string }; maskEnabled: boolean } }
+  software.personalization.colors.text = '#abcdef'
+  software.personalization.maskEnabled = false
+  await invoke('softwareSettings', { action: 'personalize', input: { value: software.personalization } })
   await invoke('softwareSettings', { action: 'update', input: { field: 'busyEnter', value: 'steer' } })
   const b = await create('B')
   await invoke('open', { id: b.id })
   for (const local of harness.Local.all) {
-    expect(local.settings.namespaces.slice(0, 3).map(item => item.value)).toEqual([
-      { preference: 'light', fontSize: 16 }, { preference: 'en' }, { busyEnter: 'steer' },
+    expect(local.settings.namespaces.slice(0, 3).map(item => item.value)).toMatchObject([
+      { preference: 'light', fontSize: 16, customization: software.personalization }, { preference: 'en' }, { busyEnter: 'steer' },
     ])
   }
   harness.Local.all[0]!.settings.namespaces[0]!.value.preference = 'dark'

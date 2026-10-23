@@ -1,6 +1,6 @@
 /** Exercise real Electron tabs and local Hosts using an isolated development home. */
 import { createRequire } from 'node:module'
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -134,6 +134,71 @@ try {
   if (lightBackground === darkBackground) throw new Error('Explicit theme selection did not change the appearance')
   await page.locator('#font-size').selectOption('16')
   await page.waitForFunction(() => !document.querySelector<HTMLSelectElement>('#font-size')!.disabled && document.querySelector<HTMLSelectElement>('#font-size')!.value === '16')
+  const wallpaper = await page.evaluate(() => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 800; canvas.height = 600
+    const context = canvas.getContext('2d')!
+    const gradient = context.createLinearGradient(0, 0, 800, 600)
+    gradient.addColorStop(0, '#225580'); gradient.addColorStop(0.5, '#668875'); gradient.addColorStop(1, '#be9170')
+    context.fillStyle = gradient; context.fillRect(0, 0, 800, 600)
+    return canvas.toDataURL('image/png').split(',')[1]!
+  })
+  await page.locator('#wallpaper-file').setInputFiles({ name: 'smoke-wallpaper.png', mimeType: 'image/png', buffer: Buffer.from(wallpaper, 'base64') })
+  await page.waitForFunction(() => document.querySelector('#wallpaper-status')?.textContent === '已选择图片')
+  await page.locator('#appearance-preset').selectOption('ocean')
+  await page.locator('#personal-color-text').evaluate((node: HTMLInputElement) => { node.value = '#234567'; node.dispatchEvent(new Event('change')) })
+  await page.locator('#personal-appearance-form [type=submit]').click()
+  await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('#appearance-defaults')!.disabled && document.querySelector<HTMLButtonElement>('#appearance-revert')!.disabled)
+  const appearanceState = await invoke('softwareSettings', { action: 'read' }) as SoftwareSettingsSnapshot & { syncErrors: Record<string, string> }
+  if (Object.keys(appearanceState.syncErrors).length || !appearanceState.personalization.backgroundImage.startsWith('data:image/webp;')) throw new Error('Wallpaper did not save and synchronize')
+  await page.locator('.settings-content').evaluate((node: HTMLElement) => { node.scrollTop = 0 })
+  await capture('appearance-masked.png')
+  const instanceAppearance = () => electron.evaluate(async ({ webContents }: typeof import('electron')) => Promise.all(
+    webContents.getAllWebContents().filter(item => item.getURL().startsWith('dsh-app://app/')).map(item => item.executeJavaScript(`(() => {
+      const style = getComputedStyle(document.body);
+      return { wallpaper: style.backgroundImage, text: style.getPropertyValue('--dsw-alias-label-primary'), sidebar: style.getPropertyValue('--dsw-specific-sidebar-fill') };
+    })()`)),
+  )) as Promise<Array<{ wallpaper: string; text: string; sidebar: string }>>
+  const masked = await instanceAppearance()
+  if (masked.length !== 2 || masked.some(item => !item.wallpaper.includes('data:image/webp;') || item.text.trim() !== '#234567' || !item.sidebar.includes('80%'))) throw new Error('Instance theme presenter did not apply wallpaper, transparency, and text')
+  const colorFile = join(home, 'smoke-colors.json')
+  await electron.evaluate(({ dialog }: typeof import('electron'), filePath: string) => {
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath })
+  }, colorFile)
+  await page.locator('#colors-export').click()
+  const exportDeadline = Date.now() + 10_000
+  while (!existsSync(colorFile) && Date.now() < exportDeadline) await new Promise(resolve => setTimeout(resolve, 100))
+  const colorJson = JSON.parse(readFileSync(colorFile, 'utf8')) as { version: number; colors: { text: string }; backgroundImage?: string }
+  if (colorJson.version !== 1 || colorJson.colors.text !== '#234567' || colorJson.backgroundImage !== undefined) throw new Error('Color export did not preserve colors independently of wallpaper')
+  await page.locator('#wallpaper-mask').uncheck()
+  await page.locator('#personal-appearance-form [type=submit]').click()
+  await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('#appearance-defaults')!.disabled && document.querySelector<HTMLButtonElement>('#appearance-revert')!.disabled)
+  let unmasked = await instanceAppearance()
+  const maskDeadline = Date.now() + 10_000
+  while (unmasked.some((item, index) => item.wallpaper === masked[index]!.wallpaper) && Date.now() < maskDeadline) {
+    await new Promise(resolve => setTimeout(resolve, 100))
+    unmasked = await instanceAppearance()
+  }
+  if (unmasked.some((item, index) => item.wallpaper === masked[index]!.wallpaper)) throw new Error('Disabling the mask did not change the instance wallpaper')
+  await page.locator('.settings-content').evaluate((node: HTMLElement) => { node.scrollTop = 0 })
+  await capture('appearance-unmasked.png')
+  await electron.evaluate(async ({ webContents }: typeof import('electron')) => Promise.all(webContents.getAllWebContents().filter(item => item.getURL().startsWith('dsh-app://app/')).map(item => item.executeJavaScript('(async () => { for (const text of ["继续", "Continue", "稍后配置", "Configure later"]) { const button = Array.from(document.querySelectorAll("[role=dialog] button")).find(button => button.textContent === text); if (button) { button.click(); await new Promise(resolve => setTimeout(resolve, 150)); } } })()'))))
+  await page.locator('.tab').first().click()
+  await new Promise(resolve => setTimeout(resolve, 300))
+  const themedHosts = await electron.evaluate(async ({ webContents }: typeof import('electron')) => Promise.all(webContents.getAllWebContents().filter(item => item.getURL().startsWith('dsh-app://app/')).map(async item => (await item.capturePage()).toPNG().toString('base64'))))
+  for (const [index, image] of themedHosts.entries()) writeFileSync(join(output, `appearance-host-${index}.png`), Buffer.from(image, 'base64'))
+  await page.locator('#settings').click()
+  await page.locator('[data-settings-tab=appearance]').click()
+  await page.locator('#appearance-defaults').click()
+  await page.locator('#personal-appearance-form [type=submit]').click()
+  await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('#appearance-defaults')!.disabled && document.querySelector<HTMLButtonElement>('#appearance-revert')!.disabled)
+  let resetAppearance = await instanceAppearance()
+  const resetDeadline = Date.now() + 10_000
+  while (resetAppearance.some(item => item.wallpaper !== 'none') && Date.now() < resetDeadline) {
+    await new Promise(resolve => setTimeout(resolve, 100))
+    resetAppearance = await instanceAppearance()
+  }
+  if (resetAppearance.some(item => item.wallpaper !== 'none' || item.text.trim() === '#234567')) throw new Error('Default appearance did not retract custom tokens')
   await page.locator('[data-settings-tab=general]').click()
   await page.locator('#language').selectOption('en')
   await page.waitForFunction(() => !document.querySelector<HTMLSelectElement>('#language')!.disabled && document.querySelector<HTMLSelectElement>('#language')!.value === 'en')

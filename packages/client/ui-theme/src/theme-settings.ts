@@ -1,6 +1,7 @@
 /** Theme preferences stored in the Host user-settings document. */
 
 import z from '@deepseek-ai/schemastery'
+import { ThemeCustomizationSchema, type ThemeCustomization } from './customization.ts'
 
 /** Built-in preferences accepted at the registry and settings boundaries. */
 export const THEME_PREFERENCES = ['light', 'dark', 'system'] as const
@@ -35,12 +36,16 @@ export interface ThemeSettings {
   preference: ThemePreference
   /** Conversation content font size in px (integer within {@link FONT_SIZE_MIN}..{@link FONT_SIZE_MAX}). */
   fontSize: number
+  /** Optional personal colors and wallpaper; older documents retain the base palette. */
+  customization?: ThemeCustomization
 }
 
 /** Durable theme schema; also the wire envelope the browser scope validates against. */
 export const ThemeSettingsSchema: z<ThemeSettings> = z.object({
   [THEME_PREFERENCE_FIELD]: z.union([...THEME_PREFERENCES]).default(DEFAULT_PREFERENCE),
   [FONT_SIZE_FIELD]: z.number().step(1).min(FONT_SIZE_MIN).max(FONT_SIZE_MAX).default(DEFAULT_FONT_SIZE),
+  // The union preserves absence; object schemas otherwise supply an implicit empty default.
+  customization: z.union([ThemeCustomizationSchema]).required(false),
 })
 
 /**

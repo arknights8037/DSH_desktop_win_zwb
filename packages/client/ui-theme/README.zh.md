@@ -33,6 +33,8 @@ kind: "package-reference"
 
 ### 注册主题
 
+桌面端可以在同一 `ui-theme` 命名空间下发可选的 `customization` 分区，包含内嵌栅格背景图、可选颜色蒙版、面板不透明度，以及分区与文字配色；空颜色跟随所选调色板。ThemeRuntime 在注册的覆盖层之前将这些设置折入语义 token，恢复默认时由布局呈现器撤回。缺少该分区的旧设置保留基础调色板。背景与颜色只影响展示，不进入 Session 日志。[桌面外观控件](../../../apps/desktop/README.zh.md#instances)负责编辑及配色文件导入／导出。
+
 组合可以通过 `ctx.theme` 注册带别名 token 覆盖的第三方主题 id；覆盖层按注册顺序折入活动快照的 token 中。移除其中一个绝不会覆盖最后一个持久化的内置偏好。第三方主题 id 仍是进程内扩展，不会跨越内置 settings schema。
 
 ### 插件前调色板

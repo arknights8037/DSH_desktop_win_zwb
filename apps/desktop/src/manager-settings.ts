@@ -7,7 +7,7 @@ export type InstanceSettingsAction = 'read' | 'update' | 'sources' | 'credential
 
 /** Editable product fields; the instance remains responsible for schema validation and persistence. */
 const fields: Record<string, readonly string[]> = {
-  'ui-theme': ['preference', 'fontSize'], locale: ['preference'], 'ui-conversation': ['busyEnter'],
+  'ui-theme': ['preference', 'fontSize', 'customization'], locale: ['preference'], 'ui-conversation': ['busyEnter'],
   'ui-chat': ['transcriptView'], 'agent-presets': ['default', 'modeSelectionEnabled'],
   'llm-deepseek': ['protocol', 'baseURL', 'apiKeyEnv', 'maxTokens', 'reasoningEffort'],
 }

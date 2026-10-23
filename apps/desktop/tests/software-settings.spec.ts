@@ -4,11 +4,32 @@ import { join } from 'node:path'
 import { expect, it, onTestFinished } from 'vitest'
 import { SoftwareSettings, type SoftwareEncryption } from '../src/software-settings.ts'
 import { DEFAULT_SHORTCUTS } from '../src/manager-shortcuts.ts'
+import { DEFAULT_PERSONAL_APPEARANCE } from '../src/personal-appearance.ts'
 import { DEFAULT_DSH_SETTINGS } from '../src/dsh-settings.ts'
 import { parseModelSource, modelSourceId, sourceKeyRef } from '../src/model-sources.ts'
 
 const sourceConfig = { name: 'Gateway', protocol: 'openai-completions', baseURL: 'https://gateway.test/v1',
   models: ['model-a', 'model-b'], contextWindow: 128000, maxTokens: 4096 }
+
+it('preserves personal appearance across restarts and supplies defaults for earlier files', () => {
+  const { path, encryption, settings } = fixture()
+  const value = { ...structuredClone(DEFAULT_PERSONAL_APPEARANCE), backgroundImage: 'data:image/png;base64,aGVsbG8=', maskEnabled: false }
+  value.colors.text = '#abcdef'
+  settings.personalize(value)
+  value.colors.text = '#111111'
+  expect(new SoftwareSettings(path, encryption).snapshot().personalization).toMatchObject({ maskEnabled: false, colors: { text: '#abcdef' } })
+  const saved = settings.snapshot().personalization
+  for (const invalid of [null, {}, { ...saved, extra: true }, { ...saved, maskOpacity: 101 }, { ...saved, surfaceOpacity: 0.5 },
+    { ...saved, backgroundImage: 'file:///private/image.png' }, { ...saved, backgroundImage: 'data:image/svg+xml;base64,PHN2Zz4=' },
+    { ...saved, colors: { ...saved.colors, text: 'red' } }, { ...saved, maskColor: 'transparent' },
+    { ...saved, backgroundEnabled: 'true' }, { ...saved, backgroundImage: `data:image/png;base64,${'a'.repeat(524288)}` },
+  ]) expect(() => { settings.personalize(invalid) }).toThrow('Invalid personal appearance')
+  expect(settings.snapshot().personalization).toEqual(saved)
+  const file = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+  delete file.personalization
+  writeFileSync(path, JSON.stringify(file))
+  expect(new SoftwareSettings(path, encryption).snapshot().personalization).toEqual(DEFAULT_PERSONAL_APPEARANCE)
+})
 
 it('manages independent sources, preserves blank replacement keys, and persists offline deletions', () => {
   const { path, encryption, settings } = fixture()

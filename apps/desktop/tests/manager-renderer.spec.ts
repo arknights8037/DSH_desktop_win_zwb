@@ -7,17 +7,20 @@ import { instanceId, type InstanceConfig } from '../src/instances.ts'
 import type { ModelSourceView } from '../src/model-sources.ts'
 import { DEFAULT_DSH_SETTINGS } from '../src/dsh-settings.ts'
 import { DEFAULT_SHORTCUTS } from '../src/manager-shortcuts.ts'
+import { DEFAULT_PERSONAL_APPEARANCE, parsePersonalAppearance } from '../src/personal-appearance.ts'
 import type { ManagerSnapshot } from '../src/manager-ipc.ts'
 
 const id = instanceId('aabbccdd-1234-4321-8123-123456789012')
 function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTabs = false, theme?: string) {
   const dom = new JSDOM(readFileSync(new URL('../renderer/manager.html', import.meta.url), 'utf8'), { runScripts: 'outside-only', url: 'https://manager.test/' })
   onTestFinished(() => { dom.window.close() })
+  Object.defineProperty(dom.window, 'structuredClone', { value: structuredClone })
   dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
   dom.window.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new dom.window.Event('close')) }
   const instances = config ? Array.isArray(config) ? config : [config] : []
   const snapshot: ManagerSnapshot = { instances, tabs: { ids: openTabs ? instances.map(item => item.id) : [], active: openTabs ? instances.at(-1)!.id : null }, statuses: Object.fromEntries(instances.map(item => [item.id, { process: 'unknown', connection: 'disconnected' }])), messages: managerMessages(locale), packaged: false, maximized: false }
   const settings = { revision: 0, appearance: { theme: theme || 'system', fontSize: 14, language: '', busyEnter: 'queue' },
+    personalization: structuredClone(DEFAULT_PERSONAL_APPEARANCE),
     dsh: { ...DEFAULT_DSH_SETTINGS }, modelSources: [] as ModelSourceView[], credentials: [] as string[],
     credentialWritable: true, syncErrors: {} }
   let shortcutBindings = { ...DEFAULT_SHORTCUTS } as Record<string, string>
@@ -45,6 +48,7 @@ function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTab
         settings.revision++
       }
       if (payload?.action === 'dshUpdate') { Object.assign(settings.dsh, payload.input?.value); settings.revision++ }
+      if (payload?.action === 'personalize') { settings.personalization = parsePersonalAppearance(payload.input?.value); settings.revision++ }
       if (payload?.action === 'sourceSave') {
         const config = payload.input?.config as Omit<ModelSourceView, 'id' | 'keyConfigured'>
         const sourceId = (typeof payload.input?.id === 'string' ? payload.input.id : dom.window.crypto.randomUUID()) as ModelSourceView['id']
@@ -64,9 +68,54 @@ function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTab
   Object.defineProperty(dom.window, 'dshManager', { value: { invoke, subscribe: () => () => {}, onShortcut } })
   runInContext(readFileSync(new URL('../renderer/manager.js', import.meta.url), 'utf8'), dom.getInternalVMContext())
   runInContext(readFileSync(new URL('../renderer/manager-sources.js', import.meta.url), 'utf8'), dom.getInternalVMContext())
+  runInContext(readFileSync(new URL('../renderer/manager-appearance.js', import.meta.url), 'utf8'), dom.getInternalVMContext())
   runInContext(readFileSync(new URL('../renderer/manager-settings.js', import.meta.url), 'utf8'), dom.getInternalVMContext())
   return { dom, invoke, settings, snapshot, shortcut: (action: string) => { onShortcut.mock.calls[0]![0](action) } }
 }
+it('previews personal colors and text, saves them, and cancels or resets drafts', async () => {
+  const { dom, invoke, settings } = page()
+  const document = dom.window.document
+  await expect.poll(() => document.querySelector<HTMLButtonElement>('#appearance-defaults')?.disabled).toBe(false)
+  document.querySelector<HTMLButtonElement>('#settings')!.click()
+  await expect.poll(() => document.querySelector<HTMLElement>('#settings-page')?.hidden).toBe(false)
+  document.querySelector<HTMLButtonElement>('[data-settings-tab=appearance]')!.click()
+  const preset = document.querySelector<HTMLSelectElement>('#appearance-preset')!
+  preset.value = 'plum'
+  preset.dispatchEvent(new dom.window.Event('change'))
+  expect(document.documentElement.style.getPropertyValue('--text')).toBe('#f2eafc')
+  expect(settings.personalization.colors.text).toBe('')
+  document.querySelector<HTMLButtonElement>('#appearance-revert')!.click()
+  expect(document.documentElement.style.getPropertyValue('--text')).toBe('')
+  const text = document.querySelector<HTMLInputElement>('#personal-color-text')!
+  text.value = '#123456'
+  text.dispatchEvent(new dom.window.Event('change'))
+  document.querySelector<HTMLFormElement>('#personal-appearance-form')!.dispatchEvent(new dom.window.Event('submit', { cancelable: true }))
+  await expect.poll(() => settings.personalization.colors.text).toBe('#123456')
+  await expect.poll(() => document.querySelector<HTMLButtonElement>('#appearance-defaults')?.disabled).toBe(false)
+  expect(invoke.mock.calls.some(([operation, payload]) => operation === 'softwareSettings' && payload?.action === 'personalize')).toBe(true)
+  document.querySelector<HTMLButtonElement>('#appearance-defaults')!.click()
+  expect(document.documentElement.style.getPropertyValue('--text')).toBe('')
+  expect(settings.personalization.colors.text).toBe('#123456')
+  document.querySelector<HTMLButtonElement>('#appearance-revert')!.click()
+  expect(document.documentElement.style.getPropertyValue('--text')).toBe('#123456')
+})
+
+it('imports color files into a preview and rejects invalid schemes without changing saved colors', async () => {
+  const { dom, settings } = page()
+  const document = dom.window.document
+  const file = document.querySelector<HTMLInputElement>('#colors-import')!
+  await expect.poll(() => file.disabled).toBe(false)
+  const colors = { ...DEFAULT_PERSONAL_APPEARANCE.colors, text: '#abc123', content: '#123abc' }
+  Object.defineProperty(file, 'files', { configurable: true, value: [{ size: 300, text: () => Promise.resolve(JSON.stringify({ version: 1, colors })) }] })
+  file.dispatchEvent(new dom.window.Event('change'))
+  await expect.poll(() => document.documentElement.style.getPropertyValue('--text')).toBe('#abc123')
+  expect(settings.personalization.colors.text).toBe('')
+  Object.defineProperty(file, 'files', { configurable: true, value: [{ size: 300, text: () => Promise.resolve('{invalid json') }] })
+  file.dispatchEvent(new dom.window.Event('change'))
+  await expect.poll(() => document.querySelector('#notice')?.textContent).toContain('Invalid color scheme')
+  expect(document.documentElement.style.getPropertyValue('--text')).toBe('#abc123')
+})
+
 it('opens the shell library from plugin settings and keeps instance copies separate', async () => {
   const { dom, invoke, snapshot } = page({ id, name: '<local>', kind: 'local' })
   snapshot.packaged = true

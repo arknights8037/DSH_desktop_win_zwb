@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { DEFAULT_SHORTCUTS, parseShortcuts, type ManagerShortcuts } from './manager-shortcuts.ts'
+import { DEFAULT_PERSONAL_APPEARANCE, parsePersonalAppearance, type PersonalAppearance } from './personal-appearance.ts'
 import { DEFAULT_DSH_SETTINGS, parseDshSettings, type DshSettings } from './dsh-settings.ts'
 import { modelSourceId, parseModelSource, sourceKeyRef, type ModelSource, type ModelSourceId, type ModelSourceView } from './model-sources.ts'
 
@@ -23,6 +24,7 @@ interface StoredSettings {
   version: 1
   revision: number
   appearance: SoftwareAppearance
+  personalization: PersonalAppearance
   dsh: DshSettings
   shortcuts: ManagerShortcuts
   credentials: Record<string, string>
@@ -34,6 +36,7 @@ interface StoredSettings {
 export interface SoftwareSettingsSnapshot {
   revision: number
   appearance: SoftwareAppearance
+  personalization: PersonalAppearance
   dsh: DshSettings
   shortcuts: ManagerShortcuts
   credentials: string[]
@@ -62,7 +65,8 @@ function record(value: unknown): Record<string, unknown> {
 export class SoftwareSettings {
   private data: StoredSettings
   constructor(private readonly path: string, private readonly encryption: SoftwareEncryption) {
-    this.data = { version: 1, revision: 0, appearance: { ...appearance }, dsh: { ...DEFAULT_DSH_SETTINGS },
+    this.data = { version: 1, revision: 0, appearance: { ...appearance },
+      personalization: structuredClone(DEFAULT_PERSONAL_APPEARANCE), dsh: { ...DEFAULT_DSH_SETTINGS },
       shortcuts: { ...DEFAULT_SHORTCUTS },
       credentials: {}, removedCredentials: [], modelSources: [], removedSources: [] }
     if (!existsSync(path)) return
@@ -86,6 +90,8 @@ export class SoftwareSettings {
       throw new Error('Duplicate model source ownership')
     }
     this.data = { version: 1, revision: data.revision,
+      personalization: data.personalization === undefined
+        ? structuredClone(DEFAULT_PERSONAL_APPEARANCE) : parsePersonalAppearance(data.personalization),
       appearance: { theme: values.theme as SoftwareAppearance['theme'], fontSize: values.fontSize as number,
         language: values.language as SoftwareAppearance['language'], busyEnter: values.busyEnter as SoftwareAppearance['busyEnter'] },
       dsh: data.dsh === undefined ? { ...DEFAULT_DSH_SETTINGS } : parseDshSettings(data.dsh),
@@ -94,7 +100,8 @@ export class SoftwareSettings {
   }
   /** @returns detached software preferences and credential metadata. */
   snapshot(): SoftwareSettingsSnapshot {
-    return structuredClone({ revision: this.data.revision, appearance: this.data.appearance, dsh: this.data.dsh,
+    return structuredClone({ revision: this.data.revision, appearance: this.data.appearance,
+      personalization: this.data.personalization, dsh: this.data.dsh,
       modelSources: this.data.modelSources.map(source => ({ ...source,
         keyConfigured: Object.hasOwn(this.data.credentials, sourceKeyRef(source.id)) })),
       shortcuts: this.data.shortcuts, credentials: Object.keys(this.data.credentials), credentialWritable: this.encryption.available() })
@@ -115,6 +122,11 @@ export class SoftwareSettings {
    * @param input - untrusted non-secret preferences from the manager.
    */
   updateDsh(input: unknown): void { this.commit({ ...this.data, dsh: parseDshSettings(input) }) }
+  /**
+   * Save wallpaper and region colors atomically for connected and future instances.
+   * @param input - Untrusted complete personal appearance document.
+   */
+  personalize(input: unknown): void { this.commit({ ...this.data, personalization: parsePersonalAppearance(input) }) }
   /**
    * Save one source and its optional replacement API key in a single file transaction.
    * @param id - existing owner key, or undefined for a new source.

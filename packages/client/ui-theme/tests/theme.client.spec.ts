@@ -22,6 +22,23 @@ const make = (host = stubSettingsScope<ThemeSettings>()): {
 }
 
 describe('ThemeRuntime', () => {
+  it('adopts personal colors without changing preference, preserves plugin overrides, and retracts defaults', () => {
+    const { theme, host } = make()
+    const value: ThemeSettings = { preference: 'light', fontSize: 14, customization: {
+      backgroundImage: '', backgroundEnabled: true, maskEnabled: false, maskColor: '#000000', maskOpacity: 35, surfaceOpacity: 80,
+      colors: { canvas: '', tabs: '', sidebar: '#123456', content: '', input: '', accent: '', text: '#234567', muted: '' },
+    } }
+    host.publish({ status: 'ready', value, revision: 1, writable: true })
+    expect(theme.getTheme().active.tokens['--dsw-specific-sidebar-fill']).toBe('#123456')
+    const dispose = theme.overrideTokens('plugin', { '--dsw-alias-label-primary': { light: '#abcdef', dark: '#fedcba' } })
+    expect(theme.getTheme().active.tokens['--dsw-alias-label-primary']).toBe('#abcdef')
+    dispose()
+    expect(theme.getTheme().active.tokens['--dsw-alias-label-primary']).toBe('#234567')
+    host.publish({ value: { preference: 'light', fontSize: 14 }, revision: 2 })
+    expect(theme.getTheme().active.tokens).toEqual({})
+    expect(host.set).not.toHaveBeenCalled()
+  })
+
   it('defaults to the system preference resolved against prefers-color-scheme', () => {
     const { theme } = make()
     const snapshot = theme.getTheme()

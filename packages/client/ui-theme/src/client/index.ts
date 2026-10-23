@@ -22,6 +22,7 @@ import type { FontSizeRowInjected } from './FontSizeRow.tsx'
 import { FontSizeRow } from './FontSizeRow.tsx'
 import { createAppearanceRowStore, createFontSizeRowStore } from './settings-store.ts'
 import { installThemeStyles } from './styles.ts'
+import { customizationTokens, type ThemeCustomization } from '../customization.ts'
 import { en, zh, type ThemeKey } from './locales.ts'
 import {
   DEFAULT_FONT_SIZE, DEFAULT_PREFERENCE, FONT_SIZE_FIELD, FONT_SIZE_MAX, FONT_SIZE_MIN,
@@ -161,6 +162,7 @@ export class ThemeRuntime {
   private themes: ThemeDefinition[] = [...BUILTIN_THEMES]
   private preference: ThemePreference
   private fontSize: number = bootstrapFontSize()
+  private customization: ThemeCustomization | undefined
   private revision = 0
   private snapshot: ThemeSnapshot
   private readonly media: MediaQueryList | undefined
@@ -258,9 +260,11 @@ export class ThemeRuntime {
   private adopt(): void {
     const section = this.host.getSnapshot().value
     if (section === undefined) return
-    if (this.preference === section.preference && this.fontSize === section.fontSize) return
+    if (this.preference === section.preference && this.fontSize === section.fontSize
+      && JSON.stringify(this.customization) === JSON.stringify(section.customization)) return
     this.preference = section.preference
     this.fontSize = section.fontSize
+    this.customization = section.customization
     this.publish()
   }
 
@@ -341,8 +345,8 @@ export class ThemeRuntime {
    * Without layers the registered definition passes through by identity.
    */
   private composeActive(active: ThemeDefinition): ThemeDefinition {
-    if (this.overrides.size === 0) return active
-    const tokens: ThemeTokens = { ...active.tokens }
+    if (this.overrides.size === 0 && !this.customization) return active
+    const tokens: ThemeTokens = { ...active.tokens, ...customizationTokens(this.customization, active.colorScheme === 'dark') }
     for (const layer of [...this.overrides.values()].sort((a, b) => a.seq - b.seq)) {
       for (const [name, modes] of Object.entries(layer.tokens)) {
         tokens[name] = modes[active.colorScheme]

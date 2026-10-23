@@ -33,6 +33,21 @@
         <div id="settings-pane-appearance" data-settings-pane="appearance" role="tabpanel" aria-labelledby="settings-tab-appearance" hidden>
           <label class="setting-row"><span><strong data-copy="appearance"></strong><small data-copy="appearanceHint"></small></span><select id="theme"><option value="system" data-copy="systemTheme"></option><option value="light" data-copy="lightTheme"></option><option value="dark" data-copy="darkTheme"></option></select></label>
           <label class="setting-row"><span><strong data-copy="contentFontSize"></strong></span><select id="font-size"><option>12</option><option>13</option><option>14</option><option>15</option><option>16</option><option>17</option></select></label>
+          <form id="personal-appearance-form">
+            <h3 data-copy="wallpaperTitle"></h3><p class="settings-hint" data-copy="wallpaperHint"></p>
+            <div class="appearance-actions"><label class="file-button"><span data-copy="chooseWallpaper"></span><input id="wallpaper-file" type="file" accept="image/png,image/jpeg,image/webp"></label><button id="wallpaper-remove" type="button" data-copy="removeWallpaper"></button><span id="wallpaper-status" role="status"></span></div>
+            <label class="setting-row"><span data-copy="wallpaperEnabled"></span><input id="wallpaper-enabled" type="checkbox"></label>
+            <label class="setting-row"><span data-copy="wallpaperMask"></span><input id="wallpaper-mask" type="checkbox"></label>
+            <label class="setting-row"><span data-copy="maskColor"></span><input id="wallpaper-mask-color" type="color"></label>
+            <label class="setting-row"><span data-copy="maskOpacity"></span><span class="range-control"><input id="wallpaper-mask-opacity" type="range" min="0" max="100" step="1"><output id="wallpaper-mask-value"></output></span></label>
+            <label class="setting-row"><span data-copy="surfaceOpacity"></span><span class="range-control"><input id="wallpaper-surface-opacity" type="range" min="0" max="100" step="1"><output id="wallpaper-surface-value"></output></span></label>
+            <h3 data-copy="personalColors"></h3><p class="settings-hint" data-copy="personalColorsHint"></p>
+            <label class="setting-row"><span data-copy="colorPreset"></span><select id="appearance-preset"><option value="" data-copy="choosePreset"></option><option value="ocean" data-copy="presetOcean"></option><option value="forest" data-copy="presetForest"></option><option value="plum" data-copy="presetPlum"></option></select></label>
+            <div id="personal-colors" class="personal-colors"></div>
+            <div class="appearance-actions"><label class="file-button"><span data-copy="importColors"></span><input id="colors-import" type="file" accept="application/json,.json"></label><button id="colors-export" type="button" data-copy="exportColors"></button><button id="appearance-defaults" type="button" data-copy="restoreDefaults"></button></div>
+            <div class="appearance-preview" aria-hidden="true"><div class="preview-tabs"></div><div class="preview-sidebar"></div><div class="preview-chat"><strong data-copy="appearancePreview"></strong><p data-copy="previewText"></p><div class="preview-input" data-copy="previewInput"></div></div></div>
+            <div class="appearance-actions appearance-save"><button class="primary" type="submit" data-copy="saveAndApply"></button><button id="appearance-revert" type="button" data-copy="cancel"></button><span id="appearance-save-status" role="status"></span></div>
+          </form>
         </div>
         <div id="settings-pane-shortcuts" data-settings-pane="shortcuts" role="tabpanel" aria-labelledby="settings-tab-shortcuts" hidden><p class="settings-hint" data-copy="shortcutHint"></p><div id="shortcut-list"></div><button id="shortcut-reset" data-copy="restoreDefaults"></button></div>
         <div id="settings-pane-keys" data-settings-pane="keys" role="tabpanel" aria-labelledby="settings-tab-keys" hidden>
@@ -82,5 +97,6 @@
   <dialog id="log-dialog"><h2 data-copy="logs"></h2><pre id="log-content"></pre><button id="log-close" data-copy="dismiss"></button></dialog>
   <script src="manager.js"></script>
   <script src="manager-sources.js"></script>
+  <script src="manager-appearance.js"></script>
   <script src="manager-settings.js"></script>
 </body></html>
