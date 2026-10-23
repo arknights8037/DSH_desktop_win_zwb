@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Harness</title><link rel="stylesheet" href="manager.css"></head>
+<body>
+  <header><nav id="tabs" role="tablist"></nav><div class="instance-menu-anchor"><button id="add-tab" class="icon" aria-label="New instance" aria-haspopup="menu" aria-expanded="false">+</button><div id="instance-menu" class="instance-menu" role="menu" hidden><button id="menu-new" class="menu-item" role="menuitem" aria-haspopup="menu" aria-expanded="false"><span data-copy="newInstance"></span><span aria-hidden="true">›</span></button><div id="menu-new-sub" class="menu-sub" role="menu" hidden><button class="menu-item" data-kind="local" role="menuitem" data-copy="local"></button><button class="menu-item" data-kind="ssh" role="menuitem" data-copy="ssh"></button></div><div class="menu-separator" aria-hidden="true"></div><div id="menu-instances"></div></div></div><button id="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 3-.6 2.1-2 .9-2-.6-2 3.4 1.5 1.5v2.4L3.4 14l2 3.5 2-.6 2 .9.6 2.2h4l.6-2.2 2-.9 2 .6 2-3.5-1.5-1.4v-2.4L20.6 8l-2-3.4-2 .6-2-.9L14 3z"/><circle cx="12" cy="11.5" r="3"/></svg><span data-copy="settings"></span></button><div class="window-controls"><button id="window-minimize" class="window-control"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button><button id="window-maximize" class="window-control"><svg class="maximize-symbol" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9"/></svg><svg class="restore-symbol" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 5.5v-3h8v8h-3"/><rect x="2.5" y="5.5" width="8" height="8"/></svg></button><button id="window-close" class="window-control"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button></div></header>
+  <main id="panel"><section id="first-run" aria-labelledby="first-run-title"><h2 id="first-run-title" data-copy="firstRunTitle"></h2><div class="choice-grid"><button class="choice-card" data-kind="local"><strong data-copy="localTitle"></strong><span data-copy="localDescription"></span></button><button class="choice-card" data-kind="ssh"><strong data-copy="remoteTitle"></strong><span data-copy="remoteDescription"></span></button></div></section><section id="settings-page" aria-labelledby="settings-title" hidden>
+    <div class="settings-layout">
+      <nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-labelledby="settings">
+        <button id="settings-tab-general" data-settings-tab="general" role="tab" aria-controls="settings-pane-general"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg><span data-copy="applicationSettingsNav"></span></button>
+        <button id="settings-tab-instances" data-settings-tab="instances" role="tab" aria-controls="settings-pane-instances"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/></svg><span data-copy="manageTitle"></span></button>
+        <button id="settings-tab-appearance" data-settings-tab="appearance" role="tab" aria-controls="settings-pane-appearance"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg><span data-copy="appearance"></span></button>
+        <button id="settings-tab-shortcuts" data-settings-tab="shortcuts" role="tab" aria-controls="settings-pane-shortcuts"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h1m4 0h1m4 0h1M6 12h1m4 0h1m4 0h1M7 16h10"/></svg><span data-copy="keyboardShortcuts"></span></button>
+        <button id="settings-tab-keys" data-settings-tab="keys" role="tab" aria-controls="settings-pane-keys"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="5"/><path d="m12 12 9 9m-4-4 3-3m-6 0 3-3"/></svg><span data-copy="modelCredentials"></span></button>
+        <button id="settings-tab-advanced" data-settings-tab="advanced" role="tab" aria-controls="settings-pane-advanced"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg><span data-copy="instanceSettings"></span></button>
+        <button id="settings-tab-plugins" data-settings-tab="plugins" role="tab" aria-controls="settings-pane-plugins"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3v5H4v5h5v8h6v-8h5V8h-5V3z"/></svg><span data-copy="plugins"></span></button>
+      </nav>
+      <div class="settings-content"><div class="settings-body">
+        <div id="settings-product" class="settings-product"><svg viewBox="0 0 40 40" aria-hidden="true"><rect x="3" y="5" width="34" height="30" rx="5"/><path d="m11 14 7 6-7 6m12 0h6"/></svg><div><strong>DSH</strong><span data-copy="title"></span></div></div>
+        <h2 id="settings-title"></h2>
+        <p id="software-status" class="settings-hint" role="status"></p>
+        <div id="settings-pane-instances" data-settings-pane="instances" role="tabpanel" aria-labelledby="settings-tab-instances" hidden><p class="settings-hint" data-copy="manageHint"></p><div class="manager-actions"><button id="instance-add" data-copy="add"></button></div><div id="instance-list" class="instance-list"></div><p id="instances-empty" class="settings-hint" data-copy="empty" hidden></p></div>
+        <div id="settings-pane-plugins" data-settings-pane="plugins" role="tabpanel" aria-labelledby="settings-tab-plugins" hidden>
+          <p class="settings-hint" data-copy="pluginSettingsHint"></p>
+          <div class="plugin-library-card"><h3 data-copy="pluginLibrary"></h3><p class="settings-hint" data-copy="pluginLibraryHint"></p><button id="open-plugin-library" class="primary" data-copy="openPluginLibrary"></button><p id="plugin-development-hint" class="settings-hint" data-copy="pluginPackagedOnly" hidden></p></div>
+          <h3 data-copy="pluginInstances"></h3><p class="settings-hint" data-copy="pluginInstancesHint"></p>
+          <div id="plugin-instances" class="instance-list"></div>
+          <div id="plugin-no-instances" hidden><p class="settings-hint" data-copy="pluginNoInstances"></p><button id="plugin-add-instance" data-copy="instances"></button></div>
+        </div>
+        <div id="settings-pane-general" data-settings-pane="general" role="tabpanel" aria-labelledby="settings-tab-general">
+          <label class="setting-row"><span><strong data-copy="language"></strong></span><select id="language"><option value="" data-copy="systemTheme"></option><option value="zh" data-copy="chinese"></option><option value="en" data-copy="english"></option></select></label>
+          <label class="setting-row"><span><strong data-copy="busyEnter"></strong><small data-copy="busyEnterHint"></small></span><select id="busy-enter"><option value="queue" data-copy="queueMessage"></option><option value="steer" data-copy="steerMessage"></option></select></label>
+        </div>
+        <div id="settings-pane-appearance" data-settings-pane="appearance" role="tabpanel" aria-labelledby="settings-tab-appearance" hidden>
+          <label class="setting-row"><span><strong data-copy="appearance"></strong><small data-copy="appearanceHint"></small></span><select id="theme"><option value="system" data-copy="systemTheme"></option><option value="light" data-copy="lightTheme"></option><option value="dark" data-copy="darkTheme"></option></select></label>
+          <label class="setting-row"><span><strong data-copy="contentFontSize"></strong></span><select id="font-size"><option>12</option><option>13</option><option>14</option><option>15</option><option>16</option><option>17</option></select></label>
+        </div>
+        <div id="settings-pane-shortcuts" data-settings-pane="shortcuts" role="tabpanel" aria-labelledby="settings-tab-shortcuts" hidden><p class="settings-hint" data-copy="shortcutHint"></p><div id="shortcut-list"></div><button id="shortcut-reset" data-copy="restoreDefaults"></button></div>
+        <div id="settings-pane-keys" data-settings-pane="keys" role="tabpanel" aria-labelledby="settings-tab-keys" hidden>
+          <p class="settings-hint" data-copy="sourceHint"></p>
+          <p id="sources-sync-status" class="settings-hint" role="status" hidden></p>
+          <div class="sources-heading"><h3 data-copy="modelSources"></h3><button id="source-add" data-copy="addSource"></button></div>
+          <p id="sources-empty" class="settings-hint" data-copy="sourcesEmpty"></p>
+          <div id="model-sources"></div>
+          <form id="source-form" hidden>
+            <h3 id="source-form-title"></h3>
+            <label class="setting-row"><span data-copy="sourceName"></span><input id="source-name" required maxlength="100"></label>
+            <label class="setting-row"><span data-copy="modelProtocol"></span><select id="source-protocol"><option value="openai-completions" data-copy="openaiCompletions"></option><option value="openai-responses" data-copy="openaiResponses"></option><option value="anthropic-messages" data-copy="anthropicMessages"></option></select></label>
+            <label class="setting-row"><span data-copy="modelBaseURL"></span><input id="source-url" type="url" required maxlength="4096" placeholder="https://api.example.com/v1"></label>
+            <label class="setting-row"><span><strong data-copy="sourceModels"></strong><small data-copy="sourceModelsHint"></small></span><textarea id="source-models" rows="3" required></textarea></label>
+            <label class="setting-row"><span data-copy="sourceContextWindow"></span><input id="source-context" type="number" min="1" max="9007199254740991" step="1" value="262144" required></label>
+            <label class="setting-row"><span data-copy="modelMaxTokens"></span><input id="source-max-tokens" type="number" min="1" max="9007199254740991" step="1" value="32768" required></label>
+            <label class="setting-row"><span><strong data-copy="keyValue"></strong><small id="source-key-hint"></small></span><input id="source-key" type="password" autocomplete="new-password" maxlength="8192"></label>
+            <div class="key-actions"><button type="submit" class="primary" data-copy="saveAndApply"></button><button id="source-cancel" type="button" data-copy="cancel"></button></div>
+          </form>
+          <details id="standalone-keys"><summary data-copy="standaloneKeys"></summary><p class="settings-hint" data-copy="keyHint"></p><form id="api-key-form"><label><span data-copy="keyName"></span><input id="api-key-ref" value="DEEPSEEK_API_KEY" list="credential-refs" required pattern="[A-Za-z_][A-Za-z0-9_]*" maxlength="256"><datalist id="credential-refs"></datalist></label><p id="api-key-status" role="status"></p><label><span data-copy="keyValue"></span><div class="secret-input"><input id="api-key-value" type="password" autocomplete="new-password" maxlength="8192"><button id="key-reveal" type="button" data-copy="showSecret"></button></div></label><div class="key-actions"><button type="submit" class="primary" data-copy="saveKey"></button><button id="key-remove" type="button" data-copy="removeKey"></button><button id="key-refresh" type="button" data-copy="refreshKey"></button></div></form></details>
+        </div>
+        <div id="settings-pane-advanced" data-settings-pane="advanced" role="tabpanel" aria-labelledby="settings-tab-advanced" hidden>
+          <p class="settings-hint" data-copy="dshSettingsHint"></p>
+          <p id="dsh-sync-status" role="status" hidden></p>
+          <form id="dsh-settings-form">
+            <h3 data-copy="conversationSettings"></h3>
+            <label class="setting-row"><span><strong data-copy="transcriptView"></strong></span><select id="dsh-transcriptView" data-dsh-field="transcriptView"><option value="compact" data-copy="compactTranscript"></option><option value="normal" data-copy="normalTranscript"></option></select></label>
+            <label class="setting-row"><span><strong data-copy="modeSelectionEnabled"></strong></span><input id="dsh-modeSelectionEnabled" data-dsh-field="modeSelectionEnabled" type="checkbox"></label>
+            <label class="setting-row"><span><strong data-copy="defaultPreset"></strong></span><input id="dsh-defaultPreset" data-dsh-field="defaultPreset" type="text" required maxlength="256"></label>
+            <h3 data-copy="deepseekSettings"></h3>
+            <label class="setting-row"><span><strong data-copy="modelProtocol"></strong></span><select id="dsh-deepseekProtocol" data-dsh-field="deepseekProtocol"><option value="messages" data-copy="messagesProtocol"></option><option value="chat-completions" data-copy="completionsProtocol"></option></select></label>
+            <label class="setting-row"><span><strong data-copy="modelBaseURL"></strong></span><input id="dsh-deepseekBaseURL" data-dsh-field="deepseekBaseURL" type="url" required maxlength="4096"></label>
+            <label class="setting-row"><span><strong data-copy="modelKeyRef"></strong></span><input id="dsh-deepseekKeyRef" data-dsh-field="deepseekKeyRef" type="text" required maxlength="256" pattern="[A-Za-z_][A-Za-z0-9_]*"></label>
+            <label class="setting-row"><span><strong data-copy="modelMaxTokens"></strong></span><input id="dsh-deepseekMaxTokens" data-dsh-field="deepseekMaxTokens" type="number" required min="1" max="9007199254740991" step="1"></label>
+            <label class="setting-row"><span><strong data-copy="reasoningEffort"></strong></span><select id="dsh-reasoningEffort" data-dsh-field="reasoningEffort"><option value="off" data-copy="effortOff"></option><option value="low" data-copy="effortLow"></option><option value="high" data-copy="effortHigh"></option><option value="max" data-copy="effortMax"></option></select></label>
+            <div class="dsh-save"><button type="submit" class="primary" data-copy="saveAndApply"></button><span id="dsh-save-status" role="status"></span></div>
+          </form>
+        </div>
+      </div></div>
+    </div>
+  </section></main>
+  <section id="instance-state" hidden><div class="state-symbol">◉</div><h2 id="state-title"></h2><p id="state-message"></p><button id="recover" class="primary" data-copy="recover"></button></section>
+  <div id="tab-menu" class="tab-menu" role="menu" hidden></div>
+  <div id="notice" role="alert" hidden></div>
+  <dialog id="editor"><form id="edit-form"><h2 id="edit-title"></h2><label><span data-copy="name"></span><input name="name" maxlength="100" required autofocus></label><label><span data-copy="kind"></span><select name="kind"><option value="local" data-copy="local"></option><option value="ssh" data-copy="ssh"></option></select></label><fieldset id="ssh-fields" hidden><p class="help" data-copy="prerequisites"></p><div class="columns"><label><span data-copy="host"></span><input name="host" autocomplete="off"></label><label><span data-copy="port"></span><input name="port" type="number" min="1" max="65535" value="22"></label></div><label><span data-copy="username"></span><input name="username" autocomplete="off"></label><label><span data-copy="auth"></span><select name="auth"><option value="password" data-copy="password"></option><option value="key" data-copy="key"></option></select></label><label id="key-field" hidden><span data-copy="privateKeyPath"></span><input name="privateKeyPath"></label><label><span data-copy="executable"></span><input name="executable" value="dsh"></label><label><span data-copy="home"></span><input name="home"></label></fieldset><div class="dialog-actions"><button type="button" id="edit-cancel" data-copy="cancel"></button><button type="submit" class="primary" data-copy="save"></button></div></form></dialog>
+  <dialog id="credentials"><form id="credential-form"><h2 id="credential-title"></h2><p class="help" data-copy="credentialsHint"></p><label><span id="credential-label"></span><input id="secret" type="password" autocomplete="off" autofocus></label><div class="dialog-actions"><button type="button" id="credential-cancel" data-copy="cancel"></button><button type="submit" class="primary" data-copy="connect"></button></div></form></dialog>
+  <dialog id="log-dialog"><h2 data-copy="logs"></h2><pre id="log-content"></pre><button id="log-close" data-copy="dismiss"></button></dialog>
+  <script src="manager.js"></script>
+  <script src="manager-sources.js"></script>
+  <script src="manager-settings.js"></script>
+</body></html>

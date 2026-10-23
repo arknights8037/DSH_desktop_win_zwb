@@ -1,0 +1,51 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`searches the catalog, reviews metadata and installs only the approved plan in en > install details en 1`] = `
+[
+  "Source",
+  "npm · https://registry.npmjs.org/",
+  "License",
+  "MIT",
+  "Repository",
+  "https://github.com/example/plugin",
+  "Declared version compatibility",
+  "Compatibility cannot be confirmed",
+  "Version requirements / current shell versions (reference)",
+  "Not declared",
+  "Author-declared permissions",
+  "Not declared",
+  "Community scan capabilities",
+  "network",
+  "Package lifecycle scripts",
+  "none",
+  "Registry integrity",
+  "Not declared",
+  "Profile snapshot location",
+  "profile-snapshot",
+]
+`;
+
+exports[`searches the catalog, reviews metadata and installs only the approved plan in zh-CN > install details zh-CN 1`] = `
+[
+  "来源",
+  "npm · https://registry.npmjs.org/",
+  "许可证",
+  "MIT",
+  "仓库",
+  "https://github.com/example/plugin",
+  "声明的版本兼容性",
+  "无法确认兼容性",
+  "版本要求 / 当前外壳版本（供参考）",
+  "未声明",
+  "作者声明的权限",
+  "未声明",
+  "社区扫描的能力",
+  "network",
+  "包生命周期脚本",
+  "没有",
+  "仓库完整性校验值",
+  "未声明",
+  "Profile 快照位置",
+  "profile-snapshot",
+]
+`;

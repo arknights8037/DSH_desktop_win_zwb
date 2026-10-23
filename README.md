@@ -1,35 +1,75 @@
-# DeepSeek Harness Desktop
+# DeepSeek Harness
 
-Windows x64 Electron wrapper for the official DeepSeek Harness Web UI.
+English | [中文](README.zh.md)
 
-## 插件管理
+DeepSeek Harness (`dsh`) is an open-source agent harness developed by [DeepSeek AI](https://deepseek.com).
 
-插件管理页会按职能将插件归入“智能体与自动化、开发与文件、数据与会话、网络与信息、界面与系统、其他”六类。可使用顶部下拉菜单筛选分类，也可在每张插件卡片中调整分类；手动分类会保存到应用数据目录，且不会改变插件的启用状态。
+It is built on an **everything-is-a-plugin** architecture and powered by [Cordis](https://github.com/cordiverse/cordis), whose design is described in [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512).
 
-## 技能与扩展
+Documentation: [https://deepseek-harness.github.io/deepseek-harness/](https://deepseek-harness.github.io/deepseek-harness/)
 
-侧栏顶部的“技能与扩展”页面使用切换控件分别管理 Skills 与 MCP。Skills 可添加本地目录，也可从 `owner/repository`、HTTPS Git、GitHub `tree` 子目录或直接 Markdown 地址导入；地址导入内容安装到 DSH 用户技能根并由已有的 `skill-filesystem` Provider 发现。本地附加目录和 stdio／Streamable HTTP MCP 配置保存到应用数据目录中的 `desktop-integrations.json`，并通过 Cordis patch 分别挂载到 `@deepseek-ai/dsh-skill-filesystem` 和 `@deepseek-ai/dsh-mcp-client`；重启后台后这些配置对新会话生效。当前页面不保存环境变量、HTTP 请求头或其他密钥；这类认证信息请由 MCP 进程或系统环境提供。
+## Developer preview
+
+DeepSeek Harness is in _developer preview_ and iterating rapidly. **THERE WILL BE COMPATIBILITY-BREAKING CHANGES.**
+
+Review the [safety notice](SAFETY.md) before running the project.
+
+## Run
+
+### Run from `npm`
+
+Install `Node.js`, then run:
+
+```sh
+npx @deepseek-ai/dsh web
+```
+
+The command starts the Web UI at `http://127.0.0.1:3080` by default and opens it in the default browser for a local launch. An SSH launch only prints the host URL because the SSH client or editor owns the local forwarded address. Pass `--no-open` to run the server without opening a browser. See [Web UI guide](docs/user/guide/index.md).
+
+### Run from source
+
+To run from a repository checkout:
+
+```sh
+git clone https://github.com/deepseek-ai/deepseek-harness.git
+cd deepseek-harness
+pnpm install
+pnpm run build
+pnpm dsh web
+```
+
+`pnpm run build` prepares the repository artifacts. `pnpm dsh web` uses those built artifacts without rebuilding.
+
+## Community and support
+
+- Submit feedback or bug reports through [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions).
+- Add the [`dsh-plugin`](https://github.com/topics/dsh-plugin) topic to your plugin repository for discoverability.
+- Join <a href="https://discord.gg/Ycq5dCaS4">DeepSeek Harness Discord community</a>.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Development
 
-PowerShell:
+Start with the [development guide](docs/development.md) and [architecture documentation](docs/architecture.md).
 
-```powershell
-$env:HTTP_PROXY = 'http://127.0.0.1:7890'
-$env:HTTPS_PROXY = 'http://127.0.0.1:7890'
-$env:ALL_PROXY = 'http://127.0.0.1:7890'
-pnpm install
-pnpm run dev
+For agents, follow [AGENTS.md](AGENTS.md).
+
+## Citation
+
+```bibtex
+@misc{deepseek-harness2026,
+  title={DeepSeek Harness: Everything is a Plugin},
+  author={DeepSeek-AI},
+  year={2026},
+  publisher={GitHub},
+  howpublished={\url{https://github.com/deepseek-ai/deepseek-harness}},
+}
 ```
 
-## Build the installer
+## License
 
-```powershell
-pnpm run dist
-```
+[MIT](LICENSE)
 
-The NSIS installer is written to `release/DeepSeek-Harness-Desktop-0.1.0-win-x64.exe`.
-The packaged client includes the Harness runtime and a standalone Node.js
-runtime, so it does not require Node.js on the target machine. The standalone
-runtime is also used by Harness's Windows native directory picker. Build output
-is Windows x64 and is unsigned.
+Third-party dependencies and their licenses are disclosed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
