@@ -16,6 +16,8 @@ Instance preloads expose only a carrier marker and a request to open software se
 
 This partially supersedes the theme-setting-only presentation choice in the [instance-manager decision](2026-09-16-desktop-instance-manager.md). That record remains active because it owns independent process, isolation, credentials, and software-settings decisions. Validated portable image storage and revision-fenced settings synchronization remain applicable; the desktop stylesheet is the visual authority inside the application.
 
+Wallpaper mode gives each shell region one background fill. Nested settings cards and instance rows stay transparent because repeating an 80% fill would raise the effective opacity to 96%. The active tab also shares its parent strip; its accent underline identifies selection. Welcome cards paint their own content fill because they have no filled parent. Hover tints remain translucent, while menus and dialogs keep solid fills for readable overlapping content.
+
 ## Alternatives considered
 
 **Only synchronize theme settings.** This leaves opaque client layers and makes desktop appearance depend on a backend schema accepting personalization.

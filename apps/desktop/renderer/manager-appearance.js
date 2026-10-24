@@ -13,7 +13,7 @@ let personalDraft
 let personalDirty = false
 let personalReading = false
 const personalVariables = ['--bg', '--panel', '--panel-hover', '--line', '--tab-strip', '--brand', '--brand-strong', '--brand-foreground', '--text', '--muted',
-  '--personal-wallpaper', '--personal-sidebar', '--personal-content', '--personal-input']
+  '--personal-wallpaper', '--personal-sidebar', '--personal-content', '--personal-input', '--personal-card', '--personal-active-tab']
 
 function setShellPersonalAppearance(value) {
   const root = document.documentElement
@@ -32,6 +32,8 @@ function setShellPersonalAppearance(value) {
   put('--personal-sidebar', surface(colors.sidebar || panel))
   put('--personal-content', surface(colors.content || panel))
   put('--personal-input', surface(colors.input || panel))
+  put('--personal-card', image ? 'transparent' : colors.content || panel)
+  put('--personal-active-tab', image ? 'transparent' : colors.tabs || colors.content || panel)
   put('--brand', colors.accent)
   put('--brand-strong', colors.accent)
   if (colors.accent) {
@@ -40,10 +42,10 @@ function setShellPersonalAppearance(value) {
   }
   put('--text', colors.text)
   put('--muted', colors.muted)
-  if (colors.content || colors.canvas) {
+  if (image || colors.content || colors.canvas) {
     const fill = colors.content || colors.canvas
     const text = colors.text || base.getPropertyValue('--text').trim()
-    put('--panel-hover', `color-mix(in srgb, ${text} 8%, ${fill})`)
+    put('--panel-hover', `color-mix(in srgb, ${text} 8%, ${image ? 'transparent' : fill})`)
     put('--line', `color-mix(in srgb, ${text} 18%, transparent)`)
   }
   if (image) {

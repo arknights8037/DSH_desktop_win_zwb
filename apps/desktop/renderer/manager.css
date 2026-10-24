@@ -79,7 +79,7 @@ header {
 #tabs::-webkit-scrollbar { display: none; }
 .tab { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; max-width: 248px; min-width: 112px; height: 42px; padding: 0 9px; background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 0; cursor: pointer; }
 .tab:hover { background: var(--panel-hover); }
-.tab.active { background: var(--panel); border-bottom-color: var(--brand); }
+.tab.active { background: var(--personal-active-tab, var(--panel)); border-bottom-color: var(--brand); }
 .tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab.active .tab-name { font-weight: 600; }
 .tab button { padding: 2px 5px; background: transparent; border: 0; }
@@ -171,7 +171,7 @@ main > section { margin: auto; flex-shrink: 0; }
   gap: 7px;
   padding: 18px;
   text-align: left;
-  background: var(--panel);
+  background: var(--personal-content, var(--panel));
   border: 1px solid var(--line);
   border-radius: 7px;
 }
@@ -181,7 +181,7 @@ main > section { margin: auto; flex-shrink: 0; }
 .manager-actions { margin-bottom: 16px; }
 #instances-empty { margin-top: 24px; }
 .instance-list { display: grid; gap: 8px; width: 100%; }
-.instance-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 7px; }
+.instance-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 14px; background: var(--personal-card, var(--panel)); border: 1px solid var(--line); border-radius: 7px; }
 .instance-summary { min-width: 0; display: grid; gap: 4px; }
 .instance-name-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .instance-name-line strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
@@ -234,7 +234,7 @@ main[data-page="settings"] { display: block; padding: 0; overflow: hidden; }
 .settings-nav [data-settings-tab="advanced"] { margin-top: 20px; }
 .settings-content { min-width: 0; padding: 36px 48px 60px; overflow-y: auto; scrollbar-gutter: stable; }
 .settings-body { max-width: 880px; }
-.plugin-library-card { padding: 20px; margin: 24px 0 32px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); }
+.plugin-library-card { padding: 20px; margin: 24px 0 32px; border: 1px solid var(--line); border-radius: 7px; background: var(--personal-card, var(--panel)); }
 .plugin-library-card h3 { margin: 0 0 10px; }
 .plugin-library-card button { margin-bottom: 12px; }
 .plugin-instance-hint { color: var(--muted); font-size: 12px; }
@@ -297,7 +297,7 @@ main[data-page="settings"] { display: block; padding: 0; overflow: hidden; }
 #source-form { margin: 28px 0; padding-top: 12px; }
 #source-form .setting-row { min-height: 64px; padding: 12px 0; }
 #source-form select { width: 300px; max-width: 100%; }
-#source-form textarea { width: 300px; max-width: 100%; resize: vertical; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 10px 12px; }
+#source-form textarea { width: 300px; max-width: 100%; resize: vertical; font: inherit; color: var(--text); background: var(--personal-input, var(--bg)); border: 1px solid var(--line); border-radius: 5px; padding: 10px 12px; }
 #standalone-keys { margin-top: 36px; }
 #standalone-keys summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-bottom: 20px; }
 @media (max-width: 760px) { .model-source { align-items: flex-start; flex-direction: column; gap: 12px; } .source-actions { flex-wrap: wrap; } }

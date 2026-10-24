@@ -162,6 +162,23 @@ try {
   const masked = await instanceAppearance()
   if (masked.length !== 2 || masked.some(item => item.wallpaper !== 'none' || item.canvas !== 'rgba(0, 0, 0, 0)' || item.text.trim() !== '#234567' || !item.sidebar.includes('80%'))) throw new Error('Shell presentation did not replace instance wallpaper, canvas, and text')
   const maskedWallpaper = await page.locator('body').evaluate((node: HTMLElement) => getComputedStyle(node).backgroundImage)
+  const shellSurfaces = () => page.evaluate(() => {
+    return { card: getComputedStyle(document.querySelector('.plugin-library-card')!).backgroundColor,
+      instance: getComputedStyle(document.querySelector('#plugin-instances .instance-row')!).backgroundColor,
+      activeTab: getComputedStyle(document.querySelector('#settings-tab')!).backgroundColor,
+      content: getComputedStyle(document.querySelector('.settings-content')!).backgroundColor,
+      welcome: getComputedStyle(document.querySelector('.choice-card')!).backgroundColor,
+      input: getComputedStyle(document.querySelector('#source-form input')!).backgroundColor,
+      textarea: getComputedStyle(document.querySelector('#source-form textarea')!).backgroundColor,
+      menu: getComputedStyle(document.querySelector('#instance-menu')!).backgroundColor }
+  })
+  await page.locator('[data-settings-tab=plugins]').click()
+  const wallpaperSurfaces = await shellSurfaces()
+  if ([wallpaperSurfaces.card, wallpaperSurfaces.instance, wallpaperSurfaces.activeTab].some(color => color !== 'rgba(0, 0, 0, 0)')
+    || wallpaperSurfaces.welcome !== wallpaperSurfaces.content || wallpaperSurfaces.textarea !== wallpaperSurfaces.input
+    || !wallpaperSurfaces.menu.startsWith('rgb(')) throw new Error(`Shell controls block wallpaper or lose popup contrast: ${JSON.stringify(wallpaperSurfaces)}`)
+  await capture('plugins-wallpaper.png')
+  await page.locator('[data-settings-tab=appearance]').click()
   const colorFile = join(home, 'smoke-colors.json')
   await electron.evaluate(({ dialog }: typeof import('electron'), filePath: string) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath })
@@ -211,6 +228,10 @@ try {
     resetAppearance = await instanceAppearance()
   }
   if (resetAppearance.some(item => item.wallpaper !== 'none' || item.text.trim() === '#234567')) throw new Error(`Default appearance did not retract custom tokens: ${JSON.stringify(resetAppearance)}`)
+  const defaultSurfaces = await shellSurfaces()
+  if ([defaultSurfaces.card, defaultSurfaces.instance, defaultSurfaces.activeTab].some(color => !color.startsWith('rgb('))) {
+    throw new Error(`Default shell controls did not regain solid fills: ${JSON.stringify(defaultSurfaces)}`)
+  }
   await page.locator('[data-settings-tab=general]').click()
   await page.locator('#language').selectOption('en')
   await page.waitForFunction(() => !document.querySelector<HTMLSelectElement>('#language')!.disabled && document.querySelector<HTMLSelectElement>('#language')!.value === 'en')
