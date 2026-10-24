@@ -9,7 +9,7 @@ import { InstanceRegistry, instanceId, parseCredentials, parseInstance, type Ins
 import { InstanceService } from './instance-service.ts'
 import { LocalInstance } from './local-instance.ts'
 import { RemoteInstance } from './remote-instance.ts'
-import { MANAGER_CHANNEL, MANAGER_CHANGED, MANAGER_SHORTCUT, type ManagerSnapshot } from './manager-ipc.ts'
+import { MANAGER_CHANNEL, MANAGER_CHANGED, MANAGER_SHORTCUT, INSTANCE_OPEN_SETTINGS, type ManagerSnapshot } from './manager-ipc.ts'
 import { managerMessages } from './manager-locale.ts'
 import { resolveDesktopLocale } from './locale.ts'
 import { DESKTOP_IPC } from './ipc.ts'
@@ -17,6 +17,7 @@ import { DesktopProfileMutationError, type DesktopProjectMutation, type DesktopR
 import { inspectPluginInstall, queryPluginCatalog, type DesktopInstallPlanId, type DesktopPluginInstallPlan } from './plugin-market.ts'
 import { SoftwareSettings } from './software-settings.ts'
 import { DEFAULT_PERSONAL_APPEARANCE, parsePersonalAppearance } from './personal-appearance.ts'
+import { instanceAppearanceCss } from './instance-appearance.ts'
 import { dshSettingsEdits } from './dsh-settings.ts'
 import { instanceSettings } from './manager-settings.ts'
 import { DEFAULT_SHORTCUTS, shortcutBinding, type ManagerShortcuts } from './manager-shortcuts.ts'
@@ -80,6 +81,7 @@ async function main(): Promise<void> {
   const library = new DesktopPluginLibrary(join(root, 'plugin-library'), runtime)
   const developmentProject = app.isPackaged ? undefined : join(app.getAppPath(), '.desktop-build', 'development', 'project')
   const views = new Map<InstanceId, WebContentsView>()
+  const presentationStyles = new Map<InstanceId, string>()
   const locals = new Map<InstanceId, LocalInstance>()
   const pluginWindows = new Map<InstanceId | 'library', BrowserWindow>()
   const viewConnections = new Map<InstanceId, Promise<void>>()
@@ -178,6 +180,7 @@ async function main(): Promise<void> {
     viewEpochs.set(id, (viewEpochs.get(id) ?? 0) + 1)
     clearRetry(id)
     appliedSettings.delete(id)
+    presentationStyles.delete(id)
     syncErrors.delete(id)
     const view = views.get(id)
     if (!view) return
@@ -193,6 +196,11 @@ async function main(): Promise<void> {
       const config = registry.get(id)
       const view = views.get(id)
       if (!view || service.status(config).connection !== 'connected') return
+      const oldStyle = presentationStyles.get(id)
+      const style = await view.webContents.insertCSS(instanceAppearanceCss(preferences.personalization), { cssOrigin: 'author' })
+      if (views.get(id) !== view) return
+      presentationStyles.set(id, style)
+      if (oldStyle) await view.webContents.removeInsertedCSS(oldStyle)
       const call = (action: string, input: Record<string, unknown>) => instanceSettings(async request => config.kind === 'local'
         ? service.fetch(id, request)
         : view.webContents.session.fetch(request.url, { method: request.method, headers: Object.fromEntries(request.headers),
@@ -263,8 +271,14 @@ async function main(): Promise<void> {
         }
         view = new WebContentsView({ webPreferences: {
           session: partition, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true,
-          ...(config.kind === 'local' ? { preload: fileURLToPath(new URL('./preload-app.cjs', import.meta.url)) } : {}),
+          preload: fileURLToPath(new URL('./preload-app.cjs', import.meta.url)),
         } })
+        view.setBackgroundColor('#00000000')
+        view.webContents.on('did-finish-load', () => {
+          presentationStyles.delete(id)
+          appliedSettings.delete(id)
+          void syncSoftware(id)
+        })
         installShortcuts(view.webContents)
         view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
         const constrainNavigation = (event: Electron.Event, target: string): void => {
@@ -293,6 +307,11 @@ async function main(): Promise<void> {
     viewConnections.set(id, operation)
     return operation
   }
+  ipcMain.handle(INSTANCE_OPEN_SETTINGS, (event) => {
+    const owner = [...views.values()].find(view => view.webContents === event.sender)
+    if (closing || !owner || event.senderFrame !== owner.webContents.mainFrame) throw new Error('Rejected instance settings sender')
+    window.webContents.send(MANAGER_SHORTCUT, 'settings')
+  })
   const localFor = (id: InstanceId): LocalInstance => {
     if (registry.get(id).kind !== 'local') throw new Error('Use the remote instance settings to manage remote plugins')
     const local = locals.get(id)

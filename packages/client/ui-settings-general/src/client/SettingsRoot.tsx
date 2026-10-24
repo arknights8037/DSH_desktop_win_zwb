@@ -216,9 +216,9 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
           type="button"
           className={clsx(css.trigger, !wide && css.rail)}
           aria-label={t('trigger')}
-          aria-haspopup="dialog"
+          aria-haspopup={props.openDesktopSettings ? undefined : 'dialog'}
           aria-expanded={open}
-          onClick={() => { setOpen(true) }}
+          onClick={() => { if (props.openDesktopSettings) props.openDesktopSettings(); else setOpen(true) }}
         >
           {renderSlot('settings.trigger', { wide })}
         </button>

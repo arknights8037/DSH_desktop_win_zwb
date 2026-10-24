@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { MANAGER_CHANNEL, type ManagerSnapshot } from '../src/manager-ipc.ts'
+import { MANAGER_CHANNEL, MANAGER_SHORTCUT, INSTANCE_OPEN_SETTINGS, type ManagerSnapshot } from '../src/manager-ipc.ts'
 import type { SoftwareSettingsSnapshot } from '../src/software-settings.ts'
 import { sourceRoute, sourceKeyRef } from '../src/model-sources.ts'
 import type { InstanceConfig } from '../src/instances.ts'
@@ -21,6 +21,8 @@ const harness = await vi.hoisted(async () => {
     setWindowOpenHandler = vi.fn()
     openDevTools = vi.fn()
     executeJavaScript = vi.fn()
+    insertCSS = vi.fn(async () => 'appearance-style')
+    removeInsertedCSS = vi.fn(async () => {})
     focus = vi.fn()
     async loadURL(url: string) { this.url = url; this.mainFrame.url = url }
     getURL() { return this.url }
@@ -51,6 +53,7 @@ const harness = await vi.hoisted(async () => {
     webContents = new Contents()
     setBounds = vi.fn()
     setVisible = vi.fn()
+    setBackgroundColor = vi.fn()
     constructor(readonly options: unknown) { View.all.push(this) }
   }
   class Local {
@@ -204,6 +207,34 @@ it('focuses an existing tab and retains its loaded view', async () => {
   expect(harness.View.all).toHaveLength(1)
   expect(harness.Local.all[0]!.connect).toHaveBeenCalledTimes(1)
   expect((await invoke('snapshot') as ManagerSnapshot).tabs.ids).toEqual([item.id])
+})
+
+it('allows instance main frames to open shell settings without manager authority', async () => {
+  const a = await create('A')
+  await invoke('open', { id: a.id })
+  const contents = harness.View.all[0]!.webContents
+  const navigate = harness.handlers.get(INSTANCE_OPEN_SETTINGS)!
+  navigate({ sender: contents, senderFrame: contents.mainFrame })
+  expect(harness.Window.all[0]!.webContents.send).toHaveBeenCalledWith(MANAGER_SHORTCUT, 'settings')
+  expect(() => navigate(sender())).toThrow('Rejected instance settings sender')
+  expect(() => navigate({ sender: contents, senderFrame: {} })).toThrow('Rejected instance settings sender')
+  await invoke('close', { id: a.id })
+  expect(() => navigate({ sender: contents, senderFrame: contents.mainFrame })).toThrow('Rejected instance settings sender')
+})
+
+it('reapplies shell presentation on reload and despite rejected instance settings', async () => {
+  const a = await create('A')
+  await invoke('open', { id: a.id })
+  const view = harness.View.all[0]!
+  expect(view.setBackgroundColor).toHaveBeenCalledWith('#00000000')
+  const value = { ...DEFAULT_PERSONAL_APPEARANCE, colors: { ...DEFAULT_PERSONAL_APPEARANCE.colors, text: '#123456' } }
+  harness.Local.all[0]!.fetch.mockRejectedValueOnce(new Error('Settings unavailable'))
+  await invoke('softwareSettings', { action: 'personalize', input: { value } })
+  expect(view.webContents.insertCSS).toHaveBeenLastCalledWith(expect.stringContaining('--dsw-alias-label-primary:#123456!important'), { cssOrigin: 'author' })
+  expect(view.webContents.removeInsertedCSS).toHaveBeenCalledWith('appearance-style')
+  const count = view.webContents.insertCSS.mock.calls.length
+  view.webContents.emit('did-finish-load')
+  await vi.waitFor(() => { expect(view.webContents.insertCSS.mock.calls.length).toBeGreaterThan(count) })
 })
 
 it('applies software preferences to existing and future instances without importing their values', async () => {

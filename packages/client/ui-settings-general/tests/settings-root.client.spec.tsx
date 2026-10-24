@@ -38,6 +38,7 @@ function mount({
   dictionary = en,
   connectionState = 'connected',
   onboardingActive = true,
+  openDesktopSettings,
   rows = [
     { id: 'general', order: 0, label: 'General' },
     { id: 'models', order: 10, label: 'Models' },
@@ -52,6 +53,7 @@ function mount({
   dictionary?: typeof en | typeof zh
   connectionState?: ConnectionSnapshot
   onboardingActive?: boolean
+  openDesktopSettings?: () => void
   rows?: Row[]
   steps?: Step[]
 } = {}) {
@@ -83,6 +85,7 @@ function mount({
     useWorkspaces: unusedHook,
     wide,
     reconnect,
+    openDesktopSettings,
     t: makeTranslate(dictionary),
     useConnectionState: (select) => {
       const [, force] = useState(0)
@@ -129,6 +132,15 @@ function openPanel() {
 }
 
 describe('SettingsRoot trigger', () => {
+  it('opens desktop software settings while leaving the browser settings panel closed', () => {
+    const openDesktopSettings = vi.fn()
+    mount({ openDesktopSettings, onboardingActive: false })
+    const trigger = screen.getByRole('button', { name: 'Settings' })
+    fireEvent.click(trigger)
+    expect(openDesktopSettings).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(trigger.hasAttribute('aria-haspopup')).toBe(false)
+  })
   it.each([
     { column: 'expanded English', wide: true, dictionary: en, name: 'Settings' },
     { column: 'collapsed English', wide: false, dictionary: en, name: 'Settings' },

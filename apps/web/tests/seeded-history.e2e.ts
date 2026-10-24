@@ -28,6 +28,8 @@ import {
   webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { expandOwningTurnProcess, newEnglishPage, saveFailureShot } from './support.ts'
+import { instanceAppearanceCss } from '../../desktop/src/instance-appearance.ts'
+import { DEFAULT_PERSONAL_APPEARANCE } from '../../desktop/src/personal-appearance.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/seeded-history', import.meta.url))
 const SEED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.v3.jsonl', import.meta.url))
@@ -728,6 +730,44 @@ describe('web e2e: seeded history renders through cold resume', () => {
     expect(await body.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(false)
   })
 
+  it.skipIf(MODE === 'record')('renders recorded history through desktop presentation and delegates settings', async () => {
+    const desktopPage = await newEnglishPage(browser)
+    try {
+      await desktopPage.addInitScript(() => {
+        Object.assign(globalThis, { dshDesktop: { protocolVersion: 1, openSettings: () => { document.body.dataset.shellSettingsOpened = 'true' } } })
+      })
+      await desktopPage.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+      await desktopPage.locator('[role=treeitem]').first().click()
+      await desktopPage.locator('[role=treeitem]').nth(1).click()
+      await desktopPage.getByText('DONE', { exact: true }).waitFor()
+      const style = await desktopPage.addStyleTag({ content: instanceAppearanceCss({
+        ...DEFAULT_PERSONAL_APPEARANCE, backgroundImage: 'data:image/png;base64,aGVsbG8=', surfaceOpacity: 0,
+        colors: { ...DEFAULT_PERSONAL_APPEARANCE.colors, text: '#234567' },
+      }) })
+      const presentation = await desktopPage.locator('[data-conversation-scroll]').evaluate((element) => {
+        const backgrounds: string[] = []
+        for (let parent: Element | null = element; parent; parent = parent.parentElement) {
+          backgrounds.push(getComputedStyle(parent).backgroundColor)
+        }
+        return {
+          transparent: backgrounds.every(color => color === 'rgba(0, 0, 0, 0)' || /\/\s*0\)$/u.test(color)),
+          text: getComputedStyle(document.body).getPropertyValue('--dsw-alias-label-primary').trim(),
+        }
+      })
+      expect(presentation).toEqual({ transparent: true, text: '#234567' })
+      await desktopPage.getByRole('button', { name: 'Settings', exact: true }).click()
+      expect(await desktopPage.locator('body').getAttribute('data-shell-settings-opened')).toBe('true')
+      expect(await desktopPage.getByRole('dialog').count()).toBe(0)
+      const observed = '# Desktop presentation over recorded history\n\n'
+        + `- recorded reply: ${await desktopPage.getByText('DONE', { exact: true }).innerText()}\n`
+        + `- conversation ancestors are transparent: ${presentation.transparent}\n`
+        + `- primary text color: ${presentation.text}\n`
+        + '- sidebar settings opens the software tab: true\n'
+      await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'desktop-appearance.expected.md'), observed.trimEnd(), MODE)
+      await style.evaluate((element: HTMLElement) => { element.remove() })
+    } finally { await desktopPage.close() }
+  })
+
   it.skipIf(MODE === 'record')('issued zero model calls and stayed clean', async () => {
     // No replay fixture was installed and the llm seam is open — any stray
     // stream would have failed the turn loudly. Cleanliness pins the wire.
@@ -735,7 +775,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
       'command-row.expected.md', 'feedback-row.expected.md', 'file-preview.expected.md',
-      'session.v3.jsonl', 'sticky-geometry.expected.md', 'ui.expected.md', 'ui-expanded.expected.md',
+      'session.v3.jsonl', 'sticky-geometry.expected.md', 'ui.expected.md', 'ui-expanded.expected.md', 'desktop-appearance.expected.md',
     ])
   })
 })

@@ -4,6 +4,8 @@ import type { ManagerMessages } from './manager-locale.ts'
 export const MANAGER_CHANNEL = 'dsh-manager:operation'
 export const MANAGER_SHORTCUT = 'dsh-manager:shortcut'
 export const MANAGER_CHANGED = 'dsh-manager:changed'
+/** Instance documents may request the shell settings tab without receiving manager operations. */
+export const INSTANCE_OPEN_SETTINGS = 'dsh-instance:open-settings'
 /** Public state contains no runtime URLs, host fingerprints, or credentials. */
 export interface ManagerSnapshot {
   instances: InstanceConfig[]

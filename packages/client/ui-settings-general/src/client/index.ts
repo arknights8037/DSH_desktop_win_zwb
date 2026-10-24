@@ -95,6 +95,9 @@ export function apply(ctx: ClientContext): void {
   let onboardingSteps: readonly SettingsOnboardingStep[] = []
   const shellInjected = (): SettingsRootInjected => ({
     reconnect: () => { connection.reconnect() },
+    openDesktopSettings: (globalThis as typeof globalThis & {
+      dshDesktop?: { openSettings?: () => void }
+    }).dshDesktop?.openSettings,
     hooks: {
       connectionState: connection.state,
       sections: {

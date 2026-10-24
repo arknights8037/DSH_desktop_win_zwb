@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { DESKTOP_IPC, type DshDesktopStartupApi } from '../src/ipc.ts'
+import { INSTANCE_OPEN_SETTINGS } from '../src/manager-ipc.ts'
 
 const electron = vi.hoisted(() => ({
   contextBridge: { exposeInMainWorld: vi.fn() },
@@ -9,10 +10,13 @@ vi.mock('electron', () => electron)
 
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); vi.resetModules() })
 
-it.each(['dsh-app://app/index.html', 'https://shell/startup.html'])('exposes only the carrier marker to %s', async (url) => {
+it.each(['dsh-app://app/index.html', 'https://shell/startup.html'])('exposes only settings navigation to %s', async (url) => {
   vi.stubGlobal('location', new URL(url))
   await import('../src/preload-app.ts')
-  expect(electron.contextBridge.exposeInMainWorld).toHaveBeenCalledWith('dshDesktop', { protocolVersion: 1 })
+  const api = electron.contextBridge.exposeInMainWorld.mock.calls[0]?.[1] as { protocolVersion: number; openSettings: () => Promise<void> }
+  expect(Object.keys(api)).toEqual(['protocolVersion', 'openSettings'])
+  await api.openSettings()
+  expect(electron.ipcRenderer.invoke).toHaveBeenCalledWith(INSTANCE_OPEN_SETTINGS)
 })
 
 it('provides startup controls and a removable state subscription to shell documents', async () => {

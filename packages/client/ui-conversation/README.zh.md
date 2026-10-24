@@ -36,7 +36,7 @@ target package 通过 declaration merge 扩展 snapshot 与 Location data map，
 <a id="shell-and-standard-props"></a>
 ## Shell 与标准 props
 
-会话外壳消费主题拥有的内容填充与标题栏填充 token，支持个人分区配色和背景透明度，不改变转录数据或 composer 行为。
+会话外壳消费语义内容填充与标题栏填充 token，支持个人分区配色和背景透明度，不改变转录数据或 composer 行为。输入区渐变接受 `--dsh-personal-composer-fill`；桌面壁纸模式提供透明填充，其他客户端使用基础画布颜色。
 
 输入框注册「文件」命令动作，负责其标题、可用性和原生文件选择器回调。菜单可用性与实际调用都读取已挂载输入框当前的附件接收策略。输入框卸载或锁定后该动作不可用，插件 dispose（资源释放）时移除注册。回调绑定留在输入模块内部。
 

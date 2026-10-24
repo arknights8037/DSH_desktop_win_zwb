@@ -1,0 +1,31 @@
+# Agent Note: Desktop-owned instance presentation
+
+Status: implemented
+
+English | [中文](2026-10-24-desktop-presentation.zh.md)
+
+## Problem
+
+Software wallpaper settings cannot create a continuous desktop canvas while embedded clients paint opaque application backgrounds. Namespace synchronization alone also makes visual customization depend on the remote server's settings schema. Separate settings shells give users competing entry points for software preferences.
+
+## Decision
+
+The desktop manager paints the wallpaper and its optional mask once. Instance WebContentsViews have transparent backgrounds. A main-process-owned author-origin stylesheet clears the embedded document canvas and supplies validated region and foreground colors through important DSH semantic tokens. Instance reloads reinstall the stylesheet, software edits replace it, and view destruction discards its key. Author origin permits removal in Electron 44, whose user-origin styles survived removal in the desktop probe. Presentation applies before settings RPC and remains available when that RPC fails. The sidebar column paints its background once; the composer fade accepts a transparent desktop fill. DSH retains workspace, conversation, input, onboarding, and plugin behavior.
+
+Instance preloads expose only a carrier marker and a request to open software settings. The main process authenticates the owning instance's main frame and forwards that request to the existing shell settings tab. Browser clients retain their own settings panel. Automatic onboarding and feature-directed settings sections remain instance-owned. Remote instances retain their own client resources; matching semantic tokens and the settings navigation integration determine how much presentation they support.
+
+This partially supersedes the theme-setting-only presentation choice in the [instance-manager decision](2026-09-16-desktop-instance-manager.md). That record remains active because it owns independent process, isolation, credentials, and software-settings decisions. Validated portable image storage and revision-fenced settings synchronization remain applicable; the desktop stylesheet is the visual authority inside the application.
+
+## Alternatives considered
+
+**Only synchronize theme settings.** This leaves opaque client layers and makes desktop appearance depend on a backend schema accepting personalization.
+
+**Rebuild every client view in Electron.** This duplicates workspace and conversation behavior and cannot preserve a remote server's own feature UI.
+
+**Give embedded pages the manager bridge.** Settings navigation needs no process, credential, or instance mutation capabilities. A separate authenticated request keeps those privileges in the shell.
+
+## Consequences
+
+The semantic token names form a presentation dependency on embedded clients. Unknown remote components can retain opaque surfaces, and older clients without the navigation integration retain their own settings trigger. Settings RPC failures stay visible independently of presentation. Raster images remain shell-owned for painting, so masking and cropping are continuous across the title strip and instance viewport.
+
+Focused tests cover navigation authorization, reload installation, and rejected settings RPC. The Electron smoke displays the actual conversation, checks a composited wallpaper pixel, captures the visible window, and follows the instance settings trigger to the shell tab. These checks require no model credentials.

@@ -36,7 +36,7 @@ Target packages declaration-merge their snapshot and Location data maps, then re
 <a id="shell-and-standard-props"></a>
 ## Shell and standard props
 
-The conversation shell consumes theme-owned content-fill and header-fill tokens, allowing personal region colors and wallpaper transparency without changing transcript data or composer behavior.
+The conversation shell consumes semantic content-fill and header-fill tokens, allowing personal region colors and wallpaper transparency without changing transcript data or composer behavior. Its composer fade accepts `--dsh-personal-composer-fill`; desktop wallpaper mode supplies transparency, and other clients use the base canvas color.
 
 The composer registers the File command action and owns its label, availability, and native file-dialog callback. Menu availability and invocation both consult the mounted composer's current attachment-intake policy. Unmounting or locking the composer disables that action; disposing the plugin removes its registration. The callback binding stays inside the input module.
 

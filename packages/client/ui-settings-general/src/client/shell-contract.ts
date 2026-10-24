@@ -37,6 +37,8 @@ export interface SettingsOnboardingStep {
 export type SettingsRootInjected = {
   /** Request a fresh logical generation and physical WebSocket immediately. */
   reconnect: () => void
+  /** Open desktop software preferences; absent in standalone browsers. */
+  openDesktopSettings?: (() => void) | undefined
   hooks: {
     /** Connection-owned state for the current Host connection. */
     connectionState: HostObservable<ConnectionState | undefined>

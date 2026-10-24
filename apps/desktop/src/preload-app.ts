@@ -1,8 +1,9 @@
-/** Startup controls for shell documents; application documents receive only the carrier marker. */
+/** Startup controls for shell documents; instances may only open the shell settings tab. */
 
 import { contextBridge, ipcRenderer } from 'electron'
 import { DESKTOP_IPC, type DshDesktopStartupApi } from './ipc.ts'
 import type { DesktopBackendState } from './backend-controller.ts'
+import { INSTANCE_OPEN_SETTINGS } from './manager-ipc.ts'
 
 const startup: DshDesktopStartupApi = {
   protocolVersion: 1,
@@ -21,4 +22,4 @@ const startup: DshDesktopStartupApi = {
 }
 
 contextBridge.exposeInMainWorld('dshDesktop', location.protocol === 'dsh-app:' && location.hostname === 'shell'
-  ? startup : { protocolVersion: 1 })
+  ? startup : { protocolVersion: 1, openSettings: () => ipcRenderer.invoke(INSTANCE_OPEN_SETTINGS) as Promise<void> })

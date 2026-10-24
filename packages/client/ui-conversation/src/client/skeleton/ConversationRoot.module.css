@@ -386,8 +386,8 @@
      fade from their own base. */
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px,
-    var(--dsw-alias-bg-base) 36px
+    color-mix(in srgb, var(--dsh-personal-composer-fill, var(--dsw-alias-bg-base)) 0%, transparent) 0px,
+    var(--dsh-personal-composer-fill, var(--dsw-alias-bg-base)) 36px
   );
 }
 

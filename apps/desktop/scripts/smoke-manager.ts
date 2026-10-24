@@ -156,11 +156,12 @@ try {
   const instanceAppearance = () => electron.evaluate(async ({ webContents }: typeof import('electron')) => Promise.all(
     webContents.getAllWebContents().filter(item => item.getURL().startsWith('dsh-app://app/')).map(item => item.executeJavaScript(`(() => {
       const style = getComputedStyle(document.body);
-      return { wallpaper: style.backgroundImage, text: style.getPropertyValue('--dsw-alias-label-primary'), sidebar: style.getPropertyValue('--dsw-specific-sidebar-fill') };
+      return { wallpaper: style.backgroundImage, canvas: style.backgroundColor, text: style.getPropertyValue('--dsw-alias-label-primary'), sidebar: style.getPropertyValue('--dsw-specific-sidebar-fill') };
     })()`)),
-  )) as Promise<Array<{ wallpaper: string; text: string; sidebar: string }>>
+  )) as Promise<Array<{ wallpaper: string; canvas: string; text: string; sidebar: string }>>
   const masked = await instanceAppearance()
-  if (masked.length !== 2 || masked.some(item => !item.wallpaper.includes('data:image/webp;') || item.text.trim() !== '#234567' || !item.sidebar.includes('80%'))) throw new Error('Instance theme presenter did not apply wallpaper, transparency, and text')
+  if (masked.length !== 2 || masked.some(item => item.wallpaper !== 'none' || item.canvas !== 'rgba(0, 0, 0, 0)' || item.text.trim() !== '#234567' || !item.sidebar.includes('80%'))) throw new Error('Shell presentation did not replace instance wallpaper, canvas, and text')
+  const maskedWallpaper = await page.locator('body').evaluate((node: HTMLElement) => getComputedStyle(node).backgroundImage)
   const colorFile = join(home, 'smoke-colors.json')
   await electron.evaluate(({ dialog }: typeof import('electron'), filePath: string) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath })
@@ -173,32 +174,43 @@ try {
   await page.locator('#wallpaper-mask').uncheck()
   await page.locator('#personal-appearance-form [type=submit]').click()
   await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('#appearance-defaults')!.disabled && document.querySelector<HTMLButtonElement>('#appearance-revert')!.disabled)
-  let unmasked = await instanceAppearance()
-  const maskDeadline = Date.now() + 10_000
-  while (unmasked.some((item, index) => item.wallpaper === masked[index]!.wallpaper) && Date.now() < maskDeadline) {
-    await new Promise(resolve => setTimeout(resolve, 100))
-    unmasked = await instanceAppearance()
-  }
-  if (unmasked.some((item, index) => item.wallpaper === masked[index]!.wallpaper)) throw new Error('Disabling the mask did not change the instance wallpaper')
+  const unmaskedWallpaper = await page.locator('body').evaluate((node: HTMLElement) => getComputedStyle(node).backgroundImage)
+  if (unmaskedWallpaper === maskedWallpaper) throw new Error('Disabling the mask did not change the shell wallpaper')
   await page.locator('.settings-content').evaluate((node: HTMLElement) => { node.scrollTop = 0 })
   await capture('appearance-unmasked.png')
   await electron.evaluate(async ({ webContents }: typeof import('electron')) => Promise.all(webContents.getAllWebContents().filter(item => item.getURL().startsWith('dsh-app://app/')).map(item => item.executeJavaScript('(async () => { for (const text of ["继续", "Continue", "稍后配置", "Configure later"]) { const button = Array.from(document.querySelectorAll("[role=dialog] button")).find(button => button.textContent === text); if (button) { button.click(); await new Promise(resolve => setTimeout(resolve, 150)); } } })()'))))
-  await page.locator('.tab').first().click()
-  await new Promise(resolve => setTimeout(resolve, 300))
-  const themedHosts = await electron.evaluate(async ({ webContents }: typeof import('electron')) => Promise.all(webContents.getAllWebContents().filter(item => item.getURL().startsWith('dsh-app://app/')).map(async item => (await item.capturePage()).toPNG().toString('base64'))))
-  for (const [index, image] of themedHosts.entries()) writeFileSync(join(output, `appearance-host-${index}.png`), Buffer.from(image, 'base64'))
+  await page.locator('.tab').first().dispatchEvent('click')
+  await page.waitForFunction(() => document.querySelector('#tabs .tab')?.getAttribute('aria-selected') === 'true')
+  await capture('appearance-composited.png')
+  // Pixel evidence uses an unobstructed region of the visible conversation,
+  // after both onboarding steps have settled and the compositor has painted.
+  const visibleHost = electron.context().pages().find((item: { url(): string }) => item.url().startsWith('dsh-app://app/'))!
+  await visibleHost.waitForFunction(() => !document.querySelector('[role=dialog]'))
+  const visualAppearance = { ...appearanceState.personalization, maskEnabled: false, surfaceOpacity: 0 }
+  await invoke('softwareSettings', { action: 'personalize', input: { value: visualAppearance } })
+  await visibleHost.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+  const pixel = await electron.evaluate(async ({ BrowserWindow }: typeof import('electron')) => {
+    const window = BrowserWindow.getAllWindows()[0]!
+    const view = window.contentView.children.find(item => 'webContents' in item && item.getVisible()) as import('electron').WebContentsView
+    const image = await view.webContents.capturePage({ x: 1000, y: 258, width: 1, height: 1 })
+    return [...image.toBitmap().subarray(0, 4)]
+  })
+  if (pixel[3] !== 0) throw new Error(`Instance still blocks the shell wallpaper: ${JSON.stringify(pixel)}`)
+  await capture('appearance-through-instance.png')
+  await visibleHost.getByRole('button', { name: '设置', exact: true }).dispatchEvent('click')
+  await page.locator('#settings-tab.active').waitFor()
   await page.locator('#settings').click()
   await page.locator('[data-settings-tab=appearance]').click()
-  await page.locator('#appearance-defaults').click()
-  await page.locator('#personal-appearance-form [type=submit]').click()
+  await page.locator('#appearance-defaults').dispatchEvent('click')
+  await page.locator('#personal-appearance-form [type=submit]').dispatchEvent('click')
   await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('#appearance-defaults')!.disabled && document.querySelector<HTMLButtonElement>('#appearance-revert')!.disabled)
   let resetAppearance = await instanceAppearance()
   const resetDeadline = Date.now() + 10_000
-  while (resetAppearance.some(item => item.wallpaper !== 'none') && Date.now() < resetDeadline) {
+  while (resetAppearance.some(item => item.wallpaper !== 'none' || item.text.trim() === '#234567') && Date.now() < resetDeadline) {
     await new Promise(resolve => setTimeout(resolve, 100))
     resetAppearance = await instanceAppearance()
   }
-  if (resetAppearance.some(item => item.wallpaper !== 'none' || item.text.trim() === '#234567')) throw new Error('Default appearance did not retract custom tokens')
+  if (resetAppearance.some(item => item.wallpaper !== 'none' || item.text.trim() === '#234567')) throw new Error(`Default appearance did not retract custom tokens: ${JSON.stringify(resetAppearance)}`)
   await page.locator('[data-settings-tab=general]').click()
   await page.locator('#language').selectOption('en')
   await page.waitForFunction(() => !document.querySelector<HTMLSelectElement>('#language')!.disabled && document.querySelector<HTMLSelectElement>('#language')!.value === 'en')
