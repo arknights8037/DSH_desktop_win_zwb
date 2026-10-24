@@ -16,7 +16,7 @@ import { DESKTOP_IPC } from './ipc.ts'
 import { DesktopProfileMutationError, type DesktopProjectMutation, type DesktopRuntimeExecutables } from './project-manager.ts'
 import { inspectPluginInstall, queryPluginCatalog, type DesktopInstallPlanId, type DesktopPluginInstallPlan } from './plugin-market.ts'
 import { SoftwareSettings } from './software-settings.ts'
-import { DEFAULT_PERSONAL_APPEARANCE, parsePersonalAppearance } from './personal-appearance.ts'
+import { DEFAULT_PERSONAL_APPEARANCE, parsePersonalAppearance, type PersonalAppearance } from './personal-appearance.ts'
 import { instanceAppearanceCss } from './instance-appearance.ts'
 import { dshSettingsEdits } from './dsh-settings.ts'
 import { instanceSettings } from './manager-settings.ts'
@@ -82,6 +82,7 @@ async function main(): Promise<void> {
   const developmentProject = app.isPackaged ? undefined : join(app.getAppPath(), '.desktop-build', 'development', 'project')
   const views = new Map<InstanceId, WebContentsView>()
   const presentationStyles = new Map<InstanceId, string>()
+  let previewAppearance: PersonalAppearance | undefined
   const locals = new Map<InstanceId, LocalInstance>()
   const pluginWindows = new Map<InstanceId | 'library', BrowserWindow>()
   const viewConnections = new Map<InstanceId, Promise<void>>()
@@ -188,19 +189,19 @@ async function main(): Promise<void> {
     if (!view.webContents.isDestroyed()) view.webContents.close()
     views.delete(id)
   }
-  const syncSoftware = (id: InstanceId): Promise<void> => {
+  const syncSoftware = (id: InstanceId, presentationOnly = false): Promise<void> => {
     const previous = settingsSyncs.get(id) ?? Promise.resolve()
     const pending = previous.then(async () => {
       const preferences = software.snapshot()
-      if (appliedSettings.get(id) === preferences.revision) return
       const config = registry.get(id)
       const view = views.get(id)
       if (!view || service.status(config).connection !== 'connected') return
       const oldStyle = presentationStyles.get(id)
-      const style = await view.webContents.insertCSS(instanceAppearanceCss(preferences.personalization), { cssOrigin: 'author' })
+      const style = await view.webContents.insertCSS(instanceAppearanceCss(previewAppearance ?? preferences.personalization), { cssOrigin: 'author' })
       if (views.get(id) !== view) return
       presentationStyles.set(id, style)
       if (oldStyle) await view.webContents.removeInsertedCSS(oldStyle)
+      if (presentationOnly || appliedSettings.get(id) === preferences.revision) return
       const call = (action: string, input: Record<string, unknown>) => instanceSettings(async request => config.kind === 'local'
         ? service.fetch(id, request)
         : view.webContents.session.fetch(request.url, { method: request.method, headers: Object.fromEntries(request.headers),
@@ -252,6 +253,10 @@ async function main(): Promise<void> {
   const syncConnected = async (): Promise<void> => {
     await Promise.all(registry.snapshot().instances.filter(config => service.status(config).connection === 'connected').map(config => syncSoftware(config.id)))
   }
+  window.webContents.on('did-finish-load', () => {
+    previewAppearance = undefined
+    for (const id of views.keys()) void syncSoftware(id, true)
+  })
   const softwareSnapshot = () => ({ ...software.snapshot(), syncErrors: Object.fromEntries(syncErrors) })
   const openView = (id: InstanceId, credentials?: unknown): Promise<void> => {
     const pending = viewConnections.get(id)
@@ -398,6 +403,11 @@ async function main(): Promise<void> {
       const input = payload(args.input)
       switch (args.action) {
         case 'read': return softwareSnapshot()
+        case 'previewPersonalization': {
+          previewAppearance = input.value === null ? undefined : parsePersonalAppearance(input.value)
+          await Promise.all([...views.keys()].map(id => syncSoftware(id, true)))
+          return
+        }
         case 'exportColors': {
           const { colors } = parsePersonalAppearance({ ...DEFAULT_PERSONAL_APPEARANCE, colors: input.colors })
           const result = await dialog.showSaveDialog(window, { title: messages.exportColors,
@@ -418,7 +428,7 @@ async function main(): Promise<void> {
         case 'credentialSet': software.setCredential(input.ref, input.value); break
         case 'credentialRemove': software.removeCredential(input.ref); break
         case 'dshUpdate': software.updateDsh(input.value); break
-        case 'personalize': software.personalize(input.value); break
+        case 'personalize': software.personalize(input.value); previewAppearance = undefined; break
         case 'sourceSave': software.saveSource(input.id, input.config, input.key); break
         case 'sourceRemove': software.removeSource(input.id); break
         default: throw new Error('Unsupported software settings operation')

@@ -237,6 +237,53 @@ it('reapplies shell presentation on reload and despite rejected instance setting
   await vi.waitFor(() => { expect(view.webContents.insertCSS.mock.calls.length).toBeGreaterThan(count) })
 })
 
+it('previews wallpaper across existing and future views without saving or mutating instance settings', async () => {
+  const a = await create('A'); const b = await create('B')
+  await invoke('open', { id: a.id }); await invoke('open', { id: b.id })
+  const saved = await invoke('softwareSettings', { action: 'read' })
+  const file = join(harness.root, 'agent-manager', 'software-settings.json')
+  const stored = existsSync(file) ? readFileSync(file, 'utf8') : undefined
+  for (const local of harness.Local.all) local.fetch.mockClear()
+  const value = { ...DEFAULT_PERSONAL_APPEARANCE, backgroundImage: 'data:image/png;base64,AA==',
+    colors: { ...DEFAULT_PERSONAL_APPEARANCE.colors, text: '#123456' } }
+  await invoke('softwareSettings', { action: 'previewPersonalization', input: { value } })
+  for (const view of harness.View.all) expect(view.webContents.insertCSS).toHaveBeenLastCalledWith(expect.stringContaining('html,body{background:transparent!important;}'), { cssOrigin: 'author' })
+  expect(harness.Local.all.every(local => local.fetch.mock.calls.length === 0)).toBe(true)
+  expect(await invoke('softwareSettings', { action: 'read' })).toEqual(saved)
+  expect(existsSync(file) ? readFileSync(file, 'utf8') : undefined).toBe(stored)
+  await expect(invoke('softwareSettings', { action: 'previewPersonalization', input: { value: {} } })).rejects.toThrow('Invalid personal appearance')
+  const c = await create('C'); await invoke('open', { id: c.id })
+  expect(harness.View.all[2]!.webContents.insertCSS).toHaveBeenLastCalledWith(expect.stringContaining('--dsw-alias-label-primary:#123456!important'), { cssOrigin: 'author' })
+  expect(harness.Local.all[2]!.settings.namespaces[0]!.value.customization).toEqual(DEFAULT_PERSONAL_APPEARANCE)
+  const reloaded = harness.View.all[0]!
+  reloaded.webContents.emit('did-finish-load')
+  await vi.waitFor(() => { expect(reloaded.webContents.insertCSS.mock.calls.length).toBeGreaterThan(2) })
+  expect(reloaded.webContents.insertCSS).toHaveBeenLastCalledWith(expect.stringContaining('--dsw-alias-label-primary:#123456!important'), { cssOrigin: 'author' })
+  await invoke('softwareSettings', { action: 'previewPersonalization', input: { value: null } })
+  for (const view of harness.View.all) expect(view.webContents.insertCSS).toHaveBeenLastCalledWith(expect.not.stringContaining('html,body{background:transparent!important;}'), { cssOrigin: 'author' })
+  await invoke('softwareSettings', { action: 'previewPersonalization', input: { value } })
+  harness.Window.all[0]!.webContents.emit('did-finish-load')
+  await vi.waitFor(() => {
+    for (const view of harness.View.all) expect(view.webContents.insertCSS).toHaveBeenLastCalledWith(expect.not.stringContaining('--dsw-alias-label-primary:#123456!important'), { cssOrigin: 'author' })
+  })
+})
+
+it('retracts an in-flight appearance preview before completing cancellation', async () => {
+  const a = await create('A'); await invoke('open', { id: a.id })
+  const contents = harness.View.all[0]!.webContents
+  let finishInsert!: (key: string) => void
+  const inserting = new Promise<string>((resolve) => { finishInsert = resolve })
+  contents.insertCSS.mockImplementationOnce(() => inserting)
+  const value = { ...DEFAULT_PERSONAL_APPEARANCE, colors: { ...DEFAULT_PERSONAL_APPEARANCE.colors, text: '#abcdef' } }
+  const preview = invoke('softwareSettings', { action: 'previewPersonalization', input: { value } })
+  await vi.waitFor(() => { expect(contents.insertCSS).toHaveBeenLastCalledWith(expect.stringContaining('#abcdef'), { cssOrigin: 'author' }) })
+  const cancel = invoke('softwareSettings', { action: 'previewPersonalization', input: { value: null } })
+  finishInsert('pending-preview')
+  await Promise.all([preview, cancel])
+  expect(contents.removeInsertedCSS).toHaveBeenCalledWith('pending-preview')
+  expect(contents.insertCSS).toHaveBeenLastCalledWith(expect.not.stringContaining('#abcdef'), { cssOrigin: 'author' })
+})
+
 it('applies software preferences to existing and future instances without importing their values', async () => {
   await invoke('softwareSettings', { action: 'update', input: { field: 'theme', value: 'light' } })
   await invoke('softwareSettings', { action: 'update', input: { field: 'fontSize', value: 16 } })

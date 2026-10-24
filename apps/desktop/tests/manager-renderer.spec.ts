@@ -84,8 +84,11 @@ it('previews personal colors and text, saves them, and cancels or resets drafts'
   preset.dispatchEvent(new dom.window.Event('change'))
   expect(document.documentElement.style.getPropertyValue('--text')).toBe('#f2eafc')
   expect(settings.personalization.colors.text).toBe('')
+  const preview = invoke.mock.calls.find(([operation, payload]) => operation === 'softwareSettings' && payload?.action === 'previewPersonalization')
+  expect(preview?.[1]?.input?.value).toMatchObject({ colors: { text: '#f2eafc' } })
   document.querySelector<HTMLButtonElement>('#appearance-revert')!.click()
   expect(document.documentElement.style.getPropertyValue('--text')).toBe('')
+  expect(invoke).toHaveBeenCalledWith('softwareSettings', { action: 'previewPersonalization', input: { value: null } })
   const text = document.querySelector<HTMLInputElement>('#personal-color-text')!
   text.value = '#123456'
   text.dispatchEvent(new dom.window.Event('change'))

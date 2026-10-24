@@ -1,4 +1,4 @@
-/* Personal appearance drafts preview locally; Save delivers the complete document to instances. */
+/* Appearance drafts preview across the shell and instances; Save persists the complete document. */
 const personalDefaults = () => ({ backgroundImage: '', backgroundEnabled: true, maskEnabled: true,
   maskColor: '#000000', maskOpacity: 35, surfaceOpacity: 80,
   colors: { canvas: '', tabs: '', sidebar: '', content: '', input: '', accent: '', text: '', muted: '' } })
@@ -99,6 +99,7 @@ function previewPersonalAppearance() {
   personalDirty = true
   setShellPersonalAppearance(personalDraft)
   renderPersonalAppearance()
+  void perform(() => settingsCall('previewPersonalization', { value: personalDraft }))
 }
 
 for (const [id, field] of Object.entries({ 'wallpaper-enabled': 'backgroundEnabled', 'wallpaper-mask': 'maskEnabled',
@@ -119,6 +120,7 @@ $('appearance-revert').onclick = () => {
   personalDirty = false
   setShellPersonalAppearance(softwareDocument.personalization)
   renderPersonalAppearance()
+  void perform(() => settingsCall('previewPersonalization', { value: null }))
 }
 $('personal-appearance-form').onsubmit = event => {
   event.preventDefault()

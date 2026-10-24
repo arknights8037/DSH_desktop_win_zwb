@@ -147,6 +147,12 @@ try {
   await page.waitForFunction(() => document.querySelector('#wallpaper-status')?.textContent === '已选择图片')
   await page.locator('#appearance-preset').selectOption('ocean')
   await page.locator('#personal-color-text').evaluate((node: HTMLInputElement) => { node.value = '#234567'; node.dispatchEvent(new Event('change')) })
+  for (const host of electron.context().pages().filter((item: { url(): string }) => item.url().startsWith('dsh-app://app/'))) {
+    await host.waitForFunction(() => getComputedStyle(document.body).backgroundColor === 'rgba(0, 0, 0, 0)'
+      && getComputedStyle(document.body).getPropertyValue('--dsw-alias-label-primary').trim() === '#234567')
+  }
+  const previewSettings = await invoke('softwareSettings', { action: 'read' }) as SoftwareSettingsSnapshot
+  if (previewSettings.personalization.backgroundImage || previewSettings.personalization.colors.text) throw new Error('Appearance preview persisted before Save')
   await page.locator('#personal-appearance-form [type=submit]').click()
   await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('#appearance-defaults')!.disabled && document.querySelector<HTMLButtonElement>('#appearance-revert')!.disabled)
   const appearanceState = await invoke('softwareSettings', { action: 'read' }) as SoftwareSettingsSnapshot & { syncErrors: Record<string, string> }

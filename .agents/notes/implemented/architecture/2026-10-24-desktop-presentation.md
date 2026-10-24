@@ -18,6 +18,8 @@ This partially supersedes the theme-setting-only presentation choice in the [ins
 
 Wallpaper mode gives each shell region one background fill. Nested settings cards and instance rows stay transparent because repeating an 80% fill would raise the effective opacity to 96%. The active tab also shares its parent strip; its accent underline identifies selection. Welcome cards paint their own content fill because they have no filled parent. Hover tints remain translucent, while menus and dialogs keep solid fills for readable overlapping content.
 
+Unsaved appearance drafts belong to the desktop main process until saved or canceled. The shell forwards validated previews through its manager-only IPC, and each instance's existing synchronization queue serializes stylesheet replacements. Preview requests do not write software settings or call backend settings APIs. New and reloaded instance views use the current draft; cancel and manager reload restore saved presentation. This keeps the wallpaper visible through the conversation during preview without persisting an unfinished choice.
+
 ## Alternatives considered
 
 **Only synchronize theme settings.** This leaves opaque client layers and makes desktop appearance depend on a backend schema accepting personalization.
