@@ -10,6 +10,7 @@ The Windows desktop application manages independent local and Linux SSH Harness 
 
 - [Instances](#instances)
 - [Plugin catalog and installation](#plugin-catalog-and-installation)
+- [Kernel updates and data recovery](#kernel-updates-and-data-recovery)
 - [Remote connections](#remote-connections)
 - [Lifecycle and storage](#lifecycle-and-storage)
 - [Development and packaging](#development-and-packaging)
@@ -42,17 +43,31 @@ Record a shortcut by focusing its field and pressing the combination; Backspace 
 
 ## Plugin catalog and installation
 
-In a packaged application, open **Settings → Plugins → Open plugin library and market** in the desktop shell to manage global plugin versions. Review and retain exact npm versions before any instance exists. Local dependency graphs are prepared lazily in the shell library; remote-only packages do not need to install on Windows. Each instance keeps its own deployment and configuration; adding or removing a library version does not update existing copies.
+In a packaged application, open **Settings → Plugins** in the desktop shell. The page omits introductory descriptions; plugin descriptions remain expandable inside padded cards with a separate action column. The community market, search, category filters, and npm lookup appear on the left; retained versions, install review, target selection, and instance controls appear on the right. Narrow windows stack the market above management. Filter the market to installable or retained plugins, clear filters, and use **Manage** on a retained entry to locate its library versions. Each retained entry also offers **Review latest**; new versions still require confirmation. The target selector precedes the version list and requires a new choice if its selected instance becomes unavailable. Installation leaves search, filtering, and settings navigation usable. Package source, integrity, and recovery paths remain available under expandable review details. Review and retain exact npm versions before any instance exists. Local dependency graphs are prepared lazily in the shell library; remote-only packages do not need to install on Windows. Each instance keeps its own deployment and configuration; adding or removing a library version does not update existing copies.
+
+Local kernels from `0.2.0-rc.2` receive `dsh-at-file@0.6.3`, `dsh-context@0.75.1`, and `dsh-cost-meter@1.9.39` on their first eligible initialization. Existing versions and disabled state are retained. Interrupted installation retries before startup; after completion, removed plugins stay removed. All three appear in the same shell library and instance controls.
+
+The shell adapts `dsh-at-file@0.6.3`'s retired browser snapshot-store import to `@deepseek-ai/dsh-client-store` and updates its peer and injection declarations. This adaptation is restricted to that exact version and rejects an unfamiliar import pattern; other plugin versions retain their published code. Tarball-declared private dependencies missing from registry metadata are installed before dependency validation.
 
 The details show the resolved version, npm source, license, repository, integrity, lifecycle scripts, and engine and peer requirements against the shell runtime as reference information. A missing bundle declaration blocks library selection. The target instance validates compatibility when preparing dependencies. Host-owned packages cannot be replaced. Catalog capabilities and permissions are publisher declarations, not a sandbox guarantee.
 
 Confirmation consumes a shell-library plan valid for 15 minutes. Open a local or SSH instance, select it in the library, and choose **Inject / apply version**. The operation prepares an independent copy and restarts only that instance. Existing plugin configuration and activation are preserved. Local instance windows retain activation, removal, and recovery controls.
 
-Local plugin changes snapshot the full Profile to `<instance-home>/desktop/profile-snapshot`, excluding its held lock. Package, validation, build, or startup failure restores that copy and retries the old Host without reinstalling packages. Snapshots need additional disk space and do not restore shared sessions, external files, or plugin side effects outside the Profile. Forced termination and power loss require manual recovery: stop the instance and close the manager, preserve the failed Profile, then copy the snapshot contents into `profiles/desktop`. Profile reset remains destructive and creates no new backup. Local library caches are keyed by application runtime; a runtime change prepares a new cache on the next explicit injection. Disable incompatible instance copies first when several need replacement.
+Local plugin changes snapshot the full Profile to `<instance-home>/desktop/profile-snapshot`, excluding its held lock. Package, validation, build, or startup failure restores that copy and retries the old Host without reinstalling packages. Snapshots need additional disk space and do not restore shared sessions, external files, or plugin side effects outside the Profile. Forced termination and power loss require manual recovery: stop the instance and close the manager, preserve the failed Profile, then copy the snapshot contents into `profiles/desktop`. Profile reset remains destructive and creates no new backup. Local library caches are keyed by runtime; kernel changes prepare injected plugins at their existing exact versions before startup. Incompatible plugins stop preparation with an error.
 
 Remote injection calls the connected instance’s authenticated Web API in the background; all controls remain in global software settings. SSH carries connection and process lifecycle operations only. The remote DSH must include the plugin-deployment API, and pnpm must be available on its PATH. The server prepares a fresh graph with lifecycle scripts disabled and validates Host peers and runtime requirements, then schedules the selected version for restart. Until restart, the active manifest and plugin link remain unchanged. A launch that fails before readiness is restored from its journal on the next launch. Preparation failure keeps the current process running. Old servers report an update requirement rather than falling back to SSH installation scripts.
 
 Discovery uses the [awesome-dsh-plugin catalog](https://awesome-dsh-plugin.com), also consumed by [dshmarket](https://github.com/dsh-market/dsh-market). If the origin fails, Desktop requests the published `dsh-plugin-catalog` JSON through jsDelivr and displays the actual source and publisher date; it does not substitute a bundled or disk-cached catalog. Operators may set `DSH_DESKTOP_PLUGIN_CATALOG_URL` to a credential-free HTTPS JSON source; this replaces both defaults. Failed requests show a reload action. Catalog install-command strings are never executed. Git-only entries remain browseable with repository links, while Desktop installation accepts npm registry packages only. `dshmarket`'s Web routes and independent package manager are not loaded into the portless Desktop Host.
+
+<a id="kernel-updates-and-data-recovery"></a>
+
+## Kernel updates and data recovery
+
+**Settings → Application → DSH kernel** checks the official npm `latest` channel. Automatic preparation is enabled initially; turn it off to use manual checks and **Prepare update**. Updates install separately and must pass a disposable Host, baseline-plugin, Web asset, event-stream readiness, and settings-RPC probe. The selected kernel stays fixed until the application exits. Quit and reopen the application after an update reports readiness; restarting an individual instance does not switch kernels. Preparation failure retains the current selection. Shell installers remain separately managed, and SSH kernels are not updated by this control.
+
+Before an instance first uses a changed runtime, Desktop copies its complete home to `<instance-home>-kernel-backups/backup-*/home`; `complete.json` identifies finished backups and their versions. Configuration, sessions, credentials, and plugin files inside the home are preserved. Browser storage and files outside that home are excluded. Backups contain sensitive data and consume additional disk space. They are retained for manual recovery, not automatically restored or collected. To recover, stop the instance, close Desktop, preserve the changed home, and restore the chosen complete backup to its original home path together with a compatible kernel. Switching only code to an older version does not make newer session or plugin data readable.
+
+Kernels using the newer settings namespaces synchronize theme, language, Enter behavior, model sources, credential references, token limits, and reasoning effort. Legacy transcript, preset, protocol, and official-endpoint controls become read-only for the current local kernel; use the instance UI for its settings and **Model credentials** for custom endpoints. Software preferences for older remote kernels remain saved.
 
 <a id="remote-connections"></a>
 
@@ -110,7 +125,7 @@ $env:DSH_DESKTOP_APP_ID = 'dev.dsh.agentmanager'
 pnpm run package:desktop:win:x64:unsigned
 ```
 
-The installer is emitted under `apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts`. Packaging builds and prepares the complete runtime before invoking electron-builder. Official automatic updates and update menus are disabled in this manager.
+The installer is emitted under `apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts`. Packaging builds and prepares the bundled fallback runtime before invoking electron-builder. The official shell installer updater is disabled; independent kernel updates use Application settings.
 
 <a id="implementation"></a>
 
@@ -126,7 +141,7 @@ See the [multi-instance decision](../../.agents/notes/implemented/architecture/2
 
 ## Known limitations
 
-Cross-instance task aggregation, scheduling, automatic DSH deployment, server reboot recovery, password persistence, and SSH config import are outside this version. Remote plugins that require lifecycle builds need instance-side preparation. Local snapshots and remote copy generations consume disk space and are not automatically collected. Do not run manual package mutations while a deployment is pending.
+Cross-instance task aggregation, scheduling, automatic remote DSH deployment, server reboot recovery, password persistence, and SSH config import are outside this version. Remote plugins that require lifecycle builds need instance-side preparation. Local snapshots and remote copy generations consume disk space and are not automatically collected. Do not run manual package mutations while a deployment is pending.
 
 Automated checks cover authenticated Web requests over an SSH tunnel, independent dependency preparation with real pnpm and a fixture registry, shared Host module identity, and interrupted-launch recovery. They do not replace acceptance on a preinstalled Linux DSH server with real third-party native dependencies and model credentials.
 

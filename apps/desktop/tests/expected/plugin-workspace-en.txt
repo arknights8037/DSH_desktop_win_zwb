@@ -1,0 +1,5 @@
+Plugin market
+Search names, descriptions, or packages
+Category
+Plugin management
+Confirm and add to library

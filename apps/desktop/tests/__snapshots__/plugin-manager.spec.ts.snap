@@ -2,12 +2,8 @@
 
 exports[`searches the catalog, reviews metadata and installs only the approved plan in en > install details en 1`] = `
 [
-  "Source",
-  "npm · https://registry.npmjs.org/",
   "License",
   "MIT",
-  "Repository",
-  "https://github.com/example/plugin",
   "Declared version compatibility",
   "Compatibility cannot be confirmed",
   "Version requirements / current shell versions (reference)",
@@ -18,6 +14,10 @@ exports[`searches the catalog, reviews metadata and installs only the approved p
   "network",
   "Package lifecycle scripts",
   "none",
+  "Source",
+  "npm · https://registry.npmjs.org/",
+  "Repository",
+  "https://github.com/example/plugin",
   "Registry integrity",
   "Not declared",
   "Profile snapshot location",
@@ -27,12 +27,8 @@ exports[`searches the catalog, reviews metadata and installs only the approved p
 
 exports[`searches the catalog, reviews metadata and installs only the approved plan in zh-CN > install details zh-CN 1`] = `
 [
-  "来源",
-  "npm · https://registry.npmjs.org/",
   "许可证",
   "MIT",
-  "仓库",
-  "https://github.com/example/plugin",
   "声明的版本兼容性",
   "无法确认兼容性",
   "版本要求 / 当前外壳版本（供参考）",
@@ -43,6 +39,10 @@ exports[`searches the catalog, reviews metadata and installs only the approved p
   "network",
   "包生命周期脚本",
   "没有",
+  "来源",
+  "npm · https://registry.npmjs.org/",
+  "仓库",
+  "https://github.com/example/plugin",
   "仓库完整性校验值",
   "未声明",
   "Profile 快照位置",

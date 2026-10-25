@@ -9,6 +9,8 @@ import { DesktopProjectManager, packageNameFromSpec, type DesktopProjectHooks } 
 import { readDesktopProfileState } from '../src/profile-packages.ts'
 import { runtimeFixture } from './runtime-fixture.ts'
 import { DesktopPluginLibrary } from '../src/plugin-library.ts'
+import { prepareLocalKernel } from '../src/local-kernel.ts'
+import { DESKTOP_DEFAULT_PLUGINS } from '../src/default-plugins.ts'
 
 const roots: string[] = []
 const releaseWorkers: Array<() => Promise<void>> = []
@@ -42,8 +44,13 @@ if (command !== 'rebuild') {
     const packageRoot = join(project, 'node_modules', name)
     mkdirSync(packageRoot, { recursive: true })
     writeFileSync(join(packageRoot, 'package.json'), JSON.stringify({name, version,
-      peerDependencies: {'@deepseek-ai/cordis': '^1.0.0'}, dsh: {bundle: {patch: './bundle.yml'}}}))
+      peerDependencies: {'@deepseek-ai/cordis': '^1.0.0'}, dsh: {bundle: {patch: './bundle.yml'},
+        ...(name === 'dsh-at-file' ? {client: {inject:['@deepseek-ai/dsh-client-runtime']}} : {})}}))
     writeFileSync(join(packageRoot, 'bundle.yml'), '[]\\n')
+    if (name === 'dsh-at-file') {
+      mkdirSync(join(packageRoot, 'lib'), {recursive:true})
+      writeFileSync(join(packageRoot, 'lib/client.js'), 'require("@deepseek-ai/dsh-client-runtime/client")\\n')
+    }
   }
   writeFileSync(join(project, 'pnpm-lock.yaml'), JSON.stringify(manifest.dependencies))
 }
@@ -63,6 +70,53 @@ function calls(root: string): { args: string[]; registry: string }[] {
   const path = join(root, 'pnpm-log.jsonl')
   return existsSync(path) ? readFileSync(path, 'utf8').trim().split('\n').map(line => JSON.parse(line) as { args: string[]; registry: string }) : []
 }
+
+it('retries interrupted baseline installation and respects later removal and disabled versions', async () => {
+  const { root, manager } = setup()
+  const library = new DesktopPluginLibrary(join(root, 'library'), manager.runtime)
+  const original = library.withSource.bind(library)
+  let interrupted = true
+  library.withSource = async (name, version, operation) => {
+    if (name === 'dsh-context' && interrupted) { interrupted = false; throw new Error('offline') }
+    return original(name, version, operation)
+  }
+  await expect(prepareLocalKernel(join(root, '.dsh'), manager, library)).rejects.toThrow('offline')
+  expect(existsSync(join(manager.paths.root, 'default-plugins.json'))).toBe(false)
+  await prepareLocalKernel(join(root, '.dsh'), manager, library)
+  expect(manager.listPlugins().map(({ name, version }) => ({ name, version })))
+    .toEqual([...DESKTOP_DEFAULT_PLUGINS].sort((a, b) => a.name.localeCompare(b.name)))
+  await manager.mutate({ type: 'plugin-remove', name: 'dsh-at-file' }, hooks())
+  await manager.mutate({ type: 'plugin-toggle', name: 'dsh-context', enabled: false }, hooks())
+  await prepareLocalKernel(join(root, '.dsh'), manager, library)
+  expect(manager.listPlugins().some(plugin => plugin.name === 'dsh-at-file')).toBe(false)
+  expect(manager.listPlugins().find(plugin => plugin.name === 'dsh-context')?.enabled).toBe(false)
+})
+
+it('backs up the complete instance home and prepares the same plugin versions for a newer kernel', async () => {
+  const { root, manager } = setup()
+  const home = join(root, '.dsh')
+  const library = new DesktopPluginLibrary(join(root, 'library'), manager.runtime)
+  await manager.applyRelease()
+  await library.install('plugin', '0.75.1')
+  await manager.mutate({ type: 'plugin-inject', name: 'plugin', version: '0.75.1', source: library.source('plugin', '0.75.1') }, hooks())
+  writeFileSync(join(manager.paths.root, 'default-plugins.json'), '{"version":1}\n')
+  writeFileSync(join(home, 'session.jsonl'), 'existing-session\n')
+  writeFileSync(join(manager.paths.profile, 'cordis.patch.yml'), '[]\n')
+  await manager.mutate({ type: 'plugin-toggle', name: 'plugin', enabled: false }, hooks())
+  const dsh = join(root, 'next-runtime')
+  runtimeFixture(dsh, '1.1.0')
+  const next = new DesktopProjectManager(manager.paths, { ...manager.runtime, dsh, profileResolution: 'runtime' })
+  const nextLibrary = new DesktopPluginLibrary(join(root, 'library'), next.runtime)
+  await prepareLocalKernel(home, next, nextLibrary)
+  expect(next.releaseVersion()).toBe('1.1.0')
+  expect(next.listPlugins()).toEqual([{ name: 'plugin', version: '0.75.1', enabled: false }])
+  expect(readFileSync(join(home, 'session.jsonl'), 'utf8')).toBe('existing-session\n')
+  const recovery = join(root, '.dsh-kernel-backups')
+  const backup = join(recovery, readdirSync(recovery)[0]!)
+  expect(readFileSync(join(backup, 'home/session.jsonl'), 'utf8')).toBe('existing-session\n')
+  expect(JSON.parse(readFileSync(join(backup, 'complete.json'), 'utf8'))).toEqual({ from: '1.0.0', to: '1.1.0' })
+  expect(readFileSync(join(next.paths.profile, 'cordis.patch.yml'), 'utf8')).toBe('[]\n')
+})
 
 it('keeps versioned shell installations separate from independent instance copies', async () => {
   const { root, manager } = setup()

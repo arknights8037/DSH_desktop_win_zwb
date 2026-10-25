@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-23-shell-plugin-library-and-instance-injection.md
-2026-10-23-shell-plugin-library-and-instance-injection.md: bb9787f094d75e5778938ab21b51b7e90399cf96
-2026-10-23-shell-plugin-library-and-instance-injection.zh.md: 81b6a186aaa8dabec0216b9190f6ee9de48d66a0
+2026-10-23-shell-plugin-library-and-instance-injection.md: 16da50f4acbf0f934afa465c4fcd79f376c1aa4f
+2026-10-23-shell-plugin-library-and-instance-injection.zh.md: c326883bff36cdd3185e3cc50a26088bc145079b

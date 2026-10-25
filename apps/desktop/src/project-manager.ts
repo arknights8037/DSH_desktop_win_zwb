@@ -15,7 +15,6 @@ import {
   readFileSync,
   readdirSync,
   realpathSync,
-  renameSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
@@ -28,8 +27,9 @@ import {
   verifyDesktopCorePackageSet,
 } from './core-package-set.ts'
 import type { DesktopPaths } from './paths.ts'
-import { removeOwnedDirectory } from './owned-directory.ts'
+import { removeOwnedDirectory, renameOwnedDirectory } from './owned-directory.ts'
 import type { DesktopRelease } from './release.ts'
+import { adaptDesktopPlugin } from './plugin-compat.ts'
 import { desktopRuntimeId, readDesktopRuntime, type DesktopRuntimeDescriptor } from './runtime-tree.ts'
 import {
   desktopPluginLockHash, linkDesktopHostPackages, readDesktopProfileState, recordDesktopRuntimeProfile,
@@ -117,7 +117,7 @@ function readJson(path: string): unknown {
   return JSON.parse(readFileSync(path, 'utf8'))
 }
 
-function workspaceFile(overrides: Readonly<Record<string, string>> = {}): string {
+function workspaceFile(overrides: Readonly<Record<string, string>> = {}, extensions: Record<string, unknown> = {}): string {
   const entries = Object.entries(overrides).sort(([left], [right]) => left.localeCompare(right))
   const overrideSection = entries.length === 0
     ? ''
@@ -126,7 +126,39 @@ function workspaceFile(overrides: Readonly<Record<string, string>> = {}): string
   const coreBuildKey = coreBuildSpec === undefined
     ? CORE_BUILD_PACKAGE
     : `${CORE_BUILD_PACKAGE}@${coreBuildSpec.replace('file:./', 'file:')}`
-  return `packages:\n  - .\n\n${overrideSection}${WORKSPACE_SETTINGS}allowBuilds:\n  node-pty: true\n  koffi: true\n  fs-ext: true\n  ${JSON.stringify(coreBuildKey)}: true\n  '@google/genai': false\n  protobufjs: false\n  node-addon-require-builtin: false\n`
+  return `packages:\n  - .\n\n${overrideSection}packageExtensions: ${JSON.stringify(extensions)}\n${WORKSPACE_SETTINGS}allowBuilds:\n  node-pty: true\n  koffi: true\n  fs-ext: true\n  ${JSON.stringify(coreBuildKey)}: true\n  '@google/genai': false\n  protobufjs: false\n  node-addon-require-builtin: false\n`
+}
+
+// Some published registry manifests omit dependencies present in their integrity-checked tarballs.
+// Reconcile private dependencies before validation without auto-installing a second Host graph.
+function privateDependencyExtensions(projectDir: string, runtime: DesktopRuntimeDescriptor): Record<string, unknown> {
+  const extensions: Record<string, unknown> = {}
+  const shared = new Set(runtime.sharedPackages.map(item => item.name))
+  const scan = (modules: string): void => {
+    if (!existsSync(modules) || lstatSync(modules).isSymbolicLink()) return
+    for (const entry of readdirSync(modules, { withFileTypes: true })) {
+      if (entry.name.startsWith('.') || entry.isSymbolicLink()) continue
+      const path = join(modules, entry.name)
+      if (entry.name.startsWith('@')) { scan(path); continue }
+      const file = join(path, 'package.json')
+      if (!existsSync(file)) continue
+      const value = readJson(file)
+      if (!isRecord(value) || typeof value.name !== 'string' || typeof value.version !== 'string' || shared.has(value.name)) continue
+      {
+        const meta = isRecord(value.peerDependenciesMeta) ? value.peerDependenciesMeta : {}
+        const peers = isRecord(value.peerDependencies) ? value.peerDependencies : {}
+        const declared = isRecord(value.dependencies) ? value.dependencies : {}
+        const dependencies = Object.fromEntries(Object.entries({ ...peers, ...declared }).filter(([name, range]) => {
+          const peer = meta[name]
+          return !shared.has(name) && typeof range === 'string' && (name in declared || !(isRecord(peer) && peer.optional === true))
+        }))
+        if (Object.keys(dependencies).length) extensions[`${value.name}@${value.version}`] = { dependencies }
+      }
+      scan(join(path, 'node_modules'))
+    }
+  }
+  scan(join(projectDir, 'node_modules'))
+  return extensions
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -334,8 +366,7 @@ export class DesktopProjectManager {
   private prepareProfile(projectDir: string): void {
     const runtime = this.currentRuntime()
     const resolutionMode = this.runtime.profileResolution ?? 'link'
-    if (resolutionMode === 'runtime') recordDesktopRuntimeProfile(projectDir, runtime)
-    else linkDesktopHostPackages(projectDir, this.runtime.dsh, runtime)
+    if (resolutionMode === 'link') linkDesktopHostPackages(projectDir, this.runtime.dsh, runtime)
     const injected = projectManifest(projectDir).dsh.profile.injectedPlugins ?? {}
     const roots = new Map<string, string>()
     for (const [name, generation] of Object.entries(injected)) {
@@ -349,10 +380,15 @@ export class DesktopProjectManager {
       roots.set(name, realpathSync.native(join(directory, 'node_modules', name)))
     }
     validateDesktopPluginGraph(projectDir, this.runtime.dsh, runtime, profilePluginNames(projectDir), resolutionMode, roots)
+    if (resolutionMode === 'runtime') recordDesktopRuntimeProfile(projectDir, runtime)
   }
 
-  /** Read release metadata and reconcile its external profile without installing core packages. */
-  async applyRelease(): Promise<boolean> {
+  /**
+   * Reconcile a stopped profile, preserving injected versions across kernel upgrades.
+   * @param sources - Fresh installations for each injected plugin when its kernel changes.
+   * @returns Whether the profile required preparation; incompatible plugins reject startup.
+   */
+  async applyRelease(sources: ReadonlyMap<string, string> = new Map()): Promise<boolean> {
     return this.withLock(async () => {
       const target = this.readRuntime()
       this.descriptor = target
@@ -366,6 +402,16 @@ export class DesktopProjectManager {
         return false
       }
       if (previous === undefined) createPluginProfile(this.paths.profile)
+      if (previous !== undefined && previous.runtimeId !== desktopRuntimeId(target)) {
+        const manifest = projectManifest(this.paths.profile)
+        for (const name of Object.keys(manifest.dsh.profile.injectedPlugins ?? {})) {
+          const source = sources.get(name)
+          if (source === undefined) throw new Error(`desktop project: re-inject ${name} from the shell library for this application runtime`)
+          const version = manifest.dependencies[name]
+          if (version === undefined) throw new Error(`desktop project: missing injected plugin version: ${name}`)
+          await this.applyMutation(this.paths.profile, { type: 'plugin-inject', name, version, source })
+        }
+      }
       await this.reconcileProfile(this.paths.profile, previous)
       return true
     })
@@ -457,7 +503,7 @@ export class DesktopProjectManager {
     try {
       await this.copyProfile(this.paths.profile, temporary)
       removeOwnedDirectory(this.snapshotPath())
-      renameSync(temporary, this.snapshotPath())
+      await renameOwnedDirectory(temporary, this.snapshotPath())
     } finally {
       removeOwnedDirectory(temporary)
     }
@@ -534,6 +580,8 @@ export class DesktopProjectManager {
           throw new Error(`desktop project: cannot install host-owned package ${requestedName}`)
         }
         await this.runPnpm(projectDir, ['add', mutation.spec, '--save-exact', '--ignore-scripts'])
+        if (this.runtime.profileResolution === 'runtime') await this.runPnpm(projectDir, ['install', '--ignore-scripts'])
+        adaptDesktopPlugin(join(projectDir, 'node_modules', requestedName), requestedName)
         const installed = { ...inspectPlugin(projectDir, requestedName), enabled: true }
         const current = pluginRecords(projectDir).filter(plugin => plugin.name !== installed.name)
         writeProfilePlugins(
@@ -568,6 +616,8 @@ export class DesktopProjectManager {
           throw new Error(`desktop project: plugin ${JSON.stringify(mutation.name)} is not installed`)
         }
         await this.runPnpm(projectDir, ['add', `${mutation.name}@${mutation.version}`, '--save-exact', '--ignore-scripts'])
+        if (this.runtime.profileResolution === 'runtime') await this.runPnpm(projectDir, ['install', '--ignore-scripts'])
+        adaptDesktopPlugin(join(projectDir, 'node_modules', mutation.name), mutation.name)
         {
           const installed = inspectPlugin(projectDir, mutation.name)
           writeProfilePlugins(
@@ -618,6 +668,11 @@ export class DesktopProjectManager {
   private async runPnpmProcess(projectDir: string, args: readonly string[]): Promise<void> {
     const [command, ...commandArgs] = args
     if (command === undefined) throw new Error('desktop project: pnpm command is required')
+    if (this.runtime.profileResolution === 'runtime') {
+      writeFileSync(join(projectDir, 'pnpm-workspace.yaml'), workspaceFile(Object.fromEntries(
+        this.currentRuntime().sharedPackages.map(item => [item.name, item.version]),
+      ), privateDependencyExtensions(projectDir, this.currentRuntime())), { mode: 0o600 })
+    }
     for (const path of [this.paths.root, this.paths.pnpm.store, this.paths.pnpm.cache,
       this.paths.pnpm.state, this.paths.pnpm.config, this.paths.pnpm.home]) {
       mkdirSync(path, { recursive: true, mode: 0o700 })

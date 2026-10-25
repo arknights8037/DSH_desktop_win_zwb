@@ -17,6 +17,7 @@ export class LocalInstance implements InstanceRuntime {
     resources: DesktopRuntimeExecutables,
     private readonly developmentProject: string | undefined,
     report: (status: InstanceStatus) => void,
+    private readonly prepare?: (manager: DesktopProjectManager) => Promise<void>,
   ) {
     const paths = resolveDesktopPaths(home)
     this.manager = new DesktopProjectManager(paths, resources)
@@ -40,7 +41,8 @@ export class LocalInstance implements InstanceRuntime {
           mkdirSync(profile, { recursive: true })
           if (!existsSync(join(profile, 'package.json'))) writeFileSync(join(profile, 'package.json'), readFileSync(join(this.developmentProject, 'package.json')))
           if (!existsSync(join(profile, 'node_modules'))) symlinkSync(join(this.developmentProject, 'node_modules'), join(profile, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir')
-        } else await this.manager.applyRelease()
+        } else if (this.prepare) await this.prepare(this.manager)
+        else await this.manager.applyRelease()
       })
       signal.throwIfAborted()
       return 'dsh-app://app/index.html'

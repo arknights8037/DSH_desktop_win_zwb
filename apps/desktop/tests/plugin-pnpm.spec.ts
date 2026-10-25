@@ -18,10 +18,13 @@ it('installs a real pnpm graph, then executes approved scripts with the shared h
   const server = createServer()
   const archives = new Map<string, Buffer>()
   try {
-    for (const name of ['fixture-plugin', 'node-pty']) {
-      const path = writePackage(join(root, 'packages'), name, name === 'fixture-plugin'
-        ? { dependencies: { 'node-pty': '1.0.0' }, peerDependencies: { '@deepseek-ai/cordis': '^1.0.0' }, dsh: { bundle: { patch: 'bundle.yml' } } }
-        : { scripts: { install: 'node install.cjs' } }, 'export {identity} from "@deepseek-ai/cordis"')
+    for (const name of ['fixture-plugin', 'node-pty', 'metadata-plugin', 'private-runtime']) {
+      const path = writePackage(join(root, 'packages'), name, name === 'metadata-plugin'
+        ? { dependencies: { 'private-runtime': '1.0.0' }, peerDependencies: { '@deepseek-ai/cordis': '^1.0.0' },
+          dsh: { bundle: { patch: 'bundle.yml' } } }
+        : name === 'fixture-plugin'
+          ? { dependencies: { 'node-pty': '1.0.0' }, peerDependencies: { '@deepseek-ai/cordis': '^1.0.0' }, dsh: { bundle: { patch: 'bundle.yml' } } }
+          : name === 'node-pty' ? { scripts: { install: 'node install.cjs' } } : {}, 'export {identity} from "@deepseek-ai/cordis"')
       writeFileSync(join(path, 'bundle.yml'), '[]\n')
       writeFileSync(join(path, 'install.cjs'), 'require("node:fs").writeFileSync("built.json", JSON.stringify({node:process.execPath, host:require.resolve("@deepseek-ai/cordis")}))')
       const tarball = join(root, `${name}.tgz`)
@@ -50,6 +53,9 @@ it('installs a real pnpm graph, then executes approved scripts with the shared h
     writeFileSync(pnpm, `process.argv = process.argv.map(arg => arg === '--config.registry=https://registry.npmjs.org/' ? ${JSON.stringify(`--config.registry=${origin}`)} : arg); await import(${JSON.stringify(pathToFileURL(realPnpm).href)})`)
     const manager = new DesktopProjectManager(resolveDesktopPaths(join(root, '.dsh')), { node: process.execPath, pnpm, dsh })
     const hooks: DesktopProjectHooks = { beforeChange: async () => {}, afterChange: async () => {} }
+    const modern = new DesktopPluginLibrary(join(root, 'runtime-library'), { ...manager.runtime, profileResolution: 'runtime' })
+    await modern.install('metadata-plugin', '1.0.0')
+    expect(existsSync(join(modern.source('metadata-plugin', '1.0.0'), 'node_modules/private-runtime/package.json'))).toBe(true)
     await manager.applyRelease()
     await manager.mutate({ type: 'plugin-add', spec: 'fixture-plugin@1.0.0' }, hooks)
     expect(manager.listPlugins()).toEqual([{ name: 'fixture-plugin', version: '1.0.0', enabled: true }])

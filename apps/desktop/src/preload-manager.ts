@@ -1,7 +1,9 @@
 /** Sandboxed bridge for the local manager document only. */
 import { contextBridge, ipcRenderer } from 'electron'
 import { MANAGER_CHANNEL, MANAGER_CHANGED, MANAGER_SHORTCUT, type ManagerApi } from './manager-ipc.ts'
+import { pluginApi } from './preload-plugins.ts'
 const api: ManagerApi = {
+  pluginLibrary: pluginApi,
   invoke: (operation, payload) => ipcRenderer.invoke(MANAGER_CHANNEL, operation, payload),
   onShortcut(listener) {
     const handler = (_event: Electron.IpcRendererEvent, action: string): void => { listener(action) }

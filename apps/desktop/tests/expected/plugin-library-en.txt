@@ -1,3 +1,3 @@
-Manage plugin versions in the global software settings. Inject an independent copy into a selected instance; each instance applies updates explicitly.
-Choose a connected local or remote instance. Dependencies are prepared for its platform; other instances keep their current versions.
-plugin1.2.3Inject / apply versionRemove
+Plugin management
+Target instance
+plugin1.2.3Apply versionRemove

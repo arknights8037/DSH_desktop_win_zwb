@@ -128,7 +128,7 @@ const harness = await vi.hoisted(async () => {
     settled: async () => {},
     runtime: () => ({ release: { version: '1.0.0', nodeVersion: '24.17.0' }, sharedPackages: [] }),
   }
-  return { Window, View, Local, handlers, partitions, app, library, root: '', fetch: vi.fn(),
+  return { Window, View, Local, handlers, partitions, app, library, root: '', fetch: vi.fn(), openExternal: vi.fn(),
     dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn(async () => ({ response: 1 })),
       showSaveDialog: vi.fn(async () => ({ canceled: true, filePath: undefined as string | undefined })) } }
 })
@@ -136,7 +136,7 @@ vi.mock('electron', () => ({
   app: harness.app, BrowserWindow: harness.Window, WebContentsView: harness.View, dialog: harness.dialog,
   ipcMain: { handle: (channel: string, handler: (...args: unknown[]) => unknown) => harness.handlers.set(channel, handler) },
   Menu: { setApplicationMenu: vi.fn() }, protocol: { registerSchemesAsPrivileged: vi.fn(), handle: vi.fn() },
-  net: { fetch: harness.fetch }, shell: { openExternal: vi.fn() },
+  net: { fetch: harness.fetch }, shell: { openExternal: harness.openExternal },
   safeStorage: { isEncryptionAvailable: () => true, encryptString: (value: string) => Buffer.from(value).reverse(),
     decryptString: (value: Buffer) => Buffer.from(value).reverse().toString() },
   session: { fromPartition: (id: string) => {
@@ -150,6 +150,16 @@ vi.mock('electron', () => ({
 vi.mock('../src/paths.ts', () => ({ resolveDesktopPaths: () => ({ root: harness.root }) }))
 vi.mock('../src/local-instance.ts', () => ({ LocalInstance: harness.Local }))
 vi.mock('../src/remote-instance.ts', () => ({ RemoteInstance: harness.Local }))
+vi.mock('../src/kernel-manager.ts', () => ({ DesktopKernelManager: class {
+  private enabled = true
+  constructor(_root: string, private readonly bundled: unknown) {}
+  initialize = async () => {}
+  runtime = () => this.bundled
+  snapshot = () => ({ phase: 'idle', current: '1.0.0', automatic: this.enabled, restartRequired: false })
+  automatic = (enabled: boolean) => { this.enabled = enabled; return this.snapshot() }
+  check = async () => this.snapshot()
+  settled = async () => {}
+} }))
 vi.mock('../src/plugin-library.ts', () => ({
   DesktopPluginLibrary: vi.fn(function () { return harness.library }),
 }))
@@ -177,6 +187,15 @@ it('opens the manager immediately without starting any backend', async () => {
   expect(harness.Local.all).toHaveLength(0)
   expect((await invoke('snapshot') as ManagerSnapshot).instances).toEqual([])
   expect(harness.dialog.showErrorBox).not.toHaveBeenCalled()
+})
+it('restricts kernel update operations to the manager main frame and validates settings', async () => {
+  expect(await invoke('kernel', { action: 'read' })).toMatchObject({ current: '1.0.0', automatic: true })
+  expect(await invoke('kernel', { action: 'automatic', visible: false })).toMatchObject({ automatic: false })
+  expect(await invoke('kernel', { action: 'check' })).toMatchObject({ current: '1.0.0' })
+  await expect(invoke('kernel', { action: 'automatic', visible: 'false' })).rejects.toThrow('Invalid automatic')
+  await expect(invoke('kernel', { action: 'delete' })).rejects.toThrow('Unsupported kernel')
+  const event = sender()
+  await expect(harness.handlers.get(MANAGER_CHANNEL)!({ ...event, senderFrame: {} }, 'kernel', { action: 'install' })).rejects.toThrow('Rejected manager IPC sender')
 })
 it('exports validated colors through a native save dialog without changing software settings', async () => {
   const filePath = join(harness.root, 'colors.json')
@@ -433,15 +452,13 @@ async function pluginSender(config: InstanceConfig) {
 }
 
 async function librarySender() {
-  await invoke('pluginLibrary')
-  const contents = harness.Window.all.at(-1)!.webContents
-  return { sender: contents, senderFrame: contents.mainFrame }
+  return sender()
 }
 
 it('owns library installation in the shell and injects only into the selected local or SSH instance', async () => {
-  await invoke('pluginLibrary')
-  const contents = harness.Window.all.at(-1)!.webContents
-  const owner = { sender: contents, senderFrame: contents.mainFrame }
+  const owner = await librarySender()
+  const contents = owner.sender
+  expect(harness.Window.all).toHaveLength(1)
   harness.fetch.mockResolvedValueOnce(Response.json({ name: 'test-plugin', version: '1.2.3', dsh: { bundle: { patch: 'patch.yml' } } }))
   const plan = await harness.handlers.get(DESKTOP_IPC.pluginsPlan)!(owner, 'test-plugin') as DesktopPluginInstallPlan
   await harness.handlers.get(DESKTOP_IPC.pluginsAdd)!(owner, plan.id)
@@ -501,6 +518,7 @@ it('denies catalog and plan IPC to instance frames and restores the view after r
   const unauthorized = { sender: harness.View.all[0]!.webContents, senderFrame: owner.senderFrame }
   expect(() => harness.handlers.get(DESKTOP_IPC.pluginsCatalog)!(unauthorized)).toThrow('Rejected')
   await expect(harness.handlers.get(DESKTOP_IPC.pluginsPlan)!(unauthorized, 'test')).rejects.toThrow('Rejected')
+  expect(() => harness.handlers.get(DESKTOP_IPC.pluginsCatalog)!({ ...owner, senderFrame: { url: owner.senderFrame.url } })).toThrow('Rejected')
   expect(harness.fetch).not.toHaveBeenCalled()
   const { DesktopProfileMutationError } = await import('../src/project-manager.ts')
   harness.Local.all[0]!.mutate.mockRejectedValueOnce(new DesktopProfileMutationError('restored', true, new Error('install failed')))
@@ -520,13 +538,13 @@ it('requires another review after a plan expires', async () => {
   } finally { clock.mockRestore() }
 })
 
-it('discards metadata replies after the owning plugin window closes', async () => {
+it('discards metadata replies after the settings frame navigates away', async () => {
   const owner = await librarySender()
   const reply = Promise.withResolvers<Response>()
   harness.fetch.mockReturnValueOnce(reply.promise)
   const pending = Promise.resolve(harness.handlers.get(DESKTOP_IPC.pluginsPlan)!(owner, 'test-plugin'))
   const rejected = expect(pending).rejects.toThrow('Rejected')
-  harness.Window.all.at(-1)!.close()
+  owner.senderFrame.url = 'dsh-app://shell/other.html'
   reply.resolve(Response.json({ name: 'test-plugin', version: '1.2.3', dsh: { bundle: { patch: 'patch.yml' } } }))
   await rejected
   expect(harness.library.select).not.toHaveBeenCalled()
@@ -542,6 +560,17 @@ it('installs a reviewed replacement in the library without updating an instance'
   await harness.handlers.get(DESKTOP_IPC.pluginsAdd)!(owner, plan.id)
   expect(harness.library.select).toHaveBeenCalledWith('test-plugin', '1.2.3')
   expect(harness.Local.all[0]!.mutate).not.toHaveBeenCalled()
+})
+
+it('opens HTTPS plugin repository links outside settings and rejects other schemes and credentials', async () => {
+  const open = harness.Window.all[0]!.webContents.setWindowOpenHandler.mock.calls[0]![0] as (details: { url: string }) => { action: string }
+  expect(open({ url: 'https://github.com/example/plugin' })).toEqual({ action: 'deny' })
+  expect(harness.openExternal).toHaveBeenCalledWith('https://github.com/example/plugin')
+  vi.mocked(harness.openExternal).mockClear()
+  for (const url of ['file:///C:/private', 'http://example.com/', 'https://user:secret@example.com/']) {
+    expect(open({ url })).toEqual({ action: 'deny' })
+  }
+  expect(harness.openExternal).not.toHaveBeenCalled()
 })
 
 it('routes frameless window controls through authenticated manager IPC', async () => {

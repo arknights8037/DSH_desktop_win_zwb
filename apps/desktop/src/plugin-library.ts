@@ -126,7 +126,7 @@ export class DesktopPluginLibrary {
     for (const [engine, actual] of [['dsh', runtime.release.version], ['node', runtime.release.nodeVersion]] as const) {
       if (!(engine in engines)) continue
       const range: unknown = Reflect.get(engines, engine)
-      if (typeof range !== 'string' || validRange(range) === null || !satisfies(actual, range)) {
+      if (typeof range !== 'string' || validRange(range) === null || !satisfies(actual, range, { includePrerelease: true })) {
         throw new Error(`Plugin requires a different ${engine} version; this local runtime has ${actual}`)
       }
     }

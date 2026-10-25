@@ -9,6 +9,7 @@ export type InstanceSettingsAction = 'read' | 'update' | 'sources' | 'credential
 const fields: Record<string, readonly string[]> = {
   'ui-theme': ['preference', 'fontSize', 'customization'], locale: ['preference'], 'ui-conversation': ['busyEnter'],
   'ui-chat': ['transcriptView'], 'agent-presets': ['default', 'modeSelectionEnabled'],
+  'agent-default-model': ['reasoningEffort'],
   'llm-deepseek': ['protocol', 'baseURL', 'apiKeyEnv', 'maxTokens', 'reasoningEffort'],
 }
 

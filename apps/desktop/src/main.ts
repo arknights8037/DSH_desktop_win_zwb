@@ -23,6 +23,9 @@ import { instanceSettings } from './manager-settings.ts'
 import { DEFAULT_SHORTCUTS, shortcutBinding, type ManagerShortcuts } from './manager-shortcuts.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
 import { DesktopPluginLibrary } from './plugin-library.ts'
+import { DesktopKernelManager } from './kernel-manager.ts'
+import { prepareDesktopKernel } from './kernel-install.ts'
+import { prepareLocalKernel } from './local-kernel.ts'
 
 const SCHEME = 'dsh-app'
 const MANAGER_URL = 'dsh-app://shell/manager.html'
@@ -77,14 +80,19 @@ async function main(): Promise<void> {
   const settingsSyncs = new Map<InstanceId, Promise<void>>()
   let messages = managerMessages(software.snapshot().appearance.language || app.getLocale())
   let locale = resolveDesktopLocale(software.snapshot().appearance.language || app.getLocale())
-  const runtime = resources()
+  const bundled = resources()
+  const kernels = app.isPackaged ? new DesktopKernelManager(join(root, 'kernels'), bundled,
+    (version, directory) => prepareDesktopKernel(version, directory, bundled, join(root, 'kernel-probe-library')),
+    (input, init) => net.fetch(input instanceof URL ? input.href : input, init)) : undefined
+  await kernels?.initialize()
+  const runtime = kernels?.runtime() ?? bundled
   const library = new DesktopPluginLibrary(join(root, 'plugin-library'), runtime)
   const developmentProject = app.isPackaged ? undefined : join(app.getAppPath(), '.desktop-build', 'development', 'project')
   const views = new Map<InstanceId, WebContentsView>()
   const presentationStyles = new Map<InstanceId, string>()
   let previewAppearance: PersonalAppearance | undefined
   const locals = new Map<InstanceId, LocalInstance>()
-  const pluginWindows = new Map<InstanceId | 'library', BrowserWindow>()
+  const pluginWindows = new Map<InstanceId, BrowserWindow>()
   const viewConnections = new Map<InstanceId, Promise<void>>()
   const viewEpochs = new Map<InstanceId, number>()
   const retryTimers = new Map<InstanceId, ReturnType<typeof setTimeout>>()
@@ -111,7 +119,11 @@ async function main(): Promise<void> {
     })
   }
   installShortcuts(window.webContents)
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    const target = new URL(url)
+    if (target.protocol === 'https:' && target.username === '' && target.password === '') void shell.openExternal(target.href)
+    return { action: 'deny' }
+  })
   window.webContents.on('will-navigate', (event, url) => { if (url !== MANAGER_URL) event.preventDefault() })
   window.webContents.on('will-redirect', (event) => { event.preventDefault() })
   const layout = (): void => {
@@ -165,9 +177,16 @@ async function main(): Promise<void> {
     registry.trust(endpoint, fingerprint)
     return true
   }
+  let localPreparation = Promise.resolve()
   const service = new InstanceService((config, report) => {
     if (config.kind === 'ssh') return new RemoteInstance(config, verify, report)
-    const local = new LocalInstance(join(root, 'instances', config.id), runtime, developmentProject, report)
+    const home = join(root, 'instances', config.id)
+    const local = new LocalInstance(home, runtime, developmentProject, report,
+      (manager) => {
+        const pending = localPreparation.then(() => prepareLocalKernel(home, manager, library))
+        localPreparation = pending.catch(() => {})
+        return pending
+      })
     locals.set(config.id, local)
     return local
   }, publish)
@@ -208,13 +227,14 @@ async function main(): Promise<void> {
           body: await request.text(), signal: request.signal }),
       view.webContents.getURL(), action, input)
       const document = await call('read', {}) as { namespaces: Array<{ ns: string; revision: number; value: Record<string, unknown> }> }
+      const modern = document.namespaces.some(item => item.ns === 'agent-default-model')
       const values = preferences.appearance
       const failures: string[] = []
       for (const [namespace, edits] of [
-        ['ui-theme', { preference: values.theme, fontSize: values.fontSize, customization: preferences.personalization }],
+        ['ui-theme', { preference: values.theme, fontSize: values.fontSize, ...(modern ? {} : { customization: preferences.personalization }) }],
         ['locale', { preference: values.language || locale.id }],
         ['ui-conversation', { busyEnter: values.busyEnter }],
-        ...dshSettingsEdits(preferences.dsh),
+        ...dshSettingsEdits(preferences.dsh, modern),
       ] as Array<[string, Record<string, unknown>]>) {
         const section = document.namespaces.find(item => item.ns === namespace)
         if (!section) { failures.push(`Unsupported DSH settings: ${namespace}`); continue }
@@ -340,6 +360,7 @@ async function main(): Promise<void> {
   }
   const pluginOwner = (event: IpcMainInvokeEvent): InstanceId | 'library' => {
     if (closing) throw new Error('Manager is shutting down')
+    if (!window.webContents.isDestroyed() && event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame && event.senderFrame.url === MANAGER_URL) return 'library'
     for (const [id, plugin] of pluginWindows) if (!plugin.isDestroyed() && event.sender === plugin.webContents && event.senderFrame === plugin.webContents.mainFrame && event.senderFrame.url === 'dsh-app://shell/plugin-manager.html') return id
     throw new Error('Rejected plugin IPC sender')
   }
@@ -348,12 +369,12 @@ async function main(): Promise<void> {
     if (owner === 'library') throw new Error('Choose an instance for this plugin operation')
     return owner
   }
-  const openPlugins = (id: InstanceId | 'library'): void => {
-    if (id !== 'library') localFor(id)
+  const openPlugins = (id: InstanceId): void => {
+    localFor(id)
     if (!app.isPackaged) throw new Error('Plugin installation requires a packaged application')
     const existing = pluginWindows.get(id)
     if (existing && !existing.isDestroyed()) { existing.focus(); return }
-    const plugin = new BrowserWindow({ parent: window, width: 900, height: 780, title: id === 'library' ? messages.plugins : `${registry.get(id).name} — ${messages.plugins}`, webPreferences: {
+    const plugin = new BrowserWindow({ parent: window, width: 900, height: 780, title: `${registry.get(id).name} — ${messages.plugins}`, webPreferences: {
       preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)), nodeIntegration: false, contextIsolation: true, sandbox: true,
     } })
     pluginWindows.set(id, plugin)
@@ -371,6 +392,24 @@ async function main(): Promise<void> {
     if (closing || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== MANAGER_URL) throw new Error('Rejected manager IPC sender')
     const args = payload(input)
     if (operation === 'snapshot') return snapshot()
+    if (operation === 'kernel') {
+      if (!kernels) throw new Error('Kernel updates require a packaged application')
+      switch (args.action) {
+        case 'read': return kernels.snapshot()
+        case 'check': case 'install': {
+          const pending = kernels.check(args.action === 'install')
+          publish()
+          const result = await pending
+          publish()
+          return result
+        }
+        case 'automatic': {
+          if (typeof args.visible !== 'boolean') throw new Error('Invalid automatic kernel update setting')
+          return kernels.automatic(args.visible)
+        }
+        default: throw new Error('Unsupported kernel operation')
+      }
+    }
     if (operation === 'window') {
       switch (args.action) {
         case 'minimize': window.minimize(); break
@@ -380,7 +419,6 @@ async function main(): Promise<void> {
       }
       return
     }
-    if (operation === 'pluginLibrary') { openPlugins('library'); return }
     if (operation === 'overlay') {
       if (typeof args.visible !== 'boolean') throw new Error('Invalid visibility')
       overlay = args.visible; layout(); return
@@ -564,6 +602,7 @@ async function main(): Promise<void> {
       }
       closing = true
       await library.settled()
+      await kernels?.settled()
       for (const timer of retryTimers.values()) clearTimeout(timer)
       for (const id of [...views.keys()]) destroyView(id)
       await service.close()
@@ -577,6 +616,7 @@ async function main(): Promise<void> {
   focus = () => { if (window.isMinimized()) window.restore(); window.show(); window.focus() }
   app.on('activate', focus)
   await window.loadURL(MANAGER_URL)
+  if (kernels) void kernels.check().then(() => { if (!closing) publish() })
   if (!app.isPackaged && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') window.webContents.openDevTools({ mode: 'detach' })
 }
 if (claimDesktopSingleInstance(app, () => { focus() })) void app.whenReady().then(main).catch((error: unknown) => {

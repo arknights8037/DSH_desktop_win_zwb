@@ -17,7 +17,10 @@ describe('desktop locale dictionaries', () => {
 
   it('keeps visible plugin-manager HTML copy in the locale dictionaries', () => {
     const html = readFileSync(new URL('../renderer/plugin-manager.html', import.meta.url), 'utf8')
-    const staticText = [...html.matchAll(/>([^<]*\p{L}[^<]*)</gu)].map(match => match[1]?.trim())
+    const source = readFileSync(new URL('../renderer/plugin-manager.js', import.meta.url), 'utf8')
+    const template = source.match(/root.innerHTML = `([\s\S]*?)`\.replace/u)?.[1]
+    expect(template).toBeDefined()
+    const staticText = [...`${html}${template}`.matchAll(/>([^<]*\p{L}[^<]*)</gu)].map(match => match[1]?.trim())
     expect(staticText).toEqual([])
   })
 })

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { runInContext } from 'node:vm'
 import { JSDOM } from 'jsdom'
 import { expect, it, onTestFinished, vi } from 'vitest'
+import { resolveDesktopLocale } from '../src/locale.ts'
 import { managerMessages } from '../src/manager-locale.ts'
 import { instanceId, type InstanceConfig } from '../src/instances.ts'
 import type { ModelSourceView } from '../src/model-sources.ts'
@@ -9,16 +10,17 @@ import { DEFAULT_DSH_SETTINGS } from '../src/dsh-settings.ts'
 import { DEFAULT_SHORTCUTS } from '../src/manager-shortcuts.ts'
 import { DEFAULT_PERSONAL_APPEARANCE, parsePersonalAppearance } from '../src/personal-appearance.ts'
 import type { ManagerSnapshot } from '../src/manager-ipc.ts'
+import type { KernelStatus } from '../src/kernel-manager.ts'
 
 const id = instanceId('aabbccdd-1234-4321-8123-123456789012')
-function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTabs = false, theme?: string) {
+function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTabs = false, theme?: string, kernel?: KernelStatus) {
   const dom = new JSDOM(readFileSync(new URL('../renderer/manager.html', import.meta.url), 'utf8'), { runScripts: 'outside-only', url: 'https://manager.test/' })
   onTestFinished(() => { dom.window.close() })
   Object.defineProperty(dom.window, 'structuredClone', { value: structuredClone })
   dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
   dom.window.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new dom.window.Event('close')) }
   const instances = config ? Array.isArray(config) ? config : [config] : []
-  const snapshot: ManagerSnapshot = { instances, tabs: { ids: openTabs ? instances.map(item => item.id) : [], active: openTabs ? instances.at(-1)!.id : null }, statuses: Object.fromEntries(instances.map(item => [item.id, { process: 'unknown', connection: 'disconnected' }])), messages: managerMessages(locale), packaged: false, maximized: false }
+  const snapshot: ManagerSnapshot = { instances, tabs: { ids: openTabs ? instances.map(item => item.id) : [], active: openTabs ? instances.at(-1)!.id : null }, statuses: Object.fromEntries(instances.map(item => [item.id, { process: 'unknown', connection: 'disconnected' }])), messages: managerMessages(locale), packaged: kernel !== undefined, maximized: false }
   const settings = { revision: 0, appearance: { theme: theme || 'system', fontSize: 14, language: '', busyEnter: 'queue' },
     personalization: structuredClone(DEFAULT_PERSONAL_APPEARANCE),
     dsh: { ...DEFAULT_DSH_SETTINGS }, modelSources: [] as ModelSourceView[], credentials: [] as string[],
@@ -30,8 +32,15 @@ function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTab
     action?: string
     input?: Record<string, unknown>
     bindings?: Record<string, string>
+    visible?: boolean
   }) => {
     if (operation === 'snapshot') return snapshot
+    if (operation === 'kernel' && kernel) {
+      if (payload?.action === 'automatic') kernel.automatic = payload.visible!
+      if (payload?.action === 'check') kernel.available = '0.2.1-rc.2'
+      if (payload?.action === 'install') { kernel.phase = 'ready'; kernel.restartRequired = true }
+      return { ...kernel }
+    }
     if (operation === 'save') return { id }
     if (operation === 'rename') snapshot.instances = snapshot.instances.map(item => item.id === payload?.id ? { ...item, name: payload.name! } : item)
     if (operation === 'open' && payload?.id) snapshot.statuses[payload.id]!.connection = 'connected'
@@ -65,13 +74,39 @@ function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTab
     return undefined
   })
   const onShortcut = vi.fn<(listener: (action: string) => void) => () => void>(() => () => {})
-  Object.defineProperty(dom.window, 'dshManager', { value: { invoke, subscribe: () => () => {}, onShortcut } })
+  const pluginLibrary = { locale: async () => resolveDesktopLocale(locale), backend: { status: async () => ({ phase: 'ready' }) },
+    plugins: { library: async () => ({ active: true, targets: [] }), list: async () => [],
+      catalog: vi.fn(async () => ({ plugins: [], source: 'https://catalog.test/' })) } }
+  Object.defineProperty(dom.window, 'dshManager', { value: { invoke, pluginLibrary, subscribe: () => () => {}, onShortcut } })
+  runInContext(readFileSync(new URL('../renderer/plugin-manager.js', import.meta.url), 'utf8'), dom.getInternalVMContext())
   runInContext(readFileSync(new URL('../renderer/manager.js', import.meta.url), 'utf8'), dom.getInternalVMContext())
   runInContext(readFileSync(new URL('../renderer/manager-sources.js', import.meta.url), 'utf8'), dom.getInternalVMContext())
   runInContext(readFileSync(new URL('../renderer/manager-appearance.js', import.meta.url), 'utf8'), dom.getInternalVMContext())
   runInContext(readFileSync(new URL('../renderer/manager-settings.js', import.meta.url), 'utf8'), dom.getInternalVMContext())
-  return { dom, invoke, settings, snapshot, shortcut: (action: string) => { onShortcut.mock.calls[0]![0](action) } }
+  return { dom, invoke, settings, snapshot, pluginLibrary, shortcut: (action: string) => { onShortcut.mock.calls[0]![0](action) } }
 }
+it('shows packaged kernel updates, preserves manual mode, and locks unsupported legacy settings', async () => {
+  const kernel: KernelStatus = { phase: 'idle', current: '0.2.0-rc.2', automatic: true, restartRequired: false, modernSettings: true }
+  const { dom, invoke } = page(undefined, 'en', false, undefined, kernel)
+  const document = dom.window.document
+  document.querySelector<HTMLButtonElement>('#settings')!.click()
+  await expect.poll(() => document.querySelector('#kernel-status')?.textContent).toContain('0.2.0-rc.2')
+  expect(document.querySelector<HTMLInputElement>('#kernel-automatic')!.checked).toBe(true)
+  expect(document.querySelector<HTMLInputElement>('#dsh-deepseekBaseURL')!.disabled).toBe(true)
+  expect(document.querySelector<HTMLInputElement>('#dsh-deepseekMaxTokens')!.disabled).toBe(false)
+  const automatic = document.querySelector<HTMLInputElement>('#kernel-automatic')!
+  automatic.checked = false
+  automatic.dispatchEvent(new dom.window.Event('change'))
+  await expect.poll(() => kernel.automatic).toBe(false)
+  await expect.poll(() => document.querySelector<HTMLButtonElement>('#kernel-check')!.disabled).toBe(false)
+  document.querySelector<HTMLButtonElement>('#kernel-check')!.click()
+  await expect.poll(() => document.querySelector<HTMLButtonElement>('#kernel-install')!.disabled).toBe(false)
+  expect(kernel.restartRequired).toBe(false)
+  document.querySelector<HTMLButtonElement>('#kernel-install')!.click()
+  await expect.poll(() => document.querySelector('#kernel-status')?.textContent).toContain('Quit and reopen')
+  expect(document.querySelector<HTMLButtonElement>('#kernel-install')!.disabled).toBe(true)
+  expect(invoke.mock.calls.filter(([operation]) => operation === 'kernel').length).toBeLessThan(30)
+})
 it('previews personal colors and text, saves them, and cancels or resets drafts', async () => {
   const { dom, invoke, settings } = page()
   const document = dom.window.document
@@ -119,8 +154,8 @@ it('imports color files into a preview and rejects invalid schemes without chang
   expect(document.documentElement.style.getPropertyValue('--text')).toBe('#abc123')
 })
 
-it('opens the shell library from plugin settings and keeps instance copies separate', async () => {
-  const { dom, invoke, snapshot } = page({ id, name: '<local>', kind: 'local' })
+it('embeds market search and plugin management in settings without opening a library window', async () => {
+  const { dom, invoke, snapshot, pluginLibrary } = page({ id, name: '<local>', kind: 'local' })
   snapshot.packaged = true
   const document = dom.window.document
   await expect.poll(() => document.querySelector('#plugin-instances strong')?.textContent).toBe('<local>')
@@ -129,8 +164,21 @@ it('opens the shell library from plugin settings and keeps instance copies separ
   expect(document.querySelector<HTMLElement>('#settings-pane-plugins')?.hidden).toBe(false)
   expect(document.querySelector('#settings-title')?.textContent).toBe('Plugins')
   expect(document.querySelector('#plugin-instances local')).toBeNull()
-  document.querySelector<HTMLButtonElement>('#open-plugin-library')!.click()
-  await expect.poll(() => invoke.mock.calls.some(([operation]) => operation === 'pluginLibrary')).toBe(true)
+  await expect.poll(() => document.querySelector('#library-catalog-status')?.textContent).toContain('0 matching')
+  expect(document.querySelector('.plugin-discovery #library-search-query')).not.toBeNull()
+  expect(document.querySelector('.plugin-management #library-plugins')).not.toBeNull()
+  expect(document.querySelector('.plugin-management #plugin-instances')).not.toBeNull()
+  expect(document.querySelector('#open-plugin-library')).toBeNull()
+  expect(document.querySelector('#library-description')).toBeNull()
+  expect(document.querySelector('#library-market-integration')).toBeNull()
+  expect(document.querySelector('[data-copy=pluginInstancesHint]')).toBeNull()
+  const ids = [...document.querySelectorAll('[id]')].map(node => node.id)
+  expect(new Set(ids).size).toBe(ids.length)
+  const refreshed = new Promise<void>((resolve) => { document.addEventListener('manager-rendered', () => { resolve() }, { once: true }) })
+  document.querySelector<HTMLButtonElement>('[data-settings-tab=general]')!.click()
+  document.querySelector<HTMLButtonElement>('[data-settings-tab=plugins]')!.click()
+  await refreshed
+  expect(pluginLibrary.plugins.catalog).toHaveBeenCalledOnce()
   expect(invoke.mock.calls.some(([operation]) => operation === 'open')).toBe(false)
   expect(document.querySelectorAll<HTMLButtonElement>('#plugin-instances button')[1]?.disabled).toBe(true)
 })

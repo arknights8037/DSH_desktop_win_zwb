@@ -68,6 +68,15 @@ it('rejects incompatible peers only when the plugin is enabled', () => {
   expect(() =>{  validateDesktopPluginGraph(profile, dsh, runtime, ['plugin']) }).toThrow(/found 1.0.0/u)
   expect(() =>{  validateDesktopPluginGraph(profile, dsh, runtime, []) }).not.toThrow()
 })
+it('admits prerelease host peers while rejecting incompatible declared versions', () => {
+  const { dsh, profile } = fixture()
+  const runtime = runtimeFixture(dsh, '0.2.1-rc.2')
+  linkDesktopHostPackages(profile, dsh, runtime)
+  writePackage(join(profile, 'node_modules'), 'plugin', { peerDependencies: { '@deepseek-ai/dsh': '>=0.2.0-rc.2 <0.3.0-0' } })
+  expect(() =>{  validateDesktopPluginGraph(profile, dsh, runtime, ['plugin']) }).not.toThrow()
+  writePackage(join(profile, 'node_modules'), 'plugin', { peerDependencies: { '@deepseek-ai/dsh': '>=0.3.0' } })
+  expect(() =>{  validateDesktopPluginGraph(profile, dsh, runtime, ['plugin']) }).toThrow('requires @deepseek-ai/dsh@>=0.3.0')
+})
 it('refuses to satisfy a plugin dependency from an ancestor CLI project', () => {
   const { root, dsh, runtime, profile } = fixture()
   writePackage(join(root, 'node_modules'), 'ambient')

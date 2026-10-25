@@ -8,60 +8,7 @@
     <link rel="stylesheet" href="plugin-manager.css">
   </head>
   <body>
-    <main>
-      <header>
-        <div>
-          <h1 id="title"></h1>
-          <p id="description"></p>
-        </div>
-        <button id="refresh" class="quiet" type="button"></button>
-      </header>
-      <section id="recovery" hidden>
-        <p id="recovery-description"></p>
-        <p id="startup-error" role="alert"></p>
-        <button id="retry" type="button"></button>
-        <button id="disable-all" type="button"></button>
-      </section>
-      <section id="library-target" hidden><label id="target-label" for="target-instance"></label><select id="target-instance"></select><p id="target-hint"></p></section>
-      <form id="install-form">
-        <label id="package-label" for="package-spec"></label>
-        <div class="install-row">
-          <input id="package-spec" name="package-spec" autocomplete="off" placeholder="@scope/plugin@1.2.3" required>
-          <button id="install" type="submit"></button>
-        </div>
-      </form>
-      <p id="status" role="status" aria-live="polite"></p>
-      <section id="install-plan" aria-labelledby="plan-heading" hidden>
-        <h2 id="plan-heading" tabindex="-1"></h2>
-        <p id="plan-description"></p>
-        <dl id="plan-fields"></dl>
-        <p id="plan-blockers" role="alert"></p>
-        <p id="permission-notice"></p>
-        <p id="backup-notice"></p>
-        <div class="package-actions">
-          <button id="confirm-install" type="button"></button>
-          <button id="cancel-install" class="quiet" type="button"></button>
-        </div>
-      </section>
-      <section aria-labelledby="installed-heading">
-        <h2 id="installed-heading"></h2>
-        <ul id="plugins"></ul>
-        <p id="empty"></p>
-      </section>
-      <section id="market" aria-labelledby="catalog-heading">
-        <header><h2 id="catalog-heading"></h2><button id="catalog-refresh" class="quiet" type="button"></button></header>
-        <p id="catalog-source"></p>
-        <p id="market-integration"></p>
-        <form id="catalog-search" class="install-row">
-          <div class="search-field"><label id="search-label" for="search-query"></label><input id="search-query" type="search" autocomplete="off"></div>
-          <div><label id="category-label" for="search-category"></label><select id="search-category"></select></div>
-          <button id="search-submit" type="submit"></button>
-        </form>
-        <p id="catalog-status" role="status" aria-live="polite"></p>
-        <ul id="catalog"></ul>
-        <button id="catalog-more" class="quiet" type="button" hidden></button>
-      </section>
-    </main>
+    <main data-plugin-window></main>
     <script src="plugin-manager.js"></script>
   </body>
 </html>

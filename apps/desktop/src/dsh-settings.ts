@@ -52,9 +52,14 @@ export function parseDshSettings(input: unknown): DshSettings {
 /**
  * Project software choices into DSH namespaces without replacing unrelated instance fields.
  * @param settings - validated desktop preferences.
+ * @param modern - Kernel uses the 0.2 settings namespaces.
  * @returns namespace edits, applied atomically within each namespace.
  */
-export function dshSettingsEdits(settings: DshSettings): Array<[string, Record<string, unknown>]> {
+export function dshSettingsEdits(settings: DshSettings, modern = false): Array<[string, Record<string, unknown>]> {
+  if (modern) return [
+    ['llm-deepseek', { apiKeyEnv: settings.deepseekKeyRef, maxTokens: settings.deepseekMaxTokens }],
+    ['agent-default-model', { reasoningEffort: settings.reasoningEffort }],
+  ]
   return [
     ['ui-chat', { transcriptView: settings.transcriptView }],
     ['agent-presets', { default: settings.defaultPreset, modeSelectionEnabled: settings.modeSelectionEnabled }],

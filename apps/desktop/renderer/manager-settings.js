@@ -6,6 +6,33 @@ let settingsTab = 'general'
 let dshDirty = false
 let shortcutBindings
 let keyGeneration = 0
+let kernelDocument
+let kernelBusy = false
+async function loadKernel() {
+  if (!state.packaged) return
+  kernelDocument = await api.invoke('kernel', { action: 'read' })
+  renderKernel()
+}
+function renderKernel() {
+  const busy = kernelBusy || ['checking', 'installing'].includes(kernelDocument?.phase)
+  $('kernel-check').disabled = !state.packaged || busy
+  $('kernel-install').disabled = !state.packaged || busy || !kernelDocument?.available || kernelDocument?.restartRequired
+  $('kernel-automatic').disabled = !state.packaged || busy
+  if (!kernelDocument) { $('kernel-status').textContent = t('pluginPackagedOnly'); return }
+  $('kernel-automatic').checked = kernelDocument.automatic
+  const phase = { idle: 'kernelIdle', checking: 'kernelChecking', installing: 'kernelInstalling', ready: 'kernelRestart', error: 'kernelError' }
+  $('kernel-status').textContent = `${t('kernelCurrent')}: ${kernelDocument.current}${kernelDocument.available ? ` · ${t('kernelAvailable')}: ${kernelDocument.available}` : ''}\n${t(phase[kernelDocument.phase])}${kernelDocument.message ? `: ${kernelDocument.message}` : ''}`
+}
+async function kernelAction(action) {
+  const automatic = $('kernel-automatic').checked
+  kernelBusy = true
+  renderKernel()
+  try { kernelDocument = await api.invoke('kernel', { action, visible: automatic }) }
+  finally { kernelBusy = false; await loadKernel() }
+}
+$('kernel-check').onclick = () => { void perform(() => kernelAction('check')) }
+$('kernel-install').onclick = () => { void perform(() => kernelAction('install')) }
+$('kernel-automatic').onchange = () => { void perform(() => kernelAction('automatic')) }
 const settingsFields = {
   theme: 'theme', 'font-size': 'fontSize', language: 'language', 'busy-enter': 'busyEnter',
 }
@@ -40,8 +67,10 @@ function renderSettings() {
     $('key-remove').disabled = !credentialState.writable || !credentialState.configured || softwareSaving
   }
   document.querySelectorAll('#dsh-settings-form input, #dsh-settings-form select, #dsh-settings-form button').forEach(node => {
-    node.disabled = !softwareDocument || softwareSaving
+    const legacy = ['transcriptView', 'modeSelectionEnabled', 'defaultPreset', 'deepseekProtocol', 'deepseekBaseURL']
+    node.disabled = !softwareDocument || softwareSaving || kernelDocument?.modernSettings && legacy.includes(node.dataset.dshField)
   })
+  $('kernel-settings-hint').hidden = !kernelDocument?.modernSettings
   if (softwareDocument && !dshDirty) {
     for (const input of document.querySelectorAll('[data-dsh-field]')) {
       const value = softwareDocument.dsh[input.dataset.dshField]
@@ -53,9 +82,9 @@ function renderSettings() {
   renderSources()
   renderPluginSettings()
   renderPersonalAppearance()
+  renderKernel()
 }
 function renderPluginSettings() {
-  $('open-plugin-library').disabled = !state.packaged
   $('plugin-development-hint').hidden = state.packaged
   $('plugin-no-instances').hidden = state.instances.length !== 0
   $('plugin-instances').replaceChildren(...state.instances.map(instance => {
@@ -81,10 +110,22 @@ function renderPluginSettings() {
     return row
   }))
 }
-$('open-plugin-library').onclick = () => { void perform(() => api.invoke('pluginLibrary')) }
+let pluginPanel
+let pluginPanelLoading
+async function loadPluginPanel() {
+  if (!state.packaged) return
+  if (pluginPanelLoading) return pluginPanelLoading
+  pluginPanelLoading = (async () => {
+    if (pluginPanel) return pluginPanel.refresh()
+    pluginPanel = await window.mountPluginManager($('plugin-workspace'), api.pluginLibrary, 'library-')
+    $('plugin-workspace').querySelector('.plugin-management').append($('plugin-deployments'))
+  })().finally(() => { pluginPanelLoading = undefined })
+  return pluginPanelLoading
+}
 $('plugin-add-instance').onclick = () => { void perform(showManager) }
 async function loadSoftwareSettings() {
   softwareDocument = await settingsCall('read')
+  await loadKernel()
   setShellTheme(softwareDocument.appearance.theme)
   setShellPersonalAppearance(personalDirty ? personalDraft : softwareDocument.personalization)
   const refs = new Set(['DEEPSEEK_API_KEY', ...softwareDocument.credentials])
@@ -95,6 +136,7 @@ async function loadSoftwareSettings() {
 function selectSettingsTab(tab) {
   if (settingsTab !== tab) document.querySelector('.settings-content').scrollTop = 0
   settingsTab = tab
+  document.querySelector('.settings-body').classList.toggle('settings-body-plugins', tab === 'plugins')
   document.querySelectorAll('[data-settings-tab]').forEach(node => {
     const selected = node.dataset.settingsTab === tab
     node.setAttribute('aria-selected', String(selected))
@@ -107,6 +149,7 @@ function selectSettingsTab(tab) {
   $('key-reveal').textContent = t('showSecret')
   renderSettings()
   if (tab === 'keys') void perform(loadCredentialInfo)
+  if (tab === 'plugins') void perform(loadPluginPanel)
 }
 document.querySelectorAll('[data-settings-tab]').forEach(node => {
   node.onclick = () => selectSettingsTab(node.dataset.settingsTab)
@@ -125,6 +168,7 @@ document.querySelectorAll('[data-settings-tab]').forEach(node => {
   }
 })
 document.addEventListener('manager-rendered', renderSettings)
+document.addEventListener('manager-rendered', () => { if (state.packaged) void loadKernel().catch(error => { $('kernel-status').textContent = String(error) }) })
 document.addEventListener('manager-settings-open', event => {
   selectSettingsTab(event.detail.tab || settingsTab)
   void perform(loadSoftwareSettings)

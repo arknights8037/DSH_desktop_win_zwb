@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Harness</title><link rel="stylesheet" href="manager.css"></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Harness</title><link rel="stylesheet" href="manager.css"><link rel="stylesheet" href="plugin-workspace.css"></head>
 <body>
   <header><nav id="tabs" role="tablist"></nav><div class="instance-menu-anchor"><button id="add-tab" class="icon" aria-label="New instance" aria-haspopup="menu" aria-expanded="false">+</button><div id="instance-menu" class="instance-menu" role="menu" hidden><button id="menu-new" class="menu-item" role="menuitem" aria-haspopup="menu" aria-expanded="false"><span data-copy="newInstance"></span><span aria-hidden="true">›</span></button><div id="menu-new-sub" class="menu-sub" role="menu" hidden><button class="menu-item" data-kind="local" role="menuitem" data-copy="local"></button><button class="menu-item" data-kind="ssh" role="menuitem" data-copy="ssh"></button></div><div class="menu-separator" aria-hidden="true"></div><div id="menu-instances"></div></div></div><button id="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 3-.6 2.1-2 .9-2-.6-2 3.4 1.5 1.5v2.4L3.4 14l2 3.5 2-.6 2 .9.6 2.2h4l.6-2.2 2-.9 2 .6 2-3.5-1.5-1.4v-2.4L20.6 8l-2-3.4-2 .6-2-.9L14 3z"/><circle cx="12" cy="11.5" r="3"/></svg><span data-copy="settings"></span></button><div class="window-controls"><button id="window-minimize" class="window-control"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button><button id="window-maximize" class="window-control"><svg class="maximize-symbol" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9"/></svg><svg class="restore-symbol" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 5.5v-3h8v8h-3"/><rect x="2.5" y="5.5" width="8" height="8"/></svg></button><button id="window-close" class="window-control"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button></div></header>
   <main id="panel"><section id="first-run" aria-labelledby="first-run-title"><h2 id="first-run-title" data-copy="firstRunTitle"></h2><div class="choice-grid"><button class="choice-card" data-kind="local"><strong data-copy="localTitle"></strong><span data-copy="localDescription"></span></button><button class="choice-card" data-kind="ssh"><strong data-copy="remoteTitle"></strong><span data-copy="remoteDescription"></span></button></div></section><section id="settings-page" aria-labelledby="settings-title" hidden>
@@ -20,13 +20,14 @@
         <p id="software-status" class="settings-hint" role="status"></p>
         <div id="settings-pane-instances" data-settings-pane="instances" role="tabpanel" aria-labelledby="settings-tab-instances" hidden><p class="settings-hint" data-copy="manageHint"></p><div class="manager-actions"><button id="instance-add" data-copy="add"></button></div><div id="instance-list" class="instance-list"></div><p id="instances-empty" class="settings-hint" data-copy="empty" hidden></p></div>
         <div id="settings-pane-plugins" data-settings-pane="plugins" role="tabpanel" aria-labelledby="settings-tab-plugins" hidden>
-          <p class="settings-hint" data-copy="pluginSettingsHint"></p>
-          <div class="plugin-library-card"><h3 data-copy="pluginLibrary"></h3><p class="settings-hint" data-copy="pluginLibraryHint"></p><button id="open-plugin-library" class="primary" data-copy="openPluginLibrary"></button><p id="plugin-development-hint" class="settings-hint" data-copy="pluginPackagedOnly" hidden></p></div>
-          <h3 data-copy="pluginInstances"></h3><p class="settings-hint" data-copy="pluginInstancesHint"></p>
+          <p id="plugin-development-hint" class="settings-hint" data-copy="pluginPackagedOnly" hidden></p>
+          <div id="plugin-workspace"></div>
+          <div id="plugin-deployments" data-instance-deployments><h3 data-copy="pluginInstances"></h3>
           <div id="plugin-instances" class="instance-list"></div>
-          <div id="plugin-no-instances" hidden><p class="settings-hint" data-copy="pluginNoInstances"></p><button id="plugin-add-instance" data-copy="instances"></button></div>
+          <div id="plugin-no-instances" hidden><p class="settings-hint" data-copy="pluginNoInstances"></p><button id="plugin-add-instance" data-copy="instances"></button></div></div>
         </div>
         <div id="settings-pane-general" data-settings-pane="general" role="tabpanel" aria-labelledby="settings-tab-general">
+          <div class="plugin-library-card"><h3 data-copy="kernelTitle"></h3><p class="settings-hint" data-copy="kernelHint"></p><label class="setting-row"><span data-copy="kernelAutomatic"></span><input id="kernel-automatic" type="checkbox"></label><p id="kernel-status" role="status"></p><button id="kernel-check" data-copy="kernelCheck"></button><button id="kernel-install" data-copy="kernelInstall"></button></div>
           <label class="setting-row"><span><strong data-copy="language"></strong></span><select id="language"><option value="" data-copy="systemTheme"></option><option value="zh" data-copy="chinese"></option><option value="en" data-copy="english"></option></select></label>
           <label class="setting-row"><span><strong data-copy="busyEnter"></strong><small data-copy="busyEnterHint"></small></span><select id="busy-enter"><option value="queue" data-copy="queueMessage"></option><option value="steer" data-copy="steerMessage"></option></select></label>
         </div>
@@ -73,6 +74,7 @@
           <p class="settings-hint" data-copy="dshSettingsHint"></p>
           <p id="dsh-sync-status" role="status" hidden></p>
           <form id="dsh-settings-form">
+            <p id="kernel-settings-hint" class="settings-hint" data-copy="kernelSettingsHint" hidden></p>
             <h3 data-copy="conversationSettings"></h3>
             <label class="setting-row"><span><strong data-copy="transcriptView"></strong></span><select id="dsh-transcriptView" data-dsh-field="transcriptView"><option value="compact" data-copy="compactTranscript"></option><option value="normal" data-copy="normalTranscript"></option></select></label>
             <label class="setting-row"><span><strong data-copy="modeSelectionEnabled"></strong></span><input id="dsh-modeSelectionEnabled" data-dsh-field="modeSelectionEnabled" type="checkbox"></label>
@@ -98,5 +100,6 @@
   <script src="manager.js"></script>
   <script src="manager-sources.js"></script>
   <script src="manager-appearance.js"></script>
+  <script src="plugin-manager.js"></script>
   <script src="manager-settings.js"></script>
 </body></html>

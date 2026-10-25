@@ -1,5 +1,6 @@
 /** Narrow bridge shared by the manager document and its sandboxed preload. */
 import type { InstanceConfig, InstanceId, InstanceStatus, TabState } from './instances.ts'
+import type { DshDesktopApi } from './ipc.ts'
 import type { ManagerMessages } from './manager-locale.ts'
 export const MANAGER_CHANNEL = 'dsh-manager:operation'
 export const MANAGER_SHORTCUT = 'dsh-manager:shortcut'
@@ -16,9 +17,10 @@ export interface ManagerSnapshot {
   maximized: boolean
 }
 /** Closed operation names; main validates every payload and instance ID. */
-export type ManagerOperation = 'snapshot' | 'window' | 'pluginLibrary' | 'softwareSettings' | 'shortcuts' | 'shortcutCapture' | 'rename' | 'save' | 'remove' | 'open' | 'close' | 'disconnect' | 'stop' | 'restart' | 'logs' | 'plugins' | 'disablePlugins' | 'reset' | 'overlay'
+export type ManagerOperation = 'snapshot' | 'window' | 'kernel' | 'softwareSettings' | 'shortcuts' | 'shortcutCapture' | 'rename' | 'save' | 'remove' | 'open' | 'close' | 'disconnect' | 'stop' | 'restart' | 'logs' | 'plugins' | 'disablePlugins' | 'reset' | 'overlay'
 /** Only the local manager document receives this bridge. */
 export interface ManagerApi {
+  readonly pluginLibrary: Pick<DshDesktopApi, 'locale' | 'plugins' | 'backend'>
   invoke(operation: ManagerOperation,
     payload?: {
       id?: InstanceId

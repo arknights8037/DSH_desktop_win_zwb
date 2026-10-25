@@ -159,7 +159,7 @@ export async function inspectPluginInstall(
   const requirements: DesktopPluginRequirement[] = []
   const compare = (name: string, range: unknown, actual: string | undefined): void => {
     const status = typeof range !== 'string' || validRange(range) === null || actual === undefined
-      ? 'unknown' : satisfies(actual, range) ? 'compatible' : 'incompatible'
+      ? 'unknown' : satisfies(actual, range, { includePrerelease: true }) ? 'compatible' : 'incompatible'
     requirements.push({ name, range: typeof range === 'string' ? range : '(invalid)', status, ...(actual === undefined ? {} : { actual }) })
   }
   if (record(manifest.engines)) {
