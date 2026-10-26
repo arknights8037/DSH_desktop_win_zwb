@@ -12,6 +12,12 @@ updates:
       timezone: "Asia/Shanghai"
     cooldown:
       default-days: 30
+    open-pull-requests-limit: 1
+    groups:
+      npm-dependencies:
+        applies-to: version-updates
+        patterns:
+          - "*"
     labels:
       - "kind/dependency"
       - "area/infra"
@@ -24,6 +30,12 @@ updates:
       timezone: "Asia/Shanghai"
     cooldown:
       default-days: 30
+    open-pull-requests-limit: 1
+    groups:
+      python-dependencies:
+        applies-to: version-updates
+        patterns:
+          - "*"
     labels:
       - "kind/dependency"
       - "area/infra"
@@ -36,6 +48,12 @@ updates:
       timezone: "Asia/Shanghai"
     cooldown:
       default-days: 30
+    open-pull-requests-limit: 1
+    groups:
+      github-actions:
+        applies-to: version-updates
+        patterns:
+          - "*"
     labels:
       - "kind/dependency"
       - "area/infra"
