@@ -8,6 +8,17 @@ let shortcutBindings
 let keyGeneration = 0
 let kernelDocument
 let kernelBusy = false
+let storageDocument
+let storageLoading = false
+const storageLabels = { manager: 'storageManager', instances: 'storageInstances', cache: 'storageCache', plugins: 'storagePlugins' }
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 1024) return `${Number.isFinite(bytes) ? Math.max(0, Math.trunc(bytes)) : 0} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let value = bytes
+  let unit = -1
+  do { value /= 1024; unit++ } while (value >= 1024 && unit < units.length - 1)
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`
+}
 async function loadKernel() {
   if (!state.packaged) return
   kernelDocument = await api.invoke('kernel', { action: 'read' })
@@ -83,6 +94,60 @@ function renderSettings() {
   renderPluginSettings()
   renderPersonalAppearance()
   renderKernel()
+  renderStorage()
+}
+function renderStorage() {
+  const ready = storageDocument !== undefined && !storageLoading
+  $('storage-total').textContent = ''
+  $('storage-list').replaceChildren()
+  $('storage-instances').replaceChildren()
+  $('storage-empty').hidden = !ready || storageDocument.instances.length !== 0
+  if (!ready) {
+    $('storage-total').textContent = storageLoading ? t('storageLoading') : t('storageUnavailable')
+    return
+  }
+  const total = document.createElement('strong')
+  total.textContent = formatBytes(storageDocument.totals.total)
+  const hint = document.createElement('span')
+  hint.textContent = `${t('storageTotal')} · ${storageDocument.root}`
+  $('storage-total').append(total, hint)
+  for (const [category, bytes] of Object.entries(storageDocument.totals)) {
+    if (category === 'total') continue
+    const row = document.createElement('article')
+    row.className = 'storage-row'
+    const copy = document.createElement('div')
+    const name = document.createElement('strong')
+    name.textContent = t(storageLabels[category])
+    const size = document.createElement('small')
+    size.textContent = formatBytes(bytes)
+    copy.append(name, size)
+    const action = document.createElement('button')
+    action.textContent = t('storageOpen')
+    action.onclick = () => { void perform(() => api.invoke('storage', { action: 'open', input: category })) }
+    row.append(copy, action)
+    $('storage-list').append(row)
+  }
+  for (const instance of storageDocument.instances) {
+    const row = document.createElement('article')
+    row.className = 'instance-row'
+    const summary = document.createElement('div')
+    summary.className = 'instance-summary'
+    const name = document.createElement('strong')
+    name.textContent = instance.name
+    const details = document.createElement('span')
+    details.className = 'instance-details'
+    details.textContent = `${formatBytes(instance.bytes)} · ${instance.path}`
+    summary.append(name, details)
+    const action = button('storageOpen', () => api.invoke('storage', { action: 'open', input: 'instances' }))
+    row.append(summary, action)
+    $('storage-instances').append(row)
+  }
+}
+async function loadStorage() {
+  storageLoading = true
+  renderStorage()
+  try { storageDocument = await api.invoke('storage', { action: 'read' }) }
+  finally { storageLoading = false; renderStorage() }
 }
 function renderPluginSettings() {
   $('plugin-development-hint').hidden = state.packaged
@@ -150,6 +215,7 @@ function selectSettingsTab(tab) {
   renderSettings()
   if (tab === 'keys') void perform(loadCredentialInfo)
   if (tab === 'plugins') void perform(loadPluginPanel)
+  if (tab === 'storage') void perform(loadStorage)
 }
 document.querySelectorAll('[data-settings-tab]').forEach(node => {
   node.onclick = () => selectSettingsTab(node.dataset.settingsTab)

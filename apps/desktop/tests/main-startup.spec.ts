@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -226,6 +226,22 @@ it('focuses an existing tab and retains its loaded view', async () => {
   expect(harness.View.all).toHaveLength(1)
   expect(harness.Local.all[0]!.connect).toHaveBeenCalledTimes(1)
   expect((await invoke('snapshot') as ManagerSnapshot).tabs.ids).toEqual([item.id])
+})
+
+it('removes a local instance home only when deletion is requested', async () => {
+  const item = await create('A')
+  const home = join(harness.root, 'agent-manager', 'instances', item.id)
+  mkdirSync(home, { recursive: true })
+  writeFileSync(join(home, 'owned.txt'), 'fixture')
+  await invoke('remove', { id: item.id })
+  expect(existsSync(join(home, 'owned.txt'))).toBe(true)
+  const retained = await create('Retained')
+  const retainedHome = join(harness.root, 'agent-manager', 'instances', retained.id)
+  mkdirSync(retainedHome, { recursive: true })
+  writeFileSync(join(retainedHome, 'owned.txt'), 'fixture')
+  await invoke('remove', { id: retained.id, deleteData: true })
+  expect(existsSync(retainedHome)).toBe(false)
+  await expect(invoke('remove', { id: retained.id, deleteData: true })).rejects.toThrow()
 })
 
 it('allows instance main frames to open shell settings without manager authority', async () => {

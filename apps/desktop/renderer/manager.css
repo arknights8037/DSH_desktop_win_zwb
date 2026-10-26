@@ -190,6 +190,19 @@ main > section { margin: auto; flex-shrink: 0; }
 .instance-actions { display: flex; flex: 0 0 auto; gap: 6px; }
 .instance-actions button { padding: 6px 9px; font-size: 12px; }
 .instance-actions .instance-connect { min-width: 52px; }
+.remove-data-option { display: flex; align-items: flex-start; flex-direction: row; gap: 9px; margin: 18px 0 8px; color: var(--text); font-size: 13px; }
+.remove-data-option input { width: 16px; height: 16px; margin: 1px 0 0; accent-color: var(--danger, #b42318); }
+.remove-data-warning { margin: 0 0 18px; color: var(--danger, #b42318); font-size: 12px; line-height: 1.5; }
+dialog .danger { color: #fff; background: var(--danger, #b42318); border-color: var(--danger, #b42318); }
+.storage-total { margin: 20px 0 24px; padding: 18px 20px; color: var(--brand-foreground); background: var(--brand); border-radius: 7px; }
+.storage-total strong { display: block; font-size: 24px; font-weight: 650; }
+.storage-total span { display: block; margin-top: 5px; font-size: 12px; opacity: .86; }
+.storage-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 28px; }
+.storage-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px; background: var(--personal-card, var(--panel)); border: 1px solid var(--line); border-radius: 7px; }
+.storage-row strong { display: block; font-size: 13px; font-weight: 550; }
+.storage-row small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
+.storage-row button { flex: 0 0 auto; padding: 6px 9px; font-size: 11px; }
+#settings-pane-storage h3 { margin: 26px 0 10px; font-size: 15px; font-weight: 550; }
 #instance-state { padding: 100px 30px; color: var(--muted); text-align: center; }
 .state-symbol { color: var(--brand); font-size: 36px; }
 #state-message { max-width: 700px; margin: 15px auto 25px; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -278,6 +291,7 @@ main[data-page="settings"] { display: block; padding: 0; overflow: hidden; }
   .shortcut-row { align-items: stretch; flex-direction: column; gap: 10px; }
   .shortcut-row input { width: 100%; }
   .secret-input { flex-wrap: wrap; }
+  .storage-list { grid-template-columns: 1fr; }
 }
 .setting-row input:not([type="checkbox"]) { width: 300px; max-width: 100%; flex-shrink: 0; }
 .setting-row input[type="checkbox"] { width: 18px; height: 18px; margin: 0 12px 0 0; accent-color: var(--brand); }

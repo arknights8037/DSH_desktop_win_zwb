@@ -122,6 +122,7 @@ export function ConversationContent({
 
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pendingWorkspaceId, setPendingWorkspaceId] = useState<WorkspaceId | undefined>()
+  const [workspaceFailure, setWorkspaceFailure] = useState<{ id: WorkspaceId; reason: string } | undefined>()
   const pickerAnchor = useRef<HTMLButtonElement>(null)
 
   // Publishes the two live measurements floating View chrome reads off the
@@ -168,6 +169,16 @@ export function ConversationContent({
   const zone: InputZone | undefined =
     session === undefined || inputState === undefined ? undefined : { session, input: inputState }
 
+  const openSelectedWorkspace = useCallback((workspaceId: WorkspaceId): void => {
+    setPickerOpen(false)
+    setPendingWorkspaceId(workspaceId)
+    setWorkspaceFailure(undefined)
+    void selectWorkspace(workspaceId).catch((reason: unknown) => {
+      setPendingWorkspaceId(current => current === workspaceId ? undefined : current)
+      setWorkspaceFailure({ id: workspaceId, reason: reason instanceof Error ? reason.message : String(reason) })
+    })
+  }, [selectWorkspace])
+
   // The chip is a selector; label resolution walks the flow top-down:
   //   1. a just-picked workspace (pending) → its title;
   //   2. cold start, no session yet → placeholder ("Choose workspace");
@@ -197,16 +208,17 @@ export function ConversationContent({
         open: pickerOpen,
         anchorRef: pickerAnchor,
         selectedId: pendingWorkspaceId ?? sessionWorkspace?.workspaceId,
-        onPick: (workspaceId) => {
-          setPickerOpen(false)
-          setPendingWorkspaceId(workspaceId)
-          void selectWorkspace(workspaceId).catch(() => {
-            setPendingWorkspaceId(current => current === workspaceId ? undefined : current)
-          })
-        },
+        onPick: openSelectedWorkspace,
         onClose: () => { setPickerOpen(false) },
       })}
       {renderSlot('conversation.hero.agentPreset', {})}
+    </div>
+  )
+
+  const workspaceError = workspaceFailure === undefined ? undefined : (
+    <div className={css.workspaceError} role="alert">
+      <span>{t('workspace.openFailed', { reason: workspaceFailure.reason })}</span>
+      <button type="button" onClick={() => { openSelectedWorkspace(workspaceFailure.id) }}>{t('workspace.retry')}</button>
     </div>
   )
 
@@ -241,6 +253,7 @@ export function ConversationContent({
     <div className={clsx(css.composerStack, hero && css.composerHero)}>
       {hero && <HeroShell t={t} renderSlot={renderSlot} />}
       {hero && heroWorkspaceRow}
+      {hero && workspaceError}
       {zone !== undefined && renderSlot('conversation.input.dock', zone)}
       {inputBar}
     </div>

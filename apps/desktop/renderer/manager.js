@@ -158,14 +158,30 @@ function renderInstanceManager() {
     const connect = button('open', () => open(instance), 'primary')
     connect.classList.add('instance-connect')
     const editButton = button('edit', () => edit(instance))
-    const removeButton = button('remove', async () => {
-      if (!window.confirm(t('removeConfirm'))) return
-      await api.invoke('remove', { id: instance.id })
-    })
+    const removeButton = button('remove', () => removeInstance(instance))
+    removeButton.classList.add('instance-remove')
     actions.append(connect, editButton, removeButton)
     row.append(summary, actions)
     list.append(row)
   }
+}
+async function removeInstance(instance) {
+  const removeDialog = $('remove-dialog')
+  const deleteData = $('remove-data')
+  const local = instance.kind === 'local'
+  $('remove-prompt').textContent = local ? t('removeConfirm') : t('removeDataPrompt')
+  $('remove-data-label').hidden = !local
+  $('remove-data-warning').hidden = true
+  $('remove-confirm').textContent = t('removeDataConfirm')
+  deleteData.checked = false
+  deleteData.onchange = () => { $('remove-data-warning').hidden = !deleteData.checked }
+  await api.invoke('overlay', { visible: true })
+  const choice = await new Promise(resolve => {
+    removeDialog.addEventListener('close', () => resolve(removeDialog.returnValue), { once: true })
+    removeDialog.showModal()
+  })
+  if (choice !== 'remove') return
+  await api.invoke('remove', { id: instance.id, deleteData: local && deleteData.checked })
 }
 function render() {
   document.title = t('title')
@@ -336,7 +352,12 @@ $('credential-form').onsubmit = event => {
 $('edit-cancel').onclick = () => $('editor').close()
 $('credential-cancel').onclick = () => $('credentials').close()
 $('log-close').onclick = () => $('log-dialog').close()
-for (const id of ['editor', 'credentials', 'log-dialog']) $(id).addEventListener('close', () => {
+$('remove-form').onsubmit = event => {
+  event.preventDefault()
+  $('remove-dialog').close('remove')
+}
+$('remove-cancel').onclick = () => $('remove-dialog').close('cancel')
+for (const id of ['editor', 'credentials', 'log-dialog', 'remove-dialog']) $(id).addEventListener('close', () => {
   $('secret').value = ''
   void perform(restoreOverlay)
 })

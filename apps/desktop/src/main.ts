@@ -1,10 +1,11 @@
 /** Electron manager owns tab views and independently scoped local/SSH runtimes. */
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow, WebContentsView, dialog, ipcMain, Menu, net, protocol, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import { resolveDesktopPaths } from './paths.ts'
+import { removeOwnedDirectoryAsync } from './owned-directory.ts'
 import { InstanceRegistry, instanceId, parseCredentials, parseInstance, type InstanceId } from './instances.ts'
 import { InstanceService } from './instance-service.ts'
 import { LocalInstance } from './local-instance.ts'
@@ -68,8 +69,27 @@ function text(value: unknown): string {
   return value
 }
 
+/** Return the size of a desktop-owned directory without following symlinks. */
+async function directoryBytes(path: string, excludedNames: ReadonlySet<string> = new Set()): Promise<number> {
+  try {
+    const entries = await readdir(path, { withFileTypes: true })
+    let total = 0
+    for (const entry of entries) {
+      if (excludedNames.has(entry.name)) continue
+      const child = join(path, entry.name)
+      if (entry.isDirectory()) total += await directoryBytes(child)
+      else if (entry.isFile()) total += (await stat(child)).size
+    }
+    return total
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return 0
+    throw error
+  }
+}
+
 async function main(): Promise<void> {
-  const root = join(resolveDesktopPaths().root, 'agent-manager')
+  const desktopPaths = resolveDesktopPaths()
+  const root = join(desktopPaths.root, 'agent-manager')
   const registry = new InstanceRegistry(join(root, 'instances.json'))
   const software = new SoftwareSettings(join(root, 'software-settings.json'), {
     available: () => safeStorage.isEncryptionAvailable(),
@@ -475,6 +495,38 @@ async function main(): Promise<void> {
       publish()
       return softwareSnapshot()
     }
+    if (operation === 'storage') {
+      const action = args.action ?? 'read'
+      if (action === 'open') {
+        const category = text(args.input)
+        const paths: Record<string, string> = {
+          manager: root,
+          instances: join(root, 'instances'),
+          cache: desktopPaths.pnpm.cache,
+          plugins: join(root, 'plugin-library'),
+        }
+        const path = paths[category]
+        if (path === undefined) throw new Error('Unknown storage category')
+        const failure = await shell.openPath(path)
+        if (failure) throw new Error(failure)
+        return
+      }
+      if (action !== 'read') throw new Error('Unsupported storage operation')
+      const [managerBytes, instanceBytes, cacheBytes, pluginBytes] = await Promise.all([
+        directoryBytes(root, new Set(['instances', 'plugin-library'])), directoryBytes(join(root, 'instances')),
+        directoryBytes(desktopPaths.pnpm.cache), directoryBytes(join(root, 'plugin-library')),
+      ])
+      const instances = await Promise.all(registry.snapshot().instances.filter(item => item.kind === 'local').map(async item => ({
+        id: item.id, name: item.name, path: join(root, 'instances', item.id),
+        bytes: await directoryBytes(join(root, 'instances', item.id)),
+      })))
+      return {
+        root,
+        totals: { manager: managerBytes, instances: instanceBytes, cache: cacheBytes, plugins: pluginBytes,
+          total: managerBytes + instanceBytes + cacheBytes + pluginBytes },
+        instances,
+      }
+    }
     if (operation === 'shortcutCapture') { shortcutCapture = args.visible === true; return }
     if (operation === 'shortcuts') { if (args.action === 'reset') software.shortcuts(DEFAULT_SHORTCUTS); else if (args.bindings !== undefined) software.shortcuts(args.bindings); shortcuts = software.snapshot().shortcuts; return shortcuts }
     const id = instanceId(args.id)
@@ -494,7 +546,17 @@ async function main(): Promise<void> {
       case 'restart': destroyView(id); await service.stopInstance(registry.get(id), parseCredentials(args.credentials)); await openView(id, args.credentials); break
       case 'remove':
         mutations.add(id)
-        try { destroyView(id); pluginWindows.get(id)?.close(); await service.forget(id); locals.delete(id); registry.remove(id) }
+        try {
+          const config = registry.get(id)
+          if (args.deleteData !== undefined && typeof args.deleteData !== 'boolean') throw new Error('Invalid delete-data option')
+          if (args.deleteData === true && config.kind !== 'local') throw new Error('Remote instance data cannot be deleted from this device')
+          destroyView(id)
+          pluginWindows.get(id)?.close()
+          await service.forget(id)
+          locals.delete(id)
+          if (args.deleteData === true) await removeOwnedDirectoryAsync(join(root, 'instances', id))
+          registry.remove(id)
+        }
         finally { mutations.delete(id) }
         break
       case 'logs': return service.logs(id)

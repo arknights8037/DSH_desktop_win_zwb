@@ -17,7 +17,7 @@ export interface ManagerSnapshot {
   maximized: boolean
 }
 /** Closed operation names; main validates every payload and instance ID. */
-export type ManagerOperation = 'snapshot' | 'window' | 'kernel' | 'softwareSettings' | 'shortcuts' | 'shortcutCapture' | 'rename' | 'save' | 'remove' | 'open' | 'close' | 'disconnect' | 'stop' | 'restart' | 'logs' | 'plugins' | 'disablePlugins' | 'reset' | 'overlay'
+export type ManagerOperation = 'snapshot' | 'window' | 'kernel' | 'softwareSettings' | 'storage' | 'shortcuts' | 'shortcutCapture' | 'rename' | 'save' | 'remove' | 'open' | 'close' | 'disconnect' | 'stop' | 'restart' | 'logs' | 'plugins' | 'disablePlugins' | 'reset' | 'overlay'
 /** Only the local manager document receives this bridge. */
 export interface ManagerApi {
   readonly pluginLibrary: Pick<DshDesktopApi, 'locale' | 'plugins' | 'backend'>
@@ -31,6 +31,7 @@ export interface ManagerApi {
       bindings?: unknown
       credentials?: unknown
       visible?: boolean
+      deleteData?: boolean
     }): Promise<unknown>
   onShortcut(listener: (action: string) => void): () => void
   subscribe(listener: () => void): () => void

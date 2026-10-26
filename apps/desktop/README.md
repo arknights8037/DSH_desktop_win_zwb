@@ -93,9 +93,11 @@ A lost SSH connection reports unknown remote process state. Reconnecting checks 
 | Disconnect | Detach the view; process continues | Close the tunnel; process state becomes unknown |
 | Stop | Stop the selected Host | Stop the owned tmux session over SSH |
 | Exit manager | Confirm and stop local Hosts | Disconnect; remote work continues |
-| Remove configuration | Stop Host and retain data | Forget connection and retain remote process/data |
+| Remove configuration | Stop Host and retain data by default; select **Delete all local instance data** to remove its home | Forget connection; remote process and data remain |
 
 The registry and tab layout live at `$DSH_HOME/desktop/agent-manager/instances.json`; software preferences and encrypted model keys live beside it in `software-settings.json`. Local homes are `$DSH_HOME/desktop/agent-manager/instances/<id>`; each contains its own reserved `profiles/desktop`. Browser partitions are keyed by instance ID. Restored tabs connect on selection, and SSH credentials must be re-entered after application exit.
+
+**Settings → Storage** shows the space used by manager settings, local instance homes, the package cache, and the plugin library. It can open each directory in the operating-system file manager. Removing a local instance retains its home unless you select **Delete all local instance data** in the confirmation dialog; that option permanently removes conversations, settings, plugins, and files in the instance home. Remote instance data cannot be deleted from this device.
 
 Remote process survival covers manager exit and SSH loss, not server reboot or administrator-enforced session cleanup. Do not delete an instance's data directory while its process is running.
 

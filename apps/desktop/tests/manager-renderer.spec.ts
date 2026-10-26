@@ -18,7 +18,7 @@ function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTab
   onTestFinished(() => { dom.window.close() })
   Object.defineProperty(dom.window, 'structuredClone', { value: structuredClone })
   dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
-  dom.window.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new dom.window.Event('close')) }
+  dom.window.HTMLDialogElement.prototype.close = function (returnValue = '') { this.returnValue = returnValue; this.open = false; this.dispatchEvent(new dom.window.Event('close')) }
   const instances = config ? Array.isArray(config) ? config : [config] : []
   const snapshot: ManagerSnapshot = { instances, tabs: { ids: openTabs ? instances.map(item => item.id) : [], active: openTabs ? instances.at(-1)!.id : null }, statuses: Object.fromEntries(instances.map(item => [item.id, { process: 'unknown', connection: 'disconnected' }])), messages: managerMessages(locale), packaged: kernel !== undefined, maximized: false }
   const settings = { revision: 0, appearance: { theme: theme || 'system', fontSize: 14, language: '', busyEnter: 'queue' },
@@ -33,6 +33,7 @@ function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTab
     input?: Record<string, unknown>
     bindings?: Record<string, string>
     visible?: boolean
+    deleteData?: boolean
   }) => {
     if (operation === 'snapshot') return snapshot
     if (operation === 'kernel' && kernel) {
@@ -40,6 +41,14 @@ function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTab
       if (payload?.action === 'check') kernel.available = '0.2.1-rc.2'
       if (payload?.action === 'install') { kernel.phase = 'ready'; kernel.restartRequired = true }
       return { ...kernel }
+    }
+    if (operation === 'storage') {
+      if (payload?.action === 'read') return {
+        root: 'C:/dsh/desktop/agent-manager',
+        totals: { manager: 1024, instances: 2048, cache: 4096, plugins: 512, total: 7680 },
+        instances: [{ id, name: 'Local', path: 'C:/dsh/desktop/agent-manager/instances/aabbccdd-1234-4321-8123-123456789012', bytes: 2048 }],
+      }
+      return undefined
     }
     if (operation === 'save') return { id }
     if (operation === 'rename') snapshot.instances = snapshot.instances.map(item => item.id === payload?.id ? { ...item, name: payload.name! } : item)
@@ -85,6 +94,42 @@ function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTab
   runInContext(readFileSync(new URL('../renderer/manager-settings.js', import.meta.url), 'utf8'), dom.getInternalVMContext())
   return { dom, invoke, settings, snapshot, pluginLibrary, shortcut: (action: string) => { onShortcut.mock.calls[0]![0](action) } }
 }
+
+it('confirms local instance removal and optionally deletes its data', async () => {
+  const { dom, invoke } = page({ id, name: 'Local', kind: 'local' })
+  const document = dom.window.document
+  await expect.poll(() => document.querySelector('.instance-row')).not.toBeNull()
+  document.querySelector<HTMLButtonElement>('#settings')!.click()
+  document.querySelector<HTMLButtonElement>('[data-settings-tab=instances]')!.click()
+  await expect.poll(() => document.querySelector<HTMLButtonElement>('.instance-remove')).not.toBeNull()
+  document.querySelector<HTMLButtonElement>('.instance-remove')!.click()
+  await expect.poll(() => document.querySelector<HTMLDialogElement>('#remove-dialog')!.open).toBe(true)
+  expect(document.querySelector<HTMLInputElement>('#remove-data')!.checked).toBe(false)
+  expect(document.querySelector<HTMLElement>('#remove-data-warning')!.hidden).toBe(true)
+  document.querySelector<HTMLInputElement>('#remove-data')!.click()
+  expect(document.querySelector<HTMLElement>('#remove-data-warning')!.hidden).toBe(false)
+  document.querySelector<HTMLFormElement>('#remove-form')!.requestSubmit()
+  await expect.poll(() => invoke.mock.calls.some(([operation, payload]) => operation === 'remove' && payload?.id === id && payload.deleteData === true)).toBe(true)
+})
+
+it('does not offer local data deletion for remote instances and cancel does not remove them', async () => {
+  const remote = { id, name: 'Remote', kind: 'ssh' as const, host: 'example.test', port: 22, username: 'user', auth: 'password' as const, privateKeyPath: '', executable: 'dsh', home: '' }
+  const { dom, invoke } = page(remote)
+  const document = dom.window.document
+  await expect.poll(() => document.querySelector('.instance-row')).not.toBeNull()
+  document.querySelector<HTMLButtonElement>('#settings')!.click()
+  document.querySelector<HTMLButtonElement>('[data-settings-tab=instances]')!.click()
+  await expect.poll(() => document.querySelector<HTMLButtonElement>('.instance-remove')).not.toBeNull()
+  document.querySelector<HTMLButtonElement>('.instance-remove')!.click()
+  await expect.poll(() => document.querySelector<HTMLDialogElement>('#remove-dialog')!.open).toBe(true)
+  expect(document.querySelector<HTMLElement>('#remove-data-label')!.hidden).toBe(true)
+  invoke.mockClear()
+  document.querySelector<HTMLButtonElement>('#remove-cancel')!.click()
+  await expect.poll(() => document.querySelector<HTMLDialogElement>('#remove-dialog')!.open).toBe(false)
+  await expect.poll(() => invoke.mock.calls.some(([operation]) => operation === 'overlay')).toBe(true)
+  expect(invoke).toHaveBeenCalledWith('overlay', { visible: true })
+  expect(invoke.mock.calls.some(([operation]) => operation === 'remove')).toBe(false)
+})
 it('shows packaged kernel updates, preserves manual mode, and locks unsupported legacy settings', async () => {
   const kernel: KernelStatus = { phase: 'idle', current: '0.2.0-rc.2', automatic: true, restartRequired: false, modernSettings: true }
   const { dom, invoke } = page(undefined, 'en', false, undefined, kernel)
@@ -136,6 +181,18 @@ it('previews personal colors and text, saves them, and cancels or resets drafts'
   expect(settings.personalization.colors.text).toBe('#123456')
   document.querySelector<HTMLButtonElement>('#appearance-revert')!.click()
   expect(document.documentElement.style.getPropertyValue('--text')).toBe('#123456')
+})
+
+it('shows storage usage and opens a selected storage directory', async () => {
+  const { dom, invoke } = page({ id, name: 'Local', kind: 'local' })
+  const document = dom.window.document
+  document.querySelector<HTMLButtonElement>('#settings')!.click()
+  document.querySelector<HTMLButtonElement>('[data-settings-tab=storage]')!.click()
+  await expect.poll(() => document.querySelector('#storage-total strong')?.textContent).toBe('7.5 KB')
+  expect(document.querySelectorAll('#storage-list .storage-row')).toHaveLength(4)
+  expect(document.querySelector('#storage-instances .instance-summary strong')?.textContent).toBe('Local')
+  document.querySelector<HTMLButtonElement>('#storage-list .storage-row button')!.click()
+  await vi.waitFor(() => { expect(invoke).toHaveBeenCalledWith('storage', { action: 'open', input: 'manager' }) })
 })
 
 it('imports color files into a preview and rejects invalid schemes without changing saved colors', async () => {

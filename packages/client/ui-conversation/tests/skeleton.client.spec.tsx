@@ -583,7 +583,8 @@ describe('ConversationRoot resident composer', () => {
   })
 
   it('rolls the pending workspace label back when switching fails', async () => {
-    const selectWorkspace = vi.fn(async () => { throw new Error('connect failed') })
+    const selectWorkspace = vi.fn<(id: WorkspaceId) => Promise<void>>()
+      .mockRejectedValueOnce(new Error('connect failed')).mockResolvedValue(undefined)
     const b = mount(
       sessionSnapshotOf({ blank: true }),
       [
@@ -598,6 +599,12 @@ describe('ConversationRoot resident composer', () => {
     expect(selectWorkspace).toHaveBeenCalledWith(wid('second'))
     expect(b.view.queryByText('Selected Folder')).toBeNull()
     expect(b.view.getByText('one')).toBeTruthy()
+    expect(b.view.getByRole('alert').textContent).toContain('connect failed')
+    expect(b.view.getByRole('button', { name: '重试打开工作区' })).toBeTruthy()
+    await act(async () => { fireEvent.click(b.view.getByRole('button', { name: '重试打开工作区' })); await Promise.resolve() })
+    expect(selectWorkspace).toHaveBeenCalledTimes(2)
+    expect(selectWorkspace).toHaveBeenLastCalledWith(wid('second'))
+    expect(b.view.queryByRole('alert')).toBeNull()
   })
 
   it('blank session keeps the interactive picker chip (workspace switchable until the first message)', () => {
