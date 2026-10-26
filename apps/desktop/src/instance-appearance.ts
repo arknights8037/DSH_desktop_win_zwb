@@ -1,4 +1,4 @@
-/** Shell-owned presentation of backend documents through DSH semantic color tokens. */
+/** Built-in desktop appearance adapter; kernel files and profile plugins remain independent. */
 import type { PersonalAppearance } from './personal-appearance.ts'
 
 /**
@@ -36,12 +36,34 @@ export function instanceAppearanceCss(value: PersonalAppearance): string {
       for (const key of ['secondary', 'tertiary', 'caption', 'quaternary', 'disable']) tokens[`--dsw-alias-label-${key}`] = colors.muted
     }
     if (image) {
+      // Main and sidebar columns each paint once, including clients without desktop fill tokens.
+      tokens['--dsw-alias-bg-base'] = 'transparent'
       tokens['--dsw-alias-app-fill'] = 'transparent'
       tokens['--dsh-personal-composer-fill'] = 'transparent'
+      for (const name of ['bg-layer-1', 'bg-layer-2', 'bg-module-platform']) tokens[`--dsw-alias-${name}`] = 'transparent'
+      // Floating surfaces must not inherit the transparent document canvas.
+      for (const name of ['--dsw-specific-menu', '--dsw-specific-selector', '--dsw-alias-bg-layer-3']) {
+        tokens[name] = colors.content || (dark ? '#29292d' : '#ffffff')
+      }
+      tokens['--dsh-desktop-popup-fill'] = colors.content || (dark ? '#29292d' : '#ffffff')
     }
     return Object.entries(tokens).map(([key, color]) => `${key}:${color}!important;`).join('')
   }
   // Clearing instance wallpaper prevents a second mask and a differently cropped image.
   const canvas = image ? 'html,body{background:transparent!important;}' : ''
-  return `${canvas}body{--dsh-personal-wallpaper:none!important;${palette(false)}}body[data-ds-dark-theme]{${palette(true)}}`
+  // Slot names survive CSS Module rebuilds and apply to panels mounted after injection.
+  const regions = image ? `
+[data-slot="root"] > * { background: transparent !important; }
+[data-slot="root"] > * > :has(> [data-slot="main"]),
+[data-rightbar-col] { background: var(--dsw-alias-content-fill) !important; }
+[data-slot="root"] > * > :has(> [data-slot="sidebar"]) { background: var(--dsw-specific-sidebar-fill) !important; }
+[data-slot="sidebar"] > *,
+[data-slot="main.conversation"] > * { background: transparent !important; }
+[role="dialog"], [role="menu"], [data-trigger-menu] {
+  --dsw-alias-bg-base: var(--dsh-desktop-popup-fill) !important;
+  --dsw-alias-bg-layer-1: var(--dsh-desktop-popup-fill) !important;
+  --dsw-alias-bg-layer-2: var(--dsh-desktop-popup-fill) !important;
+  --dsw-alias-bg-module-platform: var(--dsh-desktop-popup-fill) !important;
+}` : ''
+  return `${canvas}body{--dsh-personal-wallpaper:none!important;${palette(false)}}body[data-ds-dark-theme]{${palette(true)}}${regions}`
 }

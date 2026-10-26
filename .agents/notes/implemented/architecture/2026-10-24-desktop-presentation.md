@@ -20,6 +20,8 @@ Wallpaper mode gives each shell region one background fill. Nested settings card
 
 Unsaved appearance drafts belong to the desktop main process until saved or canceled. The shell forwards validated previews through its manager-only IPC, and each instance's existing synchronization queue serializes stylesheet replacements. Preview requests do not write software settings or call backend settings APIs. New and reloaded instance views use the current draft; cancel and manager reload restore saved presentation. This keeps the wallpaper visible through the conversation during preview without persisting an unfinished choice.
 
+The built-in appearance adapter belongs to the shell distribution, independently of kernel release files and instance plugin graphs. In wallpaper mode it clears the legacy base-background token and nested page fills, while named `root`, `main`, and `sidebar` slots identify the columns that paint each region once. Desktop-aware conversation roots also remain transparent over their column. Floating menus and dialogs receive solid fill tokens locally. Slot selectors accommodate deferred page mounts and CSS Module rebuilds without generated class names or mutation observers.
+
 ## Alternatives considered
 
 **Only synchronize theme settings.** This leaves opaque client layers and makes desktop appearance depend on a backend schema accepting personalization.
@@ -28,8 +30,12 @@ Unsaved appearance drafts belong to the desktop main process until saved or canc
 
 **Give embedded pages the manager bridge.** Settings navigation needs no process, credential, or instance mutation capabilities. A separate authenticated request keeps those privileges in the shell.
 
+**Install an appearance plugin into every kernel profile.** Kernel-specific client loading and package compatibility would become prerequisites for shell wallpaper. Shell-owned CSS injection keeps local and SSH presentation independent of backend plugin installation and kernel replacement.
+
 ## Consequences
 
-The semantic token names form a presentation dependency on embedded clients. Unknown remote components can retain opaque surfaces, and older clients without the navigation integration retain their own settings trigger. Settings RPC failures stay visible independently of presentation. Raster images remain shell-owned for painting, so masking and cropping are continuous across the title strip and instance viewport.
+Semantic token names and named slot ancestry form a presentation dependency on embedded clients. Unknown remote components can retain opaque surfaces, and older clients without the navigation integration retain their own settings trigger. Settings RPC failures stay visible independently of presentation. Raster images remain shell-owned for painting, so masking and cropping are continuous across the title strip and instance viewport.
 
 Focused tests cover navigation authorization, reload installation, and rejected settings RPC. The Electron smoke displays the actual conversation, checks a composited wallpaper pixel, captures the visible window, and follows the instance settings trigger to the shell tab. These checks require no model credentials.
+
+Headless Chromium regressions exercise released and desktop-aware layout fixtures, late-mounted internal pages, one fill per column, solid floating surfaces, light and dark colors, zero and full panel opacity, and stylesheet removal. These fixtures verify CSS composition; they do not replace an acceptance check against a newly released kernel's actual slot ancestry.
