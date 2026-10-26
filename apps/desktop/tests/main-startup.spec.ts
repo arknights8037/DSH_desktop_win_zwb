@@ -10,9 +10,13 @@ import { DESKTOP_IPC } from '../src/ipc.ts'
 import type { DesktopPluginInstallPlan } from '../src/plugin-market.ts'
 import type { DesktopPluginRecord } from '../src/project-manager.ts'
 import { DEFAULT_PERSONAL_APPEARANCE } from '../src/personal-appearance.ts'
+import Schema from '@deepseek-ai/schemastery'
+import { mixedSettingsDocument } from './settings-fixtures.ts'
 
 const harness = await vi.hoisted(async () => {
   const { EventEmitter } = await import('node:events')
+  const { fileURLToPath } = await import('node:url')
+  const { legacySettingsDocument } = await import('./settings-fixtures.ts')
   class Contents extends EventEmitter {
     url = ''
     mainFrame = { url: '' }
@@ -67,15 +71,7 @@ const harness = await vi.hoisted(async () => {
     stop = vi.fn(async () => {})
     mutate = vi.fn(async () => {})
     injectPlugin = vi.fn(async () => {})
-    settings = { namespaces: [
-      { ns: 'ui-theme', value: { preference: 'dark', fontSize: 12 } as Record<string, unknown>, revision: 4 },
-      { ns: 'locale', value: { preference: 'zh' } as Record<string, unknown>, revision: 2 },
-      { ns: 'ui-conversation', value: { busyEnter: 'steer' } as Record<string, unknown>, revision: 3 },
-      { ns: 'llm-pi-ai', value: { providers: { unrelated: { api: 'openai-completions' } } } as Record<string, unknown>, revision: 0 },
-      { ns: 'ui-chat', value: { transcriptView: 'normal' } as Record<string, unknown>, revision: 1 },
-      { ns: 'agent-presets', value: { default: 'instance-preset', modeSelectionEnabled: false } as Record<string, unknown>, revision: 1 },
-      { ns: 'llm-deepseek', value: { baseURL: 'https://instance.test', unrelated: true } as Record<string, unknown>, revision: 1 },
-    ] }
+    settings = legacySettingsDocument()
     credentials = new Map<string, string>()
     fetch = vi.fn(async (request: Request) => {
       if (!new URL(request.url).pathname.startsWith('/api/settings/') && !new URL(request.url).pathname.startsWith('/api/credentials/')) return new Response(this.home)
@@ -117,7 +113,7 @@ const harness = await vi.hoisted(async () => {
     setPermissionCheckHandler: ReturnType<typeof vi.fn>
   }>()
   const app = Object.assign(new EventEmitter(), {
-    isPackaged: true, getAppPath: () => 'app-root', getLocale: () => 'en', whenReady: () => Promise.resolve(),
+    isPackaged: true, getAppPath: () => fileURLToPath(new URL('..', import.meta.url)), getLocale: () => 'en', whenReady: () => Promise.resolve(),
     requestSingleInstanceLock: () => true, quit: vi.fn(), exit: vi.fn(),
   })
   const library = {
@@ -311,6 +307,33 @@ it('reapplies shell presentation on reload and despite rejected instance setting
   await vi.waitFor(() => { expect(view.webContents.insertCSS.mock.calls.length).toBeGreaterThan(count) })
 })
 
+it('injects motion by default and toggles existing and reloaded views without unsupported backend writes', async () => {
+  const a = await create('A'); const b = await create('B')
+  await invoke('open', { id: a.id }); await invoke('open', { id: b.id })
+  for (const view of harness.View.all) {
+    expect(view.webContents.insertCSS).toHaveBeenLastCalledWith(expect.stringContaining('dsh-motion-popup'), { cssOrigin: 'author' })
+  }
+  for (const local of harness.Local.all) local.fetch.mockClear()
+  await invoke('softwareSettings', { action: 'update', input: { field: 'motionEnabled', value: false } })
+  for (const view of harness.View.all) {
+    expect(view.webContents.insertCSS).toHaveBeenLastCalledWith(expect.not.stringContaining('dsh-motion-popup'), { cssOrigin: 'author' })
+    expect(view.webContents.removeInsertedCSS).toHaveBeenCalled()
+  }
+  for (const local of harness.Local.all) {
+    expect(local.fetch).toHaveBeenCalledOnce()
+    expect(new URL(local.fetch.mock.calls[0]![0].url).pathname).toBe('/api/settings/describe')
+  }
+  const view = harness.View.all[0]!
+  const count = view.webContents.insertCSS.mock.calls.length
+  view.webContents.emit('did-finish-load')
+  await vi.waitFor(() => { expect(view.webContents.insertCSS.mock.calls.length).toBeGreaterThan(count) })
+  expect(view.webContents.insertCSS).toHaveBeenLastCalledWith(expect.not.stringContaining('dsh-motion-popup'), { cssOrigin: 'author' })
+  await invoke('softwareSettings', { action: 'update', input: { field: 'motionEnabled', value: true } })
+  for (const view of harness.View.all) {
+    expect(view.webContents.insertCSS).toHaveBeenLastCalledWith(expect.stringContaining('dsh-motion-popup'), { cssOrigin: 'author' })
+  }
+})
+
 it('previews wallpaper across existing and future views without saving or mutating instance settings', async () => {
   const a = await create('A'); const b = await create('B')
   await invoke('open', { id: a.id }); await invoke('open', { id: b.id })
@@ -417,12 +440,39 @@ it('overrides DSH namespaces across connected, future, and reconnected instances
   expect(await invoke('softwareSettings', { action: 'read' })).toMatchObject({ dsh: { deepseekMaxTokens: 4096 }, syncErrors: {} })
 })
 
+it('dispatches coexisting settings fields and native motion using each namespace revision', async () => {
+  const a = await create('A'); await invoke('open', { id: a.id }); await invoke('close', { id: a.id })
+  const local = harness.Local.all[0]!
+  local.settings = mixedSettingsDocument()
+  const theme = local.settings.namespaces.find(item => item.ns === 'ui-theme')!
+  const schema = new Schema(theme.schema as Schema)
+  theme.schema = Schema.object({ ...schema.dict, motionEnabled: Schema.boolean() }).toJSON()
+  await invoke('open', { id: a.id })
+  const initial = await invoke('softwareSettings', { action: 'read' }) as SoftwareSettingsSnapshot
+  await invoke('softwareSettings', { action: 'dshUpdate', input: { value: { ...initial.dsh,
+    defaultProvider: 'gateway', defaultModel: 'model-a', reasoningEffort: 'medium',
+    deepseekProtocol: 'chat-completions', transcriptView: 'normal', defaultPreset: 'custom' } } })
+  await invoke('softwareSettings', { action: 'update', input: { field: 'motionEnabled', value: false } })
+  const values = Object.fromEntries(local.settings.namespaces.map(section => [section.ns, section.value]))
+  expect(values['ui-theme']).toMatchObject({ motionEnabled: false, customization: DEFAULT_PERSONAL_APPEARANCE })
+  expect(values['ui-chat']).toMatchObject({ transcriptView: 'normal' })
+  expect(values['agent-presets']).toMatchObject({ default: 'custom' })
+  expect(values['llm-deepseek']).toMatchObject({ protocol: 'chat-completions' })
+  expect(values['llm-deepseek']).not.toHaveProperty('reasoningEffort')
+  expect(values['agent-default-model']).toMatchObject({ provider: 'gateway', model: 'model-a', reasoningEffort: 'medium' })
+  expect(await invoke('softwareSettings', { action: 'read' })).toMatchObject({ syncErrors: {},
+    settingsSupport: { [a.id]: { fields: { motionEnabled: { namespace: 'ui-theme', field: 'motionEnabled' },
+      reasoningEffort: { namespace: 'agent-default-model', field: 'reasoningEffort' } } } } })
+})
+
 it('retains software values and the connection when an instance lacks a DSH namespace', async () => {
   const a = await create('A'); await invoke('open', { id: a.id }); await invoke('close', { id: a.id })
   harness.Local.all[0]!.settings.namespaces = harness.Local.all[0]!.settings.namespaces.filter(item => item.ns !== 'ui-chat')
   await invoke('open', { id: a.id })
-  const data = await invoke('softwareSettings', { action: 'read' }) as { syncErrors: Record<string, string> }
-  expect(data.syncErrors[a.id]).toContain('ui-chat')
+  const data = await invoke('softwareSettings', { action: 'read' }) as { syncErrors: Record<string, string>
+    settingsSupport: Record<string, { fields: Record<string, { namespace: string | null }> }> }
+  expect(data.syncErrors).toEqual({})
+  expect(data.settingsSupport[a.id]!.fields.transcriptView!.namespace).toBeNull()
   expect((await invoke('snapshot') as ManagerSnapshot).statuses[a.id]!.connection).toBe('connected')
 })
 

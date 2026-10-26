@@ -11,6 +11,7 @@ import { DEFAULT_SHORTCUTS } from '../src/manager-shortcuts.ts'
 import { DEFAULT_PERSONAL_APPEARANCE, parsePersonalAppearance } from '../src/personal-appearance.ts'
 import type { ManagerSnapshot } from '../src/manager-ipc.ts'
 import type { KernelStatus } from '../src/kernel-manager.ts'
+import type { InstanceSettingsSupport } from '../src/settings-adapter.ts'
 
 const id = instanceId('aabbccdd-1234-4321-8123-123456789012')
 function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTabs = false, theme?: string, kernel?: KernelStatus) {
@@ -21,10 +22,10 @@ function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTab
   dom.window.HTMLDialogElement.prototype.close = function (returnValue = '') { this.returnValue = returnValue; this.open = false; this.dispatchEvent(new dom.window.Event('close')) }
   const instances = config ? Array.isArray(config) ? config : [config] : []
   const snapshot: ManagerSnapshot = { instances, tabs: { ids: openTabs ? instances.map(item => item.id) : [], active: openTabs ? instances.at(-1)!.id : null }, statuses: Object.fromEntries(instances.map(item => [item.id, { process: 'unknown', connection: 'disconnected' }])), messages: managerMessages(locale), packaged: kernel !== undefined, pluginManagement: kernel !== undefined, maximized: false }
-  const settings = { revision: 0, appearance: { theme: theme || 'system', fontSize: 14, language: '', busyEnter: 'queue' },
+  const settings = { revision: 0, appearance: { theme: theme || 'system', fontSize: 14, language: '', busyEnter: 'queue', motionEnabled: true },
     personalization: structuredClone(DEFAULT_PERSONAL_APPEARANCE),
     dsh: { ...DEFAULT_DSH_SETTINGS }, modelSources: [] as ModelSourceView[], credentials: [] as string[],
-    credentialWritable: true, syncErrors: {} }
+    credentialWritable: true, syncErrors: {}, settingsSupport: {} as Record<string, InstanceSettingsSupport> }
   let shortcutBindings = { ...DEFAULT_SHORTCUTS } as Record<string, string>
   const invoke = vi.fn(async (operation: string, payload?: {
     id?: string
@@ -130,14 +131,14 @@ it('does not offer local data deletion for remote instances and cancel does not 
   expect(invoke).toHaveBeenCalledWith('overlay', { visible: true })
   expect(invoke.mock.calls.some(([operation]) => operation === 'remove')).toBe(false)
 })
-it('shows packaged kernel updates, preserves manual mode, and locks unsupported legacy settings', async () => {
+it('shows kernel updates without guessing settings support from its release generation', async () => {
   const kernel: KernelStatus = { phase: 'idle', current: '0.2.0-rc.2', automatic: true, restartRequired: false, modernSettings: true }
   const { dom, invoke } = page(undefined, 'en', false, undefined, kernel)
   const document = dom.window.document
   document.querySelector<HTMLButtonElement>('#settings')!.click()
   await expect.poll(() => document.querySelector('#kernel-status')?.textContent).toContain('0.2.0-rc.2')
   expect(document.querySelector<HTMLInputElement>('#kernel-automatic')!.checked).toBe(true)
-  expect(document.querySelector<HTMLInputElement>('#dsh-deepseekBaseURL')!.disabled).toBe(true)
+  expect(document.querySelector<HTMLInputElement>('#dsh-deepseekBaseURL')!.disabled).toBe(false)
   expect(document.querySelector<HTMLInputElement>('#dsh-deepseekMaxTokens')!.disabled).toBe(false)
   const automatic = document.querySelector<HTMLInputElement>('#kernel-automatic')!
   automatic.checked = false
@@ -152,6 +153,57 @@ it('shows packaged kernel updates, preserves manual mode, and locks unsupported 
   expect(document.querySelector<HTMLButtonElement>('#kernel-install')!.disabled).toBe(true)
   expect(invoke.mock.calls.filter(([operation]) => operation === 'kernel').length).toBeLessThan(30)
 })
+
+it('shows exact instance fields, applies schema options and limits, and identifies unsupported controls', async () => {
+  const { dom, settings } = page({ id, name: 'Local', kind: 'local' })
+  const document = dom.window.document
+  await expect.poll(() => document.querySelector<HTMLInputElement>('#dsh-deepseekMaxTokens')!.disabled).toBe(false)
+  settings.settingsSupport[id] = { writable: true, fields: {
+    deepseekProtocol: { namespace: 'llm-deepseek', field: 'protocol', options: ['messages'] },
+    deepseekMaxTokens: { namespace: 'llm-deepseek', field: 'maxTokens', max: 8192 },
+    defaultProvider: { namespace: 'agent-default-model', field: 'provider' },
+    defaultModel: { namespace: 'agent-default-model', field: 'model' },
+    reasoningEffort: { namespace: 'agent-default-model', field: 'reasoningEffort' },
+  } }
+  document.querySelector<HTMLButtonElement>('#settings')!.click()
+  document.querySelector<HTMLButtonElement>('[data-settings-tab=advanced]')!.click()
+  await expect.poll(() => document.querySelector<HTMLInputElement>('#dsh-transcriptView')!.disabled).toBe(true)
+  expect(document.querySelector('#dsh-transcriptView')!.closest('label')!.textContent).toContain('Not supported')
+  expect(document.querySelector('#dsh-defaultModel')!.closest('label')!.textContent).toContain('agent-default-model.model')
+  expect(document.querySelector<HTMLInputElement>('#dsh-deepseekMaxTokens')!.max).toBe('8192')
+  expect(document.querySelector<HTMLOptionElement>('#dsh-deepseekProtocol [value="chat-completions"]')!.disabled).toBe(true)
+  const provider = document.querySelector<HTMLInputElement>('#dsh-defaultProvider')!
+  const model = document.querySelector<HTMLInputElement>('#dsh-defaultModel')!
+  provider.value = 'custom-provider'; model.value = 'custom-model'
+  const effort = document.querySelector<HTMLInputElement>('#dsh-reasoningEffort')!
+  effort.value = 'medium'
+  document.querySelector<HTMLInputElement>('#dsh-deepseekMaxTokens')!.value = '8192'
+  document.querySelector<HTMLFormElement>('#dsh-settings-form')!.requestSubmit()
+  await expect.poll(() => settings.dsh.defaultModel).toBe('custom-model')
+  expect(settings.dsh.defaultProvider).toBe('custom-provider')
+  expect(settings.dsh.reasoningEffort).toBe('medium')
+})
+it('saves motion from Appearance and restores its checkbox after reopening settings', async () => {
+  const { dom, invoke, settings } = page()
+  const document = dom.window.document
+  const checkbox = document.querySelector<HTMLInputElement>('#motion-enabled')!
+  await expect.poll(() => checkbox.disabled).toBe(false)
+  document.querySelector<HTMLButtonElement>('#settings')!.click()
+  document.querySelector<HTMLButtonElement>('[data-settings-tab=appearance]')!.click()
+  expect(checkbox.checked).toBe(true)
+  expect(checkbox.closest('label')!.textContent).toContain('Smooth motion')
+  checkbox.click()
+  await expect.poll(() => document.documentElement.dataset.dshMotion).toBe('off')
+  expect(settings.appearance.motionEnabled).toBe(false)
+  expect(invoke).toHaveBeenCalledWith('softwareSettings', { action: 'update', input: { field: 'motionEnabled', value: false } })
+  document.querySelector<HTMLButtonElement>('[data-settings-tab=general]')!.click()
+  document.querySelector<HTMLButtonElement>('[data-settings-tab=appearance]')!.click()
+  expect(checkbox.checked).toBe(false)
+  await expect.poll(() => checkbox.disabled).toBe(false)
+  checkbox.click()
+  await expect.poll(() => document.documentElement.dataset.dshMotion).toBe('on')
+})
+
 it('previews personal colors and text, saves them, and cancels or resets drafts', async () => {
   const { dom, invoke, settings } = page()
   const document = dom.window.document

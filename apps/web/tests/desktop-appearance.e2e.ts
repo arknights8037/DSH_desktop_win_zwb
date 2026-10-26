@@ -1,8 +1,38 @@
 /** Browser CSS regression for desktop injection into independently built client layouts. */
 import { chromium, type Page } from 'playwright'
+import { readFileSync } from 'node:fs'
 import { expect, it, onTestFinished } from 'vitest'
 import { instanceAppearanceCss } from '../../desktop/src/instance-appearance.ts'
 import { DEFAULT_PERSONAL_APPEARANCE } from '../../desktop/src/personal-appearance.ts'
+
+it('limits desktop motion to interactive surfaces and follows reduced motion and removal', async () => {
+  const page = await fixture(true)
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.locator('.release_input').evaluate((node) => { node.innerHTML = '<button>Send</button><p>Streaming reply</p>' })
+  const button = page.getByRole('button', { name: 'Send' })
+  const base = await button.evaluate(node => getComputedStyle(node).transitionDuration)
+  const style = await page.addStyleTag({ content: readFileSync(new URL('../../desktop/renderer/motion.css', import.meta.url), 'utf8') })
+  const menu = page.getByRole('menu')
+  expect(await menu.evaluate(node => getComputedStyle(node).animationName)).toBe('dsh-motion-popup')
+  expect(await button.evaluate(node => getComputedStyle(node).transitionProperty)).toContain('background-color')
+  expect(await page.locator('.release_input p').evaluate(node => getComputedStyle(node).animationName)).toBe('none')
+  expect(await page.locator('.release_conversation').evaluate(node => getComputedStyle(node).animationName)).toBe('none')
+  await menu.evaluate(async (node) => { await Promise.all(node.getAnimations().map(animation => animation.finished)) })
+  expect(await menu.evaluate(node => getComputedStyle(node).translate)).toBe('none')
+
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  expect(await menu.evaluate(node => getComputedStyle(node).animationName)).toBe('none')
+  expect(await button.evaluate(node => getComputedStyle(node).transitionDuration)).toBe(base)
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.evaluate(() => { document.documentElement.dataset.dshMotion = 'off' })
+  expect(await menu.evaluate(node => getComputedStyle(node).animationName)).toBe('none')
+  expect(await button.evaluate(node => getComputedStyle(node).transitionDuration)).toBe(base)
+  await page.evaluate(() => { delete document.documentElement.dataset.dshMotion })
+  expect(await menu.evaluate(node => getComputedStyle(node).animationName)).toBe('dsh-motion-popup')
+  await style.evaluate((node) => { node.parentNode!.removeChild(node) })
+  expect(await menu.evaluate(node => getComputedStyle(node).animationName)).toBe('none')
+  expect(await button.evaluate(node => getComputedStyle(node).transitionDuration)).toBe(base)
+})
 
 async function fixture(modern: boolean): Promise<Page> {
   const browser = await chromium.launch()

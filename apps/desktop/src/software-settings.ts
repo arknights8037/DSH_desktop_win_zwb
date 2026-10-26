@@ -13,6 +13,7 @@ export interface SoftwareAppearance {
   fontSize: number
   language: '' | 'zh' | 'en'
   busyEnter: 'queue' | 'steer'
+  motionEnabled: boolean
 }
 /** OS-backed encryption; plaintext credentials never enter the preferences file or snapshots. */
 export interface SoftwareEncryption {
@@ -43,13 +44,14 @@ export interface SoftwareSettingsSnapshot {
   credentialWritable: boolean
   modelSources: ModelSourceView[]
 }
-const appearance: SoftwareAppearance = { theme: 'system', fontSize: 14, language: '', busyEnter: 'queue' }
+const appearance: SoftwareAppearance = { theme: 'system', fontSize: 14, language: '', busyEnter: 'queue', motionEnabled: true }
 function validAppearance(field: string, value: unknown): boolean {
   switch (field) {
     case 'theme': return typeof value === 'string' && ['system', 'light', 'dark'].includes(value)
     case 'fontSize': return typeof value === 'number' && Number.isInteger(value) && value >= 12 && value <= 17
     case 'language': return typeof value === 'string' && ['', 'zh', 'en'].includes(value)
     case 'busyEnter': return value === 'queue' || value === 'steer'
+    case 'motionEnabled': return typeof value === 'boolean'
     default: return false
   }
 }
@@ -72,6 +74,8 @@ export class SoftwareSettings {
     if (!existsSync(path)) return
     const data = record(JSON.parse(readFileSync(path, 'utf8')))
     const values = record(data.appearance)
+    // Earlier software preference files have no motion choice.
+    if (!Object.hasOwn(values, 'motionEnabled')) values.motionEnabled = appearance.motionEnabled
     const credentials = record(data.credentials)
     if (data.version !== 1 || typeof data.revision !== 'number' || !Number.isSafeInteger(data.revision) || data.revision < 0
       || Object.keys(appearance).some(key => !validAppearance(key, values[key]))
@@ -93,7 +97,8 @@ export class SoftwareSettings {
       personalization: data.personalization === undefined
         ? structuredClone(DEFAULT_PERSONAL_APPEARANCE) : parsePersonalAppearance(data.personalization),
       appearance: { theme: values.theme as SoftwareAppearance['theme'], fontSize: values.fontSize as number,
-        language: values.language as SoftwareAppearance['language'], busyEnter: values.busyEnter as SoftwareAppearance['busyEnter'] },
+        language: values.language as SoftwareAppearance['language'], busyEnter: values.busyEnter as SoftwareAppearance['busyEnter'],
+        motionEnabled: values.motionEnabled as boolean },
       dsh: data.dsh === undefined ? { ...DEFAULT_DSH_SETTINGS } : parseDshSettings(data.dsh),
       credentials: credentials as Record<string, string>, removedCredentials, shortcuts: parseShortcuts(data.shortcuts),
       modelSources: sources, removedSources: removed }

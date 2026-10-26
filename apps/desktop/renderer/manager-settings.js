@@ -46,6 +46,7 @@ $('kernel-install').onclick = () => { void perform(() => kernelAction('install')
 $('kernel-automatic').onchange = () => { void perform(() => kernelAction('automatic')) }
 const settingsFields = {
   theme: 'theme', 'font-size': 'fontSize', language: 'language', 'busy-enter': 'busyEnter',
+  'motion-enabled': 'motionEnabled',
 }
 const settingsTitles = {
   general: 'applicationSettings', instances: 'manageTitle', appearance: 'appearance', shortcuts: 'keyboardShortcuts', keys: 'modelCredentials', advanced: 'instanceSettings', plugins: 'plugins',
@@ -59,6 +60,7 @@ async function settingsCall(action, input = {}) {
 }
 function renderSettings() {
   if (!state) return
+  if (softwareDocument) document.documentElement.dataset.dshMotion = softwareDocument.appearance.motionEnabled ? 'on' : 'off'
   const errors = Object.entries(softwareDocument?.syncErrors || {})
   $('dsh-sync-status').textContent = errors.map(([id, message]) => `${state.instances.find(item => item.id === id)?.name || id}: ${message}`).join('\n')
   $('dsh-sync-status').hidden = !errors.length
@@ -69,8 +71,11 @@ function renderSettings() {
   $('settings-product').hidden = settingsTab !== 'general'
   $('settings-title').textContent = t(settingsTitles[settingsTab])
   for (const [id, field] of Object.entries(settingsFields)) {
-    $(id).disabled = !softwareDocument || softwareSaving
-    if (softwareDocument) $(id).value = String(softwareDocument.appearance[field])
+    renderSettingSupport($(id), field, true)
+    if (softwareDocument) {
+      if ($(id).type === 'checkbox') $(id).checked = softwareDocument.appearance[field]
+      else $(id).value = String(softwareDocument.appearance[field])
+    }
   }
   document.querySelectorAll('#api-key-form button, #api-key-form input').forEach(node => { node.disabled = !softwareDocument?.credentialWritable || softwareSaving })
   if (credentialState) {
@@ -78,10 +83,10 @@ function renderSettings() {
     $('key-remove').disabled = !credentialState.writable || !credentialState.configured || softwareSaving
   }
   document.querySelectorAll('#dsh-settings-form input, #dsh-settings-form select, #dsh-settings-form button').forEach(node => {
-    const legacy = ['transcriptView', 'modeSelectionEnabled', 'defaultPreset', 'deepseekProtocol', 'deepseekBaseURL']
-    node.disabled = !softwareDocument || softwareSaving || kernelDocument?.modernSettings && legacy.includes(node.dataset.dshField)
+    if (node.dataset.dshField) renderSettingSupport(node, node.dataset.dshField)
+    else node.disabled = !softwareDocument || softwareSaving
   })
-  $('kernel-settings-hint').hidden = !kernelDocument?.modernSettings
+  $('kernel-settings-hint').hidden = false
   if (softwareDocument && !dshDirty) {
     for (const input of document.querySelectorAll('[data-dsh-field]')) {
       const value = softwareDocument.dsh[input.dataset.dshField]
@@ -95,6 +100,53 @@ function renderSettings() {
   renderPersonalAppearance()
   renderKernel()
   renderStorage()
+}
+
+function renderSettingSupport(input, field, shellOwned = false) {
+  const instances = Object.entries(softwareDocument?.settingsSupport || {})
+  const targets = instances.filter(([, support]) => support.fields[field]?.namespace)
+  input.disabled = !softwareDocument || softwareSaving || !shellOwned && instances.length > 0
+    && !targets.some(([, support]) => support.writable)
+  const label = input.closest('label')
+  if (!label) return
+  let status = label.querySelector('[data-setting-support]')
+  if (!status) {
+    status = document.createElement('small')
+    status.dataset.settingSupport = field
+    const copy = label.querySelector('span')
+    copy.append(status)
+  }
+  status.textContent = instances.length ? instances.map(([id, support]) => {
+    const name = state.instances.find(item => item.id === id)?.name || id
+    const target = support.fields[field]
+    return `${name}: ${target?.namespace ? `${target.namespace}.${target.field}${support.writable ? '' : ` · ${t('settingsReadOnly')}`}`
+      : field === 'motionEnabled' ? t('settingsShellMotion') : t('settingsNotSupported')}`
+  }).join(' · ') : t(shellOwned ? 'settingsShellAndPending' : 'settingsPending')
+  const enums = targets.map(([, support]) => support.fields[field].options).filter(Boolean)
+  const options = enums.length ? enums[0].filter(value => enums.every(values => values.includes(value))) : undefined
+  const choices = input.tagName === 'SELECT' ? input : input.list
+  if (choices) {
+    for (const option of choices.querySelectorAll('[data-schema-option]')) option.remove()
+    for (const option of choices.options) option.hidden = option.disabled = Boolean(options && !options.includes(option.value))
+    for (const value of options || []) {
+      if ([...choices.options].some(option => option.value === value)) continue
+      const option = document.createElement('option')
+      option.value = option.textContent = value
+      option.dataset.schemaOption = ''
+      choices.append(option)
+    }
+  }
+  if (input.list) {
+    if (options) input.pattern = options.length ? options.map(value => RegExp.escape(value)).join('|') : '(?!)'
+    else input.removeAttribute('pattern')
+  }
+  if (input.type === 'number') {
+    for (const property of ['min', 'max', 'step']) {
+      if (!input.dataset[`base${property}`]) input.dataset[`base${property}`] = input[property]
+      const values = targets.map(([, support]) => support.fields[field][property]).filter(value => typeof value === 'number')
+      input[property] = values.length ? String(property === 'max' ? Math.min(...values) : Math.max(...values)) : input.dataset[`base${property}`]
+    }
+  }
 }
 function renderStorage() {
   const ready = storageDocument !== undefined && !storageLoading
@@ -241,7 +293,7 @@ document.addEventListener('manager-settings-open', event => {
 })
 for (const [id, field] of Object.entries(settingsFields)) {
   $(id).onchange = () => {
-    const value = id === 'font-size' ? Number($(id).value) : $(id).value
+    const value = $(id).type === 'checkbox' ? $(id).checked : id === 'font-size' ? Number($(id).value) : $(id).value
     void perform(async () => {
       softwareSaving = true
       renderSettings()

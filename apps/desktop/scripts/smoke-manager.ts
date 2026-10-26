@@ -332,13 +332,12 @@ try {
   await page.locator('[data-settings-tab=general]').click()
   await page.locator('[data-settings-tab=advanced]').click()
   if (await page.locator('#settings-instance, [data-native-section]').count()) throw new Error('DSH preferences still require instance navigation')
-  const modernSettings = await page.locator('#kernel-settings-hint').isVisible()
-  if (!modernSettings) {
-    await page.locator('#dsh-transcriptView').selectOption('normal')
-    await page.locator('#dsh-modeSelectionEnabled').uncheck()
-  }
+  const transcriptSupported = await page.locator('#dsh-transcriptView').isEnabled()
+  if (transcriptSupported) await page.locator('#dsh-transcriptView').selectOption('normal')
+  const presetSupported = await page.locator('#dsh-modeSelectionEnabled').isEnabled()
+  if (presetSupported) await page.locator('#dsh-modeSelectionEnabled').uncheck()
   await page.locator('#dsh-deepseekMaxTokens').fill('8192')
-  await page.locator('#dsh-reasoningEffort').selectOption('high')
+  await page.locator('#dsh-reasoningEffort').fill('high')
   await page.locator('#dsh-settings-form [type=submit]').click()
   await page.waitForFunction(() => !document.querySelector<HTMLInputElement>('#dsh-deepseekMaxTokens')!.disabled
     && document.querySelector('#dsh-save-status')!.textContent?.startsWith('Saved.'))
@@ -347,13 +346,13 @@ try {
   const overridden = await hostRead('settings/describe') as Array<{ namespaces: Array<{ ns: string; value: Record<string, unknown> }> }>
   if (overridden.length !== 2) throw new Error('DSH overrides did not reach two instances')
   for (const doc of overridden) {
-    const modern = doc.namespaces.some(item => item.ns === 'agent-default-model')
+    const defaultModel = doc.namespaces.find(item => item.ns === 'agent-default-model')?.value
     const deepseek = doc.namespaces.find(item => item.ns === 'llm-deepseek')?.value
-    const valid = modern
-      ? deepseek?.maxTokens === 8192 && doc.namespaces.find(item => item.ns === 'agent-default-model')?.value.reasoningEffort === 'high'
-      : doc.namespaces.find(item => item.ns === 'ui-chat')?.value.transcriptView === 'normal'
-        && doc.namespaces.find(item => item.ns === 'agent-presets')?.value.modeSelectionEnabled === false
-        && deepseek?.maxTokens === 8192
+    const transcript = doc.namespaces.find(item => item.ns === 'ui-chat')?.value
+    const presets = doc.namespaces.find(item => item.ns === 'agent-presets')?.value
+    const valid = deepseek?.maxTokens === 8192 && (defaultModel ?? deepseek)?.reasoningEffort === 'high'
+      && (!transcript || transcript.transcriptView === 'normal')
+      && (!presets || presets.modeSelectionEnabled === false)
     if (!valid) {
       throw new Error('Instance values did not match the software DSH settings')
     }

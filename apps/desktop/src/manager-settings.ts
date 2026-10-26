@@ -1,16 +1,19 @@
 /** Narrow desktop access to the instance-owned DSH settings and credential APIs. */
 import { randomUUID } from 'node:crypto'
 import { modelSourceId, parseModelSource, sourceProfile, sourceRoute } from './model-sources.ts'
+import { SOFTWARE_SETTING_TARGETS } from './settings-adapter.ts'
 
 /** Operations exposed by the manager without exposing an arbitrary RPC dispatcher. */
 export type InstanceSettingsAction = 'read' | 'update' | 'sources' | 'credentialInfo' | 'credentialSet' | 'credentialRemove'
 
 /** Editable product fields; the instance remains responsible for schema validation and persistence. */
-const fields: Record<string, readonly string[]> = {
-  'ui-theme': ['preference', 'fontSize', 'customization'], locale: ['preference'], 'ui-conversation': ['busyEnter'],
-  'ui-chat': ['transcriptView'], 'agent-presets': ['default', 'modeSelectionEnabled'],
-  'agent-default-model': ['reasoningEffort'],
-  'llm-deepseek': ['protocol', 'baseURL', 'apiKeyEnv', 'maxTokens', 'reasoningEffort'],
+const fields = new Map<string, Set<string>>()
+for (const targets of Object.values(SOFTWARE_SETTING_TARGETS)) {
+  for (const [namespace, field] of targets) {
+    const names = fields.get(namespace) ?? new Set<string>()
+    names.add(field)
+    fields.set(namespace, names)
+  }
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -52,8 +55,8 @@ export async function instanceSettings(
     case 'update': {
       const ns = args.namespace
       const edits = args.edits === undefined ? { [String(args.field)]: args.value } : record(args.edits)
-      if (typeof ns !== 'string' || !Object.hasOwn(fields, ns) || !Object.keys(edits).length
-        || Object.keys(edits).some(field => !fields[ns]?.includes(field))
+      if (typeof ns !== 'string' || !fields.has(ns) || !Object.keys(edits).length
+        || Object.keys(edits).some(field => !fields.get(ns)?.has(field))
         || !Number.isSafeInteger(args.revision) || Number(args.revision) < 0) throw new Error('Invalid settings edit')
       endpoint = 'settings/mutate'
       values = { ns, ops: Object.entries(edits).map(([field, value]) => ({ op: 'set', path: [field], value })),

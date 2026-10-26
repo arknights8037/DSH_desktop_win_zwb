@@ -525,6 +525,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../vendor/schemastery
+        version: link:../../vendor/schemastery
       electron-updater:
         specifier: ^6.8.9
         version: 6.8.9

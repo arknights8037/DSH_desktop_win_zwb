@@ -11,6 +11,21 @@ import { parseModelSource, modelSourceId, sourceKeyRef } from '../src/model-sour
 const sourceConfig = { name: 'Gateway', protocol: 'openai-completions', baseURL: 'https://gateway.test/v1',
   models: ['model-a', 'model-b'], contextWindow: 128000, maxTokens: 4096 }
 
+it('defaults older settings to motion enabled and preserves an explicit off choice across restarts', () => {
+  const { path, encryption, settings } = fixture()
+  expect(settings.snapshot().appearance.motionEnabled).toBe(true)
+  settings.update('motionEnabled', false)
+  expect(new SoftwareSettings(path, encryption).snapshot().appearance.motionEnabled).toBe(false)
+  expect(() => { settings.update('motionEnabled', 'false') }).toThrow('Invalid software preference')
+  const file = JSON.parse(readFileSync(path, 'utf8')) as { appearance: Record<string, unknown> }
+  delete file.appearance.motionEnabled
+  writeFileSync(path, JSON.stringify(file))
+  expect(new SoftwareSettings(path, encryption).snapshot().appearance.motionEnabled).toBe(true)
+  file.appearance.motionEnabled = null
+  writeFileSync(path, JSON.stringify(file))
+  expect(() => new SoftwareSettings(path, encryption)).toThrow('Invalid software settings file')
+})
+
 it('preserves personal appearance across restarts and supplies defaults for earlier files', () => {
   const { path, encryption, settings } = fixture()
   const value = { ...structuredClone(DEFAULT_PERSONAL_APPEARANCE), backgroundImage: 'data:image/png;base64,aGVsbG8=', maskEnabled: false }
@@ -76,7 +91,8 @@ it('persists validated DSH overrides offline without accepting secrets or arbitr
   for (const bad of [null, { ...dsh, apiKey: 'secret' }, { ...dsh, deepseekKeyRef: '../key' },
     { ...dsh, deepseekMaxTokens: 0 }, { ...dsh, deepseekMaxTokens: 1.5 }, { ...dsh, defaultPreset: '' },
     { ...dsh, transcriptView: ['compact'] }, { ...dsh, deepseekProtocol: 'ftp' },
-    { ...dsh, modeSelectionEnabled: 'true' }, { ...dsh, reasoningEffort: 'unknown' },
+    { ...dsh, modeSelectionEnabled: 'true' }, { ...dsh, reasoningEffort: '' },
+    { ...dsh, defaultProvider: 'provider', defaultModel: '' }, { ...dsh, defaultModel: null },
     ...['file:///tmp/key', 'https://user:secret@host.test', 'https://host.test?key=secret'].map(deepseekBaseURL => ({ ...dsh, deepseekBaseURL })),
   ]) expect(() => { settings.updateDsh(bad) }).toThrow()
   expect(settings.snapshot().dsh).toEqual(dsh)

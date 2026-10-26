@@ -6,6 +6,7 @@
   },
   "include": ["src"],
   "references": [
+    { "path": "../../vendor/schemastery" },
     { "path": "../../packages/util/brand" },
     { "path": "../../packages/util/home-paths" }
   ]

@@ -1,7 +1,12 @@
 /** Typed copy for the instance manager shell. */
 const en = {
   kernelTitle: 'DSH kernel', kernelAutomatic: 'Automatically prepare kernel updates',
-  kernelSettingsHint: 'This kernel manages transcript display, presets, and the official DeepSeek endpoint in its own UI. Legacy controls are read-only; use Model sources for custom endpoints.',
+  kernelSettingsHint: 'Fields match each connected instance’s settings schema. Unsupported or read-only fields are identified below. Saved software choices apply again when an instance reconnects.',
+  defaultModelProvider: 'Default model provider', defaultModelId: 'Default model ID',
+  defaultModelHint: 'Enter both provider route and model ID, or leave both blank to retain each instance’s default. Applies to future Agents.',
+  settingsReadOnly: 'Read-only', settingsNotSupported: 'Not supported by this instance',
+  settingsShellMotion: 'Shell motion injection', settingsShellAndPending: 'Applies to the shell; instance mapping is checked on connection.',
+  settingsPending: 'Instance mapping is checked on connection.',
   kernelHint: 'Official npm latest releases are tested in a temporary instance and applied on the next application launch. Before an instance changes kernels, its data home is backed up. Remote kernels are managed on their server.',
   kernelCheck: 'Check for updates', kernelInstall: 'Prepare update', kernelCurrent: 'Current', kernelAvailable: 'Available',
   kernelRestart: 'Update ready. Quit and reopen the application to use it.', kernelIdle: 'No update pending', kernelChecking: 'Checking…', kernelInstalling: 'Installing and testing…', kernelError: 'Update failed',
@@ -103,6 +108,7 @@ const en = {
   keyRequired: 'Enter a new API key to save.',
   title: 'Harness Agent Manager', instances: 'Instances', manageTitle: 'Instances', manageHint: 'Connect to a saved instance or adjust its settings.', add: 'New instance', newInstance: 'New instance', local: 'Local', ssh: 'Remote SSH',
   settings: 'Settings', appearance: 'Appearance', appearanceHint: 'Applied to the software and inherited by instances.', systemTheme: 'Follow system', lightTheme: 'Light', darkTheme: 'Dark', rename: 'Rename', reconnect: 'Reconnect',
+  smoothMotion: 'Smooth motion', smoothMotionHint: 'Animate menus, dialogs and settings, with smoother control feedback. Applies immediately to all instances and follows your system’s reduced motion preference.',
   empty: 'Open a local or remote Agent environment', hint: 'Each tab has its own conversations, settings, credentials, and plugins.',
   firstRunEyebrow: 'SELECT RUNTIME / FIRST LAUNCH', firstRunTitle: 'Where should your Agent run?',
   firstRunHint: 'Choose a workspace for this device. You can add more instances later.',
@@ -132,7 +138,12 @@ const en = {
 export type ManagerMessages = { [K in keyof typeof en]: string }
 const zh: ManagerMessages = {
   kernelTitle: 'DSH 内核', kernelAutomatic: '自动准备内核更新',
-  kernelSettingsHint: '当前内核通过实例界面管理对话显示、预设和 DeepSeek 官方接口。对应旧版控件仅供查看，自定义接口请使用“模型凭据”中的模型来源。',
+  kernelSettingsHint: '各字段与已连接实例实际公布的设置一一对应。不支持或只读的字段会在下方标注；实例重连时会重新应用外壳保存的选择。',
+  defaultModelProvider: '默认模型提供方', defaultModelId: '默认模型 ID',
+  defaultModelHint: '同时填写提供方路由和模型 ID，或同时留空以保留各实例的默认值。作用于后续创建的 Agent。',
+  settingsReadOnly: '只读', settingsNotSupported: '该实例不支持',
+  settingsShellMotion: '外壳动效注入', settingsShellAndPending: '应用于外壳；实例字段将在连接后核对。',
+  settingsPending: '连接实例后核对对应字段。',
   kernelHint: '从官方 npm latest 通道获取更新，在临时实例验证后于下次启动应用时生效。实例切换内核前会备份其数据目录；远程内核由服务器管理。',
   kernelCheck: '检查更新', kernelInstall: '准备更新', kernelCurrent: '当前版本', kernelAvailable: '可用版本',
   kernelRestart: '更新已准备好，退出并重新打开应用后生效。', kernelIdle: '没有待应用的更新', kernelChecking: '正在检查…', kernelInstalling: '正在安装和验证…', kernelError: '更新失败',
@@ -234,6 +245,7 @@ const zh: ManagerMessages = {
   keyRequired: '请输入要保存的 API Key。',
   title: 'Harness Agent 管理器', instances: '实例管理', manageTitle: '实例管理', manageHint: '连接已保存的实例，或调整实例设置。', add: '新建实例', newInstance: '新建实例', local: '本地', ssh: '远程 SSH',
   settings: '设置', appearance: '外观', appearanceHint: '应用于软件界面，实例统一继承。', systemTheme: '跟随系统', lightTheme: '浅色', darkTheme: '深色', rename: '重命名', reconnect: '重新连接',
+  smoothMotion: '流畅动效', smoothMotionHint: '为菜单、弹窗和设置切换添加动效，让控件反馈更柔和。即时应用于所有实例，并遵循系统的“减少动态效果”偏好。',
   empty: '打开一个本地或远程 Agent 环境', hint: '每个标签页拥有独立的对话、设置、凭据和插件。',
   firstRunEyebrow: '选择运行方式 / 首次启动', firstRunTitle: 'Agent 要在哪里运行？',
   firstRunHint: '为这台设备选择一个工作区，之后可以继续添加更多实例。',

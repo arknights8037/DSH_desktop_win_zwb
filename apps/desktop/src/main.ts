@@ -19,7 +19,7 @@ import { inspectPluginInstall, queryPluginCatalog, type DesktopInstallPlanId, ty
 import { SoftwareSettings } from './software-settings.ts'
 import { DEFAULT_PERSONAL_APPEARANCE, parsePersonalAppearance, type PersonalAppearance } from './personal-appearance.ts'
 import { instanceAppearanceCss } from './instance-appearance.ts'
-import { dshSettingsEdits } from './dsh-settings.ts'
+import { resolveInstanceSettings, type InstanceSettingsDocument, type InstanceSettingsSupport } from './settings-adapter.ts'
 import { instanceSettings } from './manager-settings.ts'
 import { DEFAULT_SHORTCUTS, shortcutBinding, type ManagerShortcuts } from './manager-shortcuts.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
@@ -90,6 +90,7 @@ async function directoryBytes(path: string, excludedNames: ReadonlySet<string> =
 }
 
 async function main(): Promise<void> {
+  const motionCss = await readFile(join(app.getAppPath(), 'renderer', 'motion.css'), 'utf8')
   const desktopPaths = resolveDesktopPaths()
   const root = join(desktopPaths.root, 'agent-manager')
   const registry = new InstanceRegistry(join(root, 'instances.json'))
@@ -100,6 +101,7 @@ async function main(): Promise<void> {
   const syncErrors = new Map<InstanceId, string>()
   const appliedSettings = new Map<InstanceId, number>()
   const settingsSyncs = new Map<InstanceId, Promise<void>>()
+  const settingsSupport = new Map<InstanceId, InstanceSettingsSupport>()
   let messages = managerMessages(software.snapshot().appearance.language || app.getLocale())
   let locale = resolveDesktopLocale(software.snapshot().appearance.language || app.getLocale())
   const bundled = resources()
@@ -231,6 +233,7 @@ async function main(): Promise<void> {
     viewEpochs.set(id, (viewEpochs.get(id) ?? 0) + 1)
     clearRetry(id)
     appliedSettings.delete(id)
+    settingsSupport.delete(id)
     presentationStyles.delete(id)
     syncErrors.delete(id)
     const view = views.get(id)
@@ -247,7 +250,9 @@ async function main(): Promise<void> {
       const view = views.get(id)
       if (!view || service.status(config).connection !== 'connected') return
       const oldStyle = presentationStyles.get(id)
-      const style = await view.webContents.insertCSS(instanceAppearanceCss(previewAppearance ?? preferences.personalization), { cssOrigin: 'author' })
+      const css = instanceAppearanceCss(previewAppearance ?? preferences.personalization)
+        + (preferences.appearance.motionEnabled ? motionCss : '')
+      const style = await view.webContents.insertCSS(css, { cssOrigin: 'author' })
       if (views.get(id) !== view) return
       presentationStyles.set(id, style)
       if (oldStyle) await view.webContents.removeInsertedCSS(oldStyle)
@@ -257,22 +262,17 @@ async function main(): Promise<void> {
         : view.webContents.session.fetch(request.url, { method: request.method, headers: Object.fromEntries(request.headers),
           body: await request.text(), signal: request.signal }),
       view.webContents.getURL(), action, input)
-      const document = await call('read', {}) as { namespaces: Array<{ ns: string; revision: number; value: Record<string, unknown> }> }
-      const modern = document.namespaces.some(item => item.ns === 'agent-default-model')
-      const values = preferences.appearance
-      const failures: string[] = []
-      for (const [namespace, edits] of [
-        ['ui-theme', { preference: values.theme, fontSize: values.fontSize, ...(modern ? {} : { customization: preferences.personalization }) }],
-        ['locale', { preference: values.language || locale.id }],
-        ['ui-conversation', { busyEnter: values.busyEnter }],
-        ...dshSettingsEdits(preferences.dsh, modern),
-      ] as Array<[string, Record<string, unknown>]>) {
-        const section = document.namespaces.find(item => item.ns === namespace)
-        if (!section) { failures.push(`Unsupported DSH settings: ${namespace}`); continue }
-        const changed = Object.fromEntries(Object.entries(edits).filter(([field, value]) => section.value[field] !== value))
-        if (!Object.keys(changed).length) continue
+      const document = await call('read', {}) as InstanceSettingsDocument
+      const resolved = resolveInstanceSettings(preferences, document, locale.id)
+      if (views.get(id) !== view) return
+      settingsSupport.set(id, resolved.support)
+      const failures = resolved.failures
+      for (const section of document.namespaces) {
+        const namespace = section.ns
+        const edits = resolved.edits.find(([ns]) => ns === namespace)?.[1]
+        if (!edits) continue
         try {
-          await call('update', { namespace, edits: changed, revision: section.revision })
+          await call('update', { namespace, edits, revision: section.revision })
         } catch (error) {
           failures.push(`${namespace}: ${error instanceof Error ? error.message : String(error)}`)
         }
@@ -308,7 +308,8 @@ async function main(): Promise<void> {
     previewAppearance = undefined
     for (const id of views.keys()) void syncSoftware(id, true)
   })
-  const softwareSnapshot = () => ({ ...software.snapshot(), syncErrors: Object.fromEntries(syncErrors) })
+  const softwareSnapshot = () => ({ ...software.snapshot(), syncErrors: Object.fromEntries(syncErrors),
+    settingsSupport: Object.fromEntries([...settingsSupport].filter(([id]) => service.status(registry.get(id)).connection === 'connected')) })
   const openView = (id: InstanceId, credentials?: unknown): Promise<void> => {
     const pending = viewConnections.get(id)
     if (pending) return pending
