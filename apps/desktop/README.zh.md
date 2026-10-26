@@ -105,14 +105,14 @@ SSH 断开时显示远端进程状态未知。重连会先检查所属 tmux 会�
 
 ## 开发与打包
 
-在仓库根目录执行：
+请先在打包版中准备并选择内核，并保留 `.desktop-build/targets/` 下目标平台配套的 Node.js 和 pnpm 工具。在仓库根目录执行：
 
 ```powershell
 pnpm install --frozen-lockfile
 pnpm run dev:desktop
 ```
 
-仓库构建成功后，可通过 `pnpm run start:desktop` 跳过构建直接启动。开发数据保存在 `apps/desktop/.desktop-build/development/home`，外部插件安装需要打包应用。
+桌面构建成功后，可通过 `pnpm run start:desktop` 跳过构建直接启动；`dev:desktop` 只构建外壳。开发数据保存在 `apps/desktop/.desktop-build/development/home`。启动时读取 `$DSH_HOME/desktop/agent-manager/kernels` 中已选内核，检查 npm `latest`，并在打开窗口前准备任何更新版本；检查或准备失败时拒绝启动。`DSH_DESKTOP_KERNEL_HOME` 可以独立于开发数据指定其他内核 home。启动器将 `HTTPS_PROXY` 或 `HTTP_PROXY` 传给 Electron 注册表请求及包管理器子进程。本地插件安装和注入使用当前内核。旧源码链接 Profile 在断开包容器前备份完整 home；无法识别的外部包需要先恢复再迁移。
 
 真实 Electron 冒烟测试使用临时 home 启动两个本地 Host，验证共享偏好和测试凭据的继承，操作标签页与快捷键，最后停止两个进程：
 

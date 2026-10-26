@@ -36,11 +36,13 @@ protocol.registerSchemesAsPrivileged([{ scheme: SCHEME, privileges: {
 } }])
 
 function resources(): DesktopRuntimeExecutables {
+  const developmentRuntime = !app.isPackaged ? process.env.DSH_DESKTOP_DSH_DIR : undefined
+  if (!app.isPackaged && !developmentRuntime) throw new Error('Start development through pnpm run start:desktop to select a verified kernel')
   return {
     node: app.isPackaged ? process.execPath : process.env.DSH_DESKTOP_NODE_BINARY ?? process.execPath,
     pnpm: (!app.isPackaged ? process.env.DSH_DESKTOP_PNPM_ENTRY : undefined) ?? join(process.resourcesPath, 'runtime', 'pnpm', 'bin', 'pnpm.mjs'),
-    dsh: (!app.isPackaged ? process.env.DSH_DESKTOP_DSH_DIR : undefined) ?? (app.isPackaged ? join(app.getAppPath(), 'dsh') : join(process.resourcesPath, 'dsh')),
-    ...(app.isPackaged ? { profileResolution: 'runtime' as const } : {}),
+    dsh: developmentRuntime ?? (app.isPackaged ? join(app.getAppPath(), 'dsh') : join(process.resourcesPath, 'dsh')),
+    ...(app.isPackaged || developmentRuntime ? { profileResolution: 'runtime' as const } : {}),
   }
 }
 async function shellAsset(request: Request): Promise<Response> {
@@ -101,13 +103,21 @@ async function main(): Promise<void> {
   let messages = managerMessages(software.snapshot().appearance.language || app.getLocale())
   let locale = resolveDesktopLocale(software.snapshot().appearance.language || app.getLocale())
   const bundled = resources()
-  const kernels = app.isPackaged ? new DesktopKernelManager(join(root, 'kernels'), bundled,
-    (version, directory) => prepareDesktopKernel(version, directory, bundled, join(root, 'kernel-probe-library')),
-    (input, init) => net.fetch(input instanceof URL ? input.href : input, init)) : undefined
+  const kernelRoot = app.isPackaged ? join(root, 'kernels') : process.env.DSH_DESKTOP_KERNEL_ROOT
+  const registryFetch: typeof fetch = (input, init) => net.fetch(input instanceof URL ? input.href : input, init)
+  const createKernels = (): DesktopKernelManager | undefined => kernelRoot ? new DesktopKernelManager(kernelRoot, bundled,
+    (version, directory) => prepareDesktopKernel(version, directory, bundled, join(root, 'kernel-probe-library'), registryFetch), registryFetch) : undefined
+  let kernels = createKernels()
+  if (!app.isPackaged) {
+    if (!kernels) throw new Error('Development kernel store is missing; use pnpm run start:desktop')
+    const update = await kernels.check(true)
+    if (update.phase === 'error') throw new Error(`Development kernel update failed: ${update.message}`)
+    kernels = createKernels()
+  }
   await kernels?.initialize()
   const runtime = kernels?.runtime() ?? bundled
+  console.log(`desktop kernel: version=${kernels?.snapshot().current ?? 'bundled'} runtime=${runtime.dsh}`)
   const library = new DesktopPluginLibrary(join(root, 'plugin-library'), runtime)
-  const developmentProject = app.isPackaged ? undefined : join(app.getAppPath(), '.desktop-build', 'development', 'project')
   const views = new Map<InstanceId, WebContentsView>()
   const presentationStyles = new Map<InstanceId, string>()
   let previewAppearance: PersonalAppearance | undefined
@@ -201,7 +211,7 @@ async function main(): Promise<void> {
   const service = new InstanceService((config, report) => {
     if (config.kind === 'ssh') return new RemoteInstance(config, verify, report)
     const home = join(root, 'instances', config.id)
-    const local = new LocalInstance(home, runtime, developmentProject, report,
+    const local = new LocalInstance(home, runtime, report,
       (manager) => {
         const pending = localPreparation.then(() => prepareLocalKernel(home, manager, library))
         localPreparation = pending.catch(() => {})
@@ -213,7 +223,8 @@ async function main(): Promise<void> {
   const snapshot = (): ManagerSnapshot => {
     const value = registry.snapshot()
     return { ...value, statuses: Object.fromEntries(value.instances.map(config => [config.id, service.status(config)])),
-      messages, packaged: app.isPackaged, maximized: window.isMaximized() }
+      messages, packaged: app.isPackaged, pluginManagement: app.isPackaged || process.env.DSH_DESKTOP_DSH_DIR !== undefined,
+      maximized: window.isMaximized() }
   }
   const clearRetry = (id: InstanceId): void => { clearTimeout(retryTimers.get(id)); retryTimers.delete(id); retryCounts.delete(id) }
   const destroyView = (id: InstanceId): void => {
@@ -391,7 +402,9 @@ async function main(): Promise<void> {
   }
   const openPlugins = (id: InstanceId): void => {
     localFor(id)
-    if (!app.isPackaged) throw new Error('Plugin installation requires a packaged application')
+    if (!app.isPackaged && process.env.DSH_DESKTOP_DSH_DIR === undefined) {
+      throw new Error('Plugin installation requires a runtime-backed desktop application')
+    }
     const existing = pluginWindows.get(id)
     if (existing && !existing.isDestroyed()) { existing.focus(); return }
     const plugin = new BrowserWindow({ parent: window, width: 900, height: 780, title: `${registry.get(id).name} — ${messages.plugins}`, webPreferences: {
@@ -413,7 +426,7 @@ async function main(): Promise<void> {
     const args = payload(input)
     if (operation === 'snapshot') return snapshot()
     if (operation === 'kernel') {
-      if (!kernels) throw new Error('Kernel updates require a packaged application')
+      if (!kernels) throw new Error('Kernel updates require a selected runtime-backed kernel')
       switch (args.action) {
         case 'read': return kernels.snapshot()
         case 'check': case 'install': {
@@ -604,7 +617,6 @@ async function main(): Promise<void> {
     })
   })
   const plans = new Map<InstanceId | 'library', { plan: DesktopPluginInstallPlan; runtime: string; expires: number }>()
-  const registryFetch: typeof fetch = (input, init) => net.fetch(input instanceof URL ? input.href : input, init)
   ipcMain.handle(DESKTOP_IPC.pluginsCatalog, (event) => {
     pluginOwner(event)
     return queryPluginCatalog(registryFetch, process.env.DSH_DESKTOP_PLUGIN_CATALOG_URL)

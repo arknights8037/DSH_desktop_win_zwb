@@ -129,6 +129,7 @@ const harness = await vi.hoisted(async () => {
     runtime: () => ({ release: { version: '1.0.0', nodeVersion: '24.17.0' }, sharedPackages: [] }),
   }
   return { Window, View, Local, handlers, partitions, app, library, root: '', fetch: vi.fn(), openExternal: vi.fn(),
+    kernelCheck: vi.fn<(install: boolean) => Promise<{ phase: 'error'; message: string } | undefined>>(), kernelInitialize: vi.fn(),
     dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn(async () => ({ response: 1 })),
       showSaveDialog: vi.fn(async () => ({ canceled: true, filePath: undefined as string | undefined })) } }
 })
@@ -153,11 +154,11 @@ vi.mock('../src/remote-instance.ts', () => ({ RemoteInstance: harness.Local }))
 vi.mock('../src/kernel-manager.ts', () => ({ DesktopKernelManager: class {
   private enabled = true
   constructor(_root: string, private readonly bundled: unknown) {}
-  initialize = async () => {}
+  initialize = async () => { await harness.kernelInitialize() }
   runtime = () => this.bundled
   snapshot = () => ({ phase: 'idle', current: '1.0.0', automatic: this.enabled, restartRequired: false })
   automatic = (enabled: boolean) => { this.enabled = enabled; return this.snapshot() }
-  check = async () => this.snapshot()
+  check = async (install = false) => (await harness.kernelCheck(install)) ?? this.snapshot()
   settled = async () => {}
 } }))
 vi.mock('../src/plugin-library.ts', () => ({
@@ -178,15 +179,53 @@ beforeEach(async () => {
   harness.handlers.clear(); harness.partitions.clear(); harness.app.removeAllListeners(); vi.clearAllMocks()
   harness.library.list.mockReturnValue([])
   harness.fetch.mockReset()
+  harness.app.isPackaged = true
+  harness.kernelCheck.mockReset()
+  harness.kernelInitialize.mockReset()
   vi.stubGlobal('process', { ...process, resourcesPath: 'resource-root' })
   await import('../src/main.ts')
   await vi.waitFor(() => { expect(harness.Window.all[0]?.webContents.url).toBe('dsh-app://shell/manager.html') })
 })
-afterEach(() => { harness.app.removeAllListeners(); vi.unstubAllGlobals(); rmSync(harness.root, { recursive: true, force: true }) })
+afterEach(() => {
+  harness.app.removeAllListeners(); vi.unstubAllEnvs(); vi.unstubAllGlobals()
+  rmSync(harness.root, { recursive: true, force: true })
+})
 it('opens the manager immediately without starting any backend', async () => {
   expect(harness.Local.all).toHaveLength(0)
   expect((await invoke('snapshot') as ManagerSnapshot).instances).toEqual([])
   expect(harness.dialog.showErrorBox).not.toHaveBeenCalled()
+})
+it('checks for the latest kernel before opening an unpackaged manager and enables plugin injection', async () => {
+  vi.resetModules()
+  harness.Window.all.length = 0
+  harness.handlers.clear()
+  harness.app.removeAllListeners()
+  harness.app.isPackaged = false
+  harness.kernelCheck.mockClear()
+  harness.kernelInitialize.mockClear()
+  vi.stubEnv('DSH_DESKTOP_DSH_DIR', 'selected-runtime')
+  vi.stubEnv('DSH_DESKTOP_KERNEL_ROOT', join(harness.root, 'kernels'))
+  await import('../src/main.ts')
+  await vi.waitFor(() => { expect(harness.Window.all[0]?.webContents.url).toBe('dsh-app://shell/manager.html') })
+  expect(harness.kernelCheck).toHaveBeenCalledWith(true)
+  expect(harness.kernelCheck.mock.invocationCallOrder[0]).toBeLessThan(harness.kernelInitialize.mock.invocationCallOrder[0]!)
+  expect(await invoke('snapshot')).toMatchObject({ packaged: false, pluginManagement: true })
+  const config = await create('Development')
+  await invoke('open', { id: config.id })
+  await harness.handlers.get(DESKTOP_IPC.pluginsInject)!(sender(), 'test-plugin', '1.2.3', config.id)
+  expect(harness.Local.all[0]!.mutate).toHaveBeenCalledWith({ type: 'plugin-inject', name: 'test-plugin', version: '1.2.3', source: 'shell-library-profile' })
+})
+it('keeps the development window closed when checking the latest kernel fails', async () => {
+  vi.resetModules()
+  harness.Window.all.length = 0
+  harness.app.removeAllListeners()
+  harness.app.isPackaged = false
+  vi.stubEnv('DSH_DESKTOP_DSH_DIR', 'selected-runtime')
+  vi.stubEnv('DSH_DESKTOP_KERNEL_ROOT', join(harness.root, 'kernels'))
+  harness.kernelCheck.mockResolvedValueOnce({ phase: 'error', message: 'registry unavailable' })
+  await import('../src/main.ts')
+  await vi.waitFor(() => { expect(harness.dialog.showErrorBox).toHaveBeenCalledWith('Harness Agent Manager', 'Development kernel update failed: registry unavailable') })
+  expect(harness.Window.all).toHaveLength(0)
 })
 it('restricts kernel update operations to the manager main frame and validates settings', async () => {
   expect(await invoke('kernel', { action: 'read' })).toMatchObject({ current: '1.0.0', automatic: true })

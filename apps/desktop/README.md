@@ -105,14 +105,14 @@ Remote process survival covers manager exit and SSH loss, not server reboot or a
 
 ## Development and packaging
 
-From the repository root:
+Prepare and select a kernel in a packaged build first, and retain the target's prepared Node.js and pnpm tools under `.desktop-build/targets/`. From the repository root:
 
 ```powershell
 pnpm install --frozen-lockfile
 pnpm run dev:desktop
 ```
 
-After a successful repository build, `pnpm run start:desktop` launches without rebuilding. Development homes remain under `apps/desktop/.desktop-build/development/home`; external plugin installation requires a packaged application.
+After a successful desktop build, `pnpm run start:desktop` launches without rebuilding; `dev:desktop` builds the shell only. Development data remains under `apps/desktop/.desktop-build/development/home`. Startup reads the selected kernel under `$DSH_HOME/desktop/agent-manager/kernels`, checks npm `latest`, and prepares any newer release before opening the window; a failed check or preparation refuses startup. `DSH_DESKTOP_KERNEL_HOME` can select a different kernel home independently of development data. The launcher forwards `HTTPS_PROXY` or `HTTP_PROXY` to Electron's registry requests and package-manager children. Local plugin installation and injection use the active kernel. Legacy source-linked profiles retain a complete home backup before detaching their package container; unrecognized external packages require recovery before migration.
 
 The real Electron smoke runs two local Hosts with disposable homes, verifies inherited preferences and test credentials, exercises tabs and shortcuts, and stops both processes:
 

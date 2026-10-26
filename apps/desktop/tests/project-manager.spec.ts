@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -27,7 +27,7 @@ import { join } from 'node:path'
 const args = process.argv.slice(2)
 const project = process.cwd()
 const command = args.find(value => ['install', 'add', 'remove', 'rebuild'].includes(value))
-appendFileSync(${JSON.stringify(join(root, 'pnpm-log.jsonl'))}, JSON.stringify({args, registry: process.env.NPM_CONFIG_REGISTRY}) + '\\n')
+appendFileSync(${JSON.stringify(join(root, 'pnpm-log.jsonl'))}, JSON.stringify({args, registry: process.env.NPM_CONFIG_REGISTRY, electronRunAsNode: process.env.ELECTRON_RUN_AS_NODE}) + '\\n')
 if (command !== 'rebuild') {
   const manifestPath = join(project, 'package.json')
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
@@ -66,9 +66,9 @@ function setup(): { root: string; manager: DesktopProjectManager } {
   runtimeFixture(dsh)
   return { root, manager: new DesktopProjectManager(resolveDesktopPaths(join(root, '.dsh')), { node: process.execPath, pnpm: writeFakePnpm(root), dsh }) }
 }
-function calls(root: string): { args: string[]; registry: string }[] {
+function calls(root: string): { args: string[]; registry: string; electronRunAsNode: string }[] {
   const path = join(root, 'pnpm-log.jsonl')
-  return existsSync(path) ? readFileSync(path, 'utf8').trim().split('\n').map(line => JSON.parse(line) as { args: string[]; registry: string }) : []
+  return existsSync(path) ? readFileSync(path, 'utf8').trim().split('\n').map(line => JSON.parse(line) as { args: string[]; registry: string; electronRunAsNode: string }) : []
 }
 
 it('retries interrupted baseline installation and respects later removal and disabled versions', async () => {
@@ -116,6 +116,49 @@ it('backs up the complete instance home and prepares the same plugin versions fo
   expect(readFileSync(join(backup, 'home/session.jsonl'), 'utf8')).toBe('existing-session\n')
   expect(JSON.parse(readFileSync(join(backup, 'complete.json'), 'utf8'))).toEqual({ from: '1.0.0', to: '1.1.0' })
   expect(readFileSync(join(next.paths.profile, 'cordis.patch.yml'), 'utf8')).toBe('[]\n')
+})
+
+it.each([{}, { '@deepseek-ai/dsh': '0.1.6-alpha.1', '@deepseek-ai/dsh-desktop-host': '0.1.6-alpha.1' }])('backs up and detaches a legacy development package container before using a selected runtime (%j)', async (dependencies) => {
+  const { root, manager } = setup()
+  const home = join(root, '.dsh')
+  mkdirSync(manager.paths.profile, { recursive: true })
+  writeFileSync(join(manager.paths.profile, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh-desktop-runtime', private: true,
+    version: '0.0.0', dependencies, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] } } }))
+  const oldProject = join(root, 'old-development-project')
+  mkdirSync(join(oldProject, 'node_modules'), { recursive: true })
+  symlinkSync(join(oldProject, 'node_modules'), join(manager.paths.profile, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir')
+  writeFileSync(join(home, 'session.jsonl'), 'retained session\n')
+  const library = new DesktopPluginLibrary(join(root, 'library'), manager.runtime)
+
+  await prepareLocalKernel(home, manager, library)
+
+  expect(lstatSync(join(manager.paths.profile, 'node_modules')).isSymbolicLink()).toBe(false)
+  expect(readFileSync(join(home, 'session.jsonl'), 'utf8')).toBe('retained session\n')
+  const recovery = join(root, '.dsh-kernel-backups')
+  const backup = join(recovery, readdirSync(recovery)[0]!)
+  expect(readFileSync(join(backup, 'home/session.jsonl'), 'utf8')).toBe('retained session\n')
+  expect(readFileSync(join(backup, 'complete.json'), 'utf8')).toContain('legacy-development')
+  expect(existsSync(join(oldProject, 'node_modules'))).toBe(true)
+})
+
+it('retains an unrecognized legacy plugin container and its manifest when migration is refused', async () => {
+  const { root, manager } = setup()
+  const home = join(root, '.dsh')
+  mkdirSync(manager.paths.profile, { recursive: true })
+  const manifest = JSON.stringify({ name: '@deepseek-ai/dsh-desktop-runtime', private: true,
+    version: '0.0.0', dependencies: { 'external-plugin': '1.0.0' },
+    dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'external-plugin'] } } })
+  writeFileSync(join(manager.paths.profile, 'package.json'), manifest)
+  const oldProject = join(root, 'old-development-project')
+  mkdirSync(join(oldProject, 'node_modules'), { recursive: true })
+  symlinkSync(join(oldProject, 'node_modules'), join(manager.paths.profile, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir')
+  const library = new DesktopPluginLibrary(join(root, 'library'), manager.runtime)
+
+  await expect(prepareLocalKernel(home, manager, library)).rejects.toThrow('legacy development profile contains external packages')
+
+  expect(lstatSync(join(manager.paths.profile, 'node_modules')).isSymbolicLink()).toBe(true)
+  expect(readFileSync(join(manager.paths.profile, 'package.json'), 'utf8')).toBe(manifest)
+  expect(existsSync(join(oldProject, 'node_modules'))).toBe(true)
 })
 
 it('keeps versioned shell installations separate from independent instance copies', async () => {
@@ -471,6 +514,7 @@ describe('desktop external plugin profile', () => {
       ['add', '@scope/plugin@2.0.0', '--save-exact', '--ignore-scripts'], ['rebuild', '--pending'],
     ])
     expect(calls(root).every(call => call.registry === 'https://registry.npmjs.org/')).toBe(true)
+    expect(calls(root).every(call => call.electronRunAsNode === '1')).toBe(true)
     expect(JSON.parse(readFileSync(join(manager.paths.profile, 'package.json'), 'utf8'))).toMatchObject({ dependencies: { '@scope/plugin': '2.0.0' } })
     await expect(manager.mutate({ type: 'plugin-add', spec: '@deepseek-ai/cordis' }, hooks())).rejects.toThrow(/host-owned/u)
     await expect(manager.applyRelease()).resolves.toBe(false)

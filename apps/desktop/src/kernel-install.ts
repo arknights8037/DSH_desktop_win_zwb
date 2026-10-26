@@ -43,10 +43,11 @@ async function pnpm(runtime: DesktopRuntimeExecutables, cwd: string, args: reado
  * @param directory - Unpublished version directory under the shell kernel store.
  * @param bundled - Bundled Node, pnpm, and matching Desktop transport implementation.
  * @param libraryRoot - Shared shell plugin-library location.
+ * @param fetcher - Registry metadata transport, including shell proxy settings.
  * @returns Completion after version publication; failed stages remain unselected.
  */
 export async function prepareDesktopKernel(
-  version: string, directory: string, bundled: DesktopRuntimeExecutables, libraryRoot: string,
+  version: string, directory: string, bundled: DesktopRuntimeExecutables, libraryRoot: string, fetcher: typeof fetch = fetch,
 ): Promise<void> {
   if (existsSync(join(directory, 'desktop-runtime.json'))) {
     const descriptor = await verifyDesktopRuntime(directory, version)
@@ -66,7 +67,7 @@ export async function prepareDesktopKernel(
     const dependencies: Record<string, string> = { '@deepseek-ai/dsh': version, '@deepseek-ai/dsh-client-store': version }
     for (const name of Object.keys(hostManifest.dependencies)) if (name.startsWith('@deepseek-ai/dsh-')) dependencies[name] = version
     for (const plugin of DESKTOP_DEFAULT_PLUGINS) {
-      const response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(plugin.name)}/${plugin.version}`, {
+      const response = await fetcher(`https://registry.npmjs.org/${encodeURIComponent(plugin.name)}/${plugin.version}`, {
         signal: AbortSignal.timeout(30_000),
       })
       if (!response.ok) throw new Error(`Default plugin metadata failed (${response.status}): ${plugin.name}`)

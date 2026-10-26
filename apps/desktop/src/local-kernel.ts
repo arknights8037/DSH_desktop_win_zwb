@@ -1,5 +1,5 @@
 /** Stopped-instance kernel preparation with durable backups and one-time baseline plugins. */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { cp } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { gte } from 'semver'
@@ -18,18 +18,24 @@ import { DESKTOP_DEFAULT_PLUGINS } from './default-plugins.ts'
  */
 export async function prepareLocalKernel(home: string, manager: DesktopProjectManager, library: DesktopPluginLibrary): Promise<void> {
   const previous = readDesktopProfileState(manager.paths.profile)
-  const changed = previous !== undefined && previous.runtimeId !== desktopRuntimeId(library.runtime())
+  const nodeModules = join(manager.paths.profile, 'node_modules')
+  const legacyContainer = lstatSync(nodeModules, { throwIfNoEntry: false })?.isSymbolicLink() === true
+  const changed = legacyContainer || (previous !== undefined && previous.runtimeId !== desktopRuntimeId(library.runtime()))
   const sources = new Map<string, string>()
   if (changed) {
-    const recovery = join(dirname(home), `${basename(home)}-kernel-backups`)
-    mkdirSync(recovery, { recursive: true, mode: 0o700 })
-    const backup = mkdtempSync(join(recovery, 'backup-'))
-    await cp(home, join(backup, 'home'), { recursive: true, dereference: false, verbatimSymlinks: true, preserveTimestamps: true })
-    writeFileSync(join(backup, 'complete.json'), `${JSON.stringify({ from: previous.version, to: library.runtime().release.version })}\n`)
     const manifest = JSON.parse(readFileSync(join(manager.paths.profile, 'package.json'), 'utf8')) as {
       dependencies: Record<string, string>
       dsh: { profile: { injectedPlugins?: Record<string, string> } }
     }
+    if (legacyContainer && Object.keys(manifest.dependencies).some(name =>
+      !library.runtime().sharedPackages.some(item => item.name === name))) {
+      throw new Error('desktop project: legacy development profile contains external packages; recover them from its original container before migration')
+    }
+    const recovery = join(dirname(home), `${basename(home)}-kernel-backups`)
+    mkdirSync(recovery, { recursive: true, mode: 0o700 })
+    const backup = mkdtempSync(join(recovery, 'backup-'))
+    await cp(home, join(backup, 'home'), { recursive: true, dereference: false, verbatimSymlinks: true, preserveTimestamps: true })
+    writeFileSync(join(backup, 'complete.json'), `${JSON.stringify({ from: previous?.version ?? 'legacy-development', to: library.runtime().release.version })}\n`)
     for (const name of Object.keys(manifest.dsh.profile.injectedPlugins ?? {})) {
       const version = manifest.dependencies[name]
       if (version === undefined) throw new Error(`Missing installed plugin version: ${name}`)
@@ -39,6 +45,10 @@ export async function prepareLocalKernel(home: string, manager: DesktopProjectMa
         return Promise.resolve()
       })
     }
+  }
+  if (legacyContainer) {
+    unlinkSync(nodeModules)
+    mkdirSync(nodeModules, { recursive: true, mode: 0o700 })
   }
   await manager.applyRelease(sources)
   if (!gte(manager.dshVersion(), '0.2.0-rc.2')) return

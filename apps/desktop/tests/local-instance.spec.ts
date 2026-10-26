@@ -21,7 +21,7 @@ vi.mock('../src/host-process.ts', () => ({ DesktopHostProcess: class {
 import { LocalInstance } from '../src/local-instance.ts'
 it('restarts after plugin changes without recursively entering the held profile transaction', async () => {
   harness.locked = false; harness.prepares = 0; harness.starts = 0; harness.stops = 0
-  const local = new LocalInstance('isolated-test-home', { node: 'node', pnpm: 'pnpm', dsh: 'runtime' }, undefined, () => {})
+  const local = new LocalInstance('isolated-test-home', { node: 'node', pnpm: 'pnpm', dsh: 'runtime' }, () => {})
   await local.connect(new AbortController().signal)
   await local.mutate({ type: 'plugins-disable-all' })
   await local.mutate('reset')

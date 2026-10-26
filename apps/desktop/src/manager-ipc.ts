@@ -14,6 +14,7 @@ export interface ManagerSnapshot {
   statuses: Record<string, InstanceStatus>
   messages: ManagerMessages
   packaged: boolean
+  pluginManagement: boolean
   maximized: boolean
 }
 /** Closed operation names; main validates every payload and instance ID. */

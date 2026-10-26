@@ -1,28 +1,17 @@
 /** Build and launch the unpackaged Electron shell against the current workspace. */
 
 import { spawn } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
-import { DESKTOP_HOST_PROTOCOL_VERSION } from '../src/host-protocol.ts'
-import type { DesktopRelease } from '../src/release.ts'
-import { prepareDevelopmentProject } from './development-project.ts'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { resolveDevelopmentKernel, type DevelopmentKernel } from './development-kernel.ts'
+import { resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
-const REPOSITORY_ROOT = resolve(APP_ROOT, '..', '..')
 const BUILD_ROOT = join(APP_ROOT, '.desktop-build')
 const DEVELOPMENT_ROOT = join(BUILD_ROOT, 'development')
-
-interface PackageManifest {
-  readonly version?: string
-}
-
-function packageVersion(path: string, subject: string): string {
-  const manifest = JSON.parse(readFileSync(path, 'utf8')) as PackageManifest
-  if (typeof manifest.version !== 'string') throw new Error(`desktop development: ${subject} has no version`)
-  return manifest.version
-}
 
 function debugPort(name: string, fallback: number): number {
   const value = process.env[name]
@@ -53,7 +42,7 @@ async function runPackageScript(script: string, cwd: string): Promise<void> {
   await run(process.execPath, [packageManager, 'run', script], cwd)
 }
 
-async function launchElectron(): Promise<void> {
+async function launchElectron(kernel: DevelopmentKernel): Promise<void> {
   const require = createRequire(import.meta.url)
   const electron: unknown = require('electron')
   if (typeof electron !== 'string') throw new Error('desktop development: electron executable is unavailable')
@@ -65,14 +54,18 @@ async function launchElectron(): Promise<void> {
   const environment: NodeJS.ProcessEnv = {
     ...process.env,
     DSH_HOME: home,
+    DSH_DESKTOP_DSH_DIR: kernel.directory,
+    DSH_DESKTOP_KERNEL_ROOT: kernel.root,
+    DSH_DESKTOP_PNPM_ENTRY: kernel.pnpm,
     DSH_DESKTOP_HOST_INSPECT_PORT: String(hostPort),
-    DSH_DESKTOP_NODE_BINARY: process.execPath,
+    DSH_DESKTOP_NODE_BINARY: kernel.node,
     DSH_DESKTOP_OPEN_DEVTOOLS: process.env.DSH_DESKTOP_OPEN_DEVTOOLS ?? '1',
     ELECTRON_ENABLE_LOGGING: process.env.ELECTRON_ENABLE_LOGGING ?? '1',
   }
   console.log(`desktop development: DSH_HOME=${home}`)
   console.log(`desktop development: inspectors main=${String(mainPort)}, renderer=${String(rendererPort)}, host=${String(hostPort)}`)
   await run(electron, [
+    ...((process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY) ? [`--proxy-server=${process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY}`] : []),
     `--inspect=127.0.0.1:${String(mainPort)}`,
     `--remote-debugging-port=${String(rendererPort)}`,
     `--user-data-dir=${userData}`,
@@ -83,32 +76,14 @@ async function launchElectron(): Promise<void> {
 async function main(): Promise<void> {
   const { values } = parseArgs({ options: { 'skip-build': { type: 'boolean', default: false } } })
   if (!values['skip-build']) {
-    await runPackageScript('build', REPOSITORY_ROOT)
     await runPackageScript('build', APP_ROOT)
   }
-  for (const path of [
-    join(APP_ROOT, 'lib', 'main.js'),
-    join(REPOSITORY_ROOT, 'apps', 'desktop-host', 'lib', 'index.js'),
-  ]) {
+  for (const path of [join(APP_ROOT, 'lib', 'main.js')]) {
     if (!existsSync(path)) throw new Error(`desktop development: missing built artifact ${path}`)
   }
-  const version = packageVersion(join(APP_ROOT, 'package.json'), 'desktop package')
-  const pnpmVersion = packageVersion(join(APP_ROOT, 'node_modules', 'pnpm', 'package.json'), 'pnpm package')
-  const release: DesktopRelease = {
-    schemaVersion: 1,
-    version,
-    hostProtocolVersion: DESKTOP_HOST_PROTOCOL_VERSION,
-    nodeVersion: process.versions.node,
-    pnpmVersion,
-  }
-  prepareDevelopmentProject({
-    projectDir: join(DEVELOPMENT_ROOT, 'project'),
-    cliDir: join(REPOSITORY_ROOT, 'apps', 'cli'),
-    hostDir: join(REPOSITORY_ROOT, 'apps', 'desktop-host'),
-    dependencyDir: join(REPOSITORY_ROOT, 'node_modules', '.pnpm', 'node_modules'),
-    release,
-  })
-  await launchElectron()
+  const kernel = resolveDevelopmentKernel(process.env.DSH_DESKTOP_KERNEL_HOME ?? resolveDshHome(), resolveDesktopTargetBuildPaths().runtime)
+  console.log(`desktop development: kernel=${kernel.version} source=${kernel.directory}`)
+  await launchElectron(kernel)
 }
 
 main().catch((error: unknown) => {

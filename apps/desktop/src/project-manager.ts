@@ -22,7 +22,6 @@ import {
 } from 'node:fs'
 import { basename, delimiter, dirname, join, resolve, sep } from 'node:path'
 import {
-  DESKTOP_HOST_PACKAGE,
   desktopCorePackageOverrides,
   verifyDesktopCorePackageSet,
 } from './core-package-set.ts'
@@ -96,7 +95,6 @@ export class DesktopProfileMutationError extends Error {
 }
 
 const PROJECT_NAME = '@deepseek-ai/dsh-desktop-runtime'
-const DSH_PACKAGE = '@deepseek-ai/dsh'
 const CORE_BUILD_PACKAGE = '@deepseek-ai/dsh-subprocess-local'
 const DESKTOP_PROFILE_BUNDLES = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] as const
 const WORKSPACE_SETTINGS = 'nodeLinker: hoisted\nautoInstallPeers: false\nstrictDepBuilds: true\n'
@@ -696,6 +694,7 @@ export class DesktopProjectManager {
         cwd: projectDir,
         env: {
           ...inherited,
+          ELECTRON_RUN_AS_NODE: '1',
           COREPACK_HOME: this.paths.pnpm.home,
           NPM_CONFIG_REGISTRY: DESKTOP_REGISTRY,
           NPM_CONFIG_STORE_DIR: this.paths.pnpm.store,
@@ -819,27 +818,6 @@ export function createRuntimeProjectMetadata(projectDir: string, release: Deskto
     workspaceFile(desktopCorePackageOverrides(packageSet)),
     { mode: 0o600 },
   )
-}
-
-/**
- * Create metadata for the unpackaged development project that links the current workspace.
- * @param projectDir - Disposable development profile directory.
- * @param release - Release identity shared by the linked CLI package and Electron shell.
- */
-export function createDevelopmentProjectMetadata(projectDir: string, release: DesktopRelease): void {
-  mkdirSync(projectDir, { recursive: true, mode: 0o700 })
-  const manifest = {
-    name: PROJECT_NAME,
-    private: true,
-    version: '0.0.0',
-    dependencies: {
-      [DSH_PACKAGE]: release.version,
-      [DESKTOP_HOST_PACKAGE]: release.version,
-    },
-    dsh: { profile: { bundles: [...DESKTOP_PROFILE_BUNDLES] } },
-  }
-  writeJson(join(projectDir, 'package.json'), manifest)
-  writeFileSync(join(projectDir, 'pnpm-workspace.yaml'), workspaceFile(), { mode: 0o600 })
 }
 
 /** Create the first external plugin profile without running a package manager. */

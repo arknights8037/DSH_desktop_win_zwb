@@ -20,15 +20,15 @@ function formatBytes(bytes) {
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`
 }
 async function loadKernel() {
-  if (!state.packaged) return
+  if (!state.pluginManagement) return
   kernelDocument = await api.invoke('kernel', { action: 'read' })
   renderKernel()
 }
 function renderKernel() {
   const busy = kernelBusy || ['checking', 'installing'].includes(kernelDocument?.phase)
-  $('kernel-check').disabled = !state.packaged || busy
-  $('kernel-install').disabled = !state.packaged || busy || !kernelDocument?.available || kernelDocument?.restartRequired
-  $('kernel-automatic').disabled = !state.packaged || busy
+  $('kernel-check').disabled = !state.pluginManagement || busy
+  $('kernel-install').disabled = !state.pluginManagement || busy || !kernelDocument?.available || kernelDocument?.restartRequired
+  $('kernel-automatic').disabled = !state.pluginManagement || busy
   if (!kernelDocument) { $('kernel-status').textContent = t('pluginPackagedOnly'); return }
   $('kernel-automatic').checked = kernelDocument.automatic
   const phase = { idle: 'kernelIdle', checking: 'kernelChecking', installing: 'kernelInstalling', ready: 'kernelRestart', error: 'kernelError' }
@@ -150,7 +150,7 @@ async function loadStorage() {
   finally { storageLoading = false; renderStorage() }
 }
 function renderPluginSettings() {
-  $('plugin-development-hint').hidden = state.packaged
+  $('plugin-development-hint').hidden = state.pluginManagement
   $('plugin-no-instances').hidden = state.instances.length !== 0
   $('plugin-instances').replaceChildren(...state.instances.map(instance => {
     const row = document.createElement('article')
@@ -168,7 +168,7 @@ function renderPluginSettings() {
     actions.append(button('open', () => open(instance)))
     if (instance.kind === 'local') {
       const manage = button('instancePlugins', () => api.invoke('plugins', { id: instance.id }))
-      manage.disabled = !state.packaged || !['connected', 'error'].includes(state.statuses[instance.id].connection)
+      manage.disabled = !state.pluginManagement || !['connected', 'error'].includes(state.statuses[instance.id].connection)
       actions.append(manage)
     }
     row.append(summary, actions)
@@ -178,7 +178,7 @@ function renderPluginSettings() {
 let pluginPanel
 let pluginPanelLoading
 async function loadPluginPanel() {
-  if (!state.packaged) return
+  if (!state.pluginManagement) return
   if (pluginPanelLoading) return pluginPanelLoading
   pluginPanelLoading = (async () => {
     if (pluginPanel) return pluginPanel.refresh()
@@ -234,7 +234,7 @@ document.querySelectorAll('[data-settings-tab]').forEach(node => {
   }
 })
 document.addEventListener('manager-rendered', renderSettings)
-document.addEventListener('manager-rendered', () => { if (state.packaged) void loadKernel().catch(error => { $('kernel-status').textContent = String(error) }) })
+document.addEventListener('manager-rendered', () => { if (state.pluginManagement) void loadKernel().catch(error => { $('kernel-status').textContent = String(error) }) })
 document.addEventListener('manager-settings-open', event => {
   selectSettingsTab(event.detail.tab || settingsTab)
   void perform(loadSoftwareSettings)

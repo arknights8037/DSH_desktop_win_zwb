@@ -4,8 +4,9 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { prepareDevelopmentProject } from './development-project.ts'
-import { DESKTOP_HOST_PROTOCOL_VERSION } from '../src/host-protocol.ts'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { resolveDevelopmentKernel } from './development-kernel.ts'
+import { resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
 import type { InstanceConfig } from '../src/instances.ts'
 import type { ManagerSnapshot } from '../src/manager-ipc.ts'
 import type { SoftwareSettingsSnapshot } from '../src/software-settings.ts'
@@ -19,14 +20,11 @@ const home = mkdtempSync(join(tmpdir(), 'dsh-manager-smoke-'))
 const output = join(appRoot, '.desktop-build', 'manager-smoke')
 mkdirSync(output, { recursive: true })
 const packagedExecutable = process.argv[2]
-if (!packagedExecutable) prepareDevelopmentProject({
-  projectDir: join(appRoot, '.desktop-build', 'development', 'project'), cliDir: join(root, 'apps/cli'),
-  hostDir: join(root, 'apps/desktop-host'), dependencyDir: join(root, 'node_modules/.pnpm/node_modules'),
-  release: { schemaVersion: 1, version: JSON.parse(readFileSync(join(appRoot, 'package.json'), 'utf8')).version,
-    hostProtocolVersion: DESKTOP_HOST_PROTOCOL_VERSION, nodeVersion: process.versions.node,
-    pnpmVersion: JSON.parse(readFileSync(join(appRoot, 'node_modules/pnpm/package.json'), 'utf8')).version },
-})
+const kernel = packagedExecutable ? undefined
+  : resolveDevelopmentKernel(process.env.DSH_DESKTOP_KERNEL_HOME ?? resolveDshHome(), resolveDesktopTargetBuildPaths().runtime)
 const environment: NodeJS.ProcessEnv = { ...process.env, DSH_HOME: home, DSH_DESKTOP_NODE_BINARY: process.execPath, DSH_DESKTOP_OPEN_DEVTOOLS: '0' }
+if (kernel) Object.assign(environment, { DSH_DESKTOP_DSH_DIR: kernel.directory, DSH_DESKTOP_KERNEL_ROOT: kernel.root,
+  DSH_DESKTOP_NODE_BINARY: kernel.node, DSH_DESKTOP_PNPM_ENTRY: kernel.pnpm })
 delete environment.ELECTRON_RUN_AS_NODE
 const electron = await playwright._electron.launch({ executablePath: packagedExecutable ?? require('electron'), args: [...(packagedExecutable ? [] : [appRoot]), `--user-data-dir=${join(home, 'browser')}`], env: environment })
 try {
@@ -334,9 +332,13 @@ try {
   await page.locator('[data-settings-tab=general]').click()
   await page.locator('[data-settings-tab=advanced]').click()
   if (await page.locator('#settings-instance, [data-native-section]').count()) throw new Error('DSH preferences still require instance navigation')
-  await page.locator('#dsh-transcriptView').selectOption('normal')
-  await page.locator('#dsh-modeSelectionEnabled').uncheck()
+  const modernSettings = await page.locator('#kernel-settings-hint').isVisible()
+  if (!modernSettings) {
+    await page.locator('#dsh-transcriptView').selectOption('normal')
+    await page.locator('#dsh-modeSelectionEnabled').uncheck()
+  }
   await page.locator('#dsh-deepseekMaxTokens').fill('8192')
+  await page.locator('#dsh-reasoningEffort').selectOption('high')
   await page.locator('#dsh-settings-form [type=submit]').click()
   await page.waitForFunction(() => !document.querySelector<HTMLInputElement>('#dsh-deepseekMaxTokens')!.disabled
     && document.querySelector('#dsh-save-status')!.textContent?.startsWith('Saved.'))
@@ -345,9 +347,14 @@ try {
   const overridden = await hostRead('settings/describe') as Array<{ namespaces: Array<{ ns: string; value: Record<string, unknown> }> }>
   if (overridden.length !== 2) throw new Error('DSH overrides did not reach two instances')
   for (const doc of overridden) {
-    if (doc.namespaces.find(item => item.ns === 'ui-chat')?.value.transcriptView !== 'normal'
-      || doc.namespaces.find(item => item.ns === 'agent-presets')?.value.modeSelectionEnabled !== false
-      || doc.namespaces.find(item => item.ns === 'llm-deepseek')?.value.maxTokens !== 8192) {
+    const modern = doc.namespaces.some(item => item.ns === 'agent-default-model')
+    const deepseek = doc.namespaces.find(item => item.ns === 'llm-deepseek')?.value
+    const valid = modern
+      ? deepseek?.maxTokens === 8192 && doc.namespaces.find(item => item.ns === 'agent-default-model')?.value.reasoningEffort === 'high'
+      : doc.namespaces.find(item => item.ns === 'ui-chat')?.value.transcriptView === 'normal'
+        && doc.namespaces.find(item => item.ns === 'agent-presets')?.value.modeSelectionEnabled === false
+        && deepseek?.maxTokens === 8192
+    if (!valid) {
       throw new Error('Instance values did not match the software DSH settings')
     }
   }

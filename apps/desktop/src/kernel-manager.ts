@@ -1,7 +1,7 @@
 /** Shell-owned kernel selection; prepared releases take effect on the next application launch. */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { gt, gte, valid } from 'semver'
+import { gt, valid } from 'semver'
 import type { DesktopRuntimeExecutables } from './project-manager.ts'
 import { readDesktopRuntime } from './runtime-tree.ts'
 
@@ -49,10 +49,13 @@ export class DesktopKernelManager {
     this.started = this.selection.selected
     this.state = { phase: 'idle', current: readDesktopRuntime(this.runtime().dsh).release.version,
       automatic: this.selection.automatic, restartRequired: false,
-      modernSettings: gte(readDesktopRuntime(this.runtime().dsh).release.version, '0.2.0-0') }
+      modernSettings: this.hasModernSettings(this.runtime().dsh) }
   }
   private isVersion(value: unknown): value is string | null { return value === null || (typeof value === 'string' && valid(value) === value) }
   private directory(version: string): string { return join(this.root, 'releases', version) }
+  private hasModernSettings(runtime: string): boolean {
+    return existsSync(join(runtime, 'node_modules', '@deepseek-ai', 'dsh-agent-default-model', 'package.json'))
+  }
   /** @returns The kernel selected at application startup; an update never changes this result in-process. */
   runtime(): DesktopRuntimeExecutables {
     return this.started === null ? this.bundled : { ...this.bundled, dsh: this.directory(this.started), profileResolution: 'runtime' }

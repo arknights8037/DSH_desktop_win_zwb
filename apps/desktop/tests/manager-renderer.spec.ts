@@ -20,7 +20,7 @@ function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTab
   dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
   dom.window.HTMLDialogElement.prototype.close = function (returnValue = '') { this.returnValue = returnValue; this.open = false; this.dispatchEvent(new dom.window.Event('close')) }
   const instances = config ? Array.isArray(config) ? config : [config] : []
-  const snapshot: ManagerSnapshot = { instances, tabs: { ids: openTabs ? instances.map(item => item.id) : [], active: openTabs ? instances.at(-1)!.id : null }, statuses: Object.fromEntries(instances.map(item => [item.id, { process: 'unknown', connection: 'disconnected' }])), messages: managerMessages(locale), packaged: kernel !== undefined, maximized: false }
+  const snapshot: ManagerSnapshot = { instances, tabs: { ids: openTabs ? instances.map(item => item.id) : [], active: openTabs ? instances.at(-1)!.id : null }, statuses: Object.fromEntries(instances.map(item => [item.id, { process: 'unknown', connection: 'disconnected' }])), messages: managerMessages(locale), packaged: kernel !== undefined, pluginManagement: kernel !== undefined, maximized: false }
   const settings = { revision: 0, appearance: { theme: theme || 'system', fontSize: 14, language: '', busyEnter: 'queue' },
     personalization: structuredClone(DEFAULT_PERSONAL_APPEARANCE),
     dsh: { ...DEFAULT_DSH_SETTINGS }, modelSources: [] as ModelSourceView[], credentials: [] as string[],
@@ -213,7 +213,8 @@ it('imports color files into a preview and rejects invalid schemes without chang
 
 it('embeds market search and plugin management in settings without opening a library window', async () => {
   const { dom, invoke, snapshot, pluginLibrary } = page({ id, name: '<local>', kind: 'local' })
-  snapshot.packaged = true
+  snapshot.packaged = false
+  snapshot.pluginManagement = true
   const document = dom.window.document
   await expect.poll(() => document.querySelector('#plugin-instances strong')?.textContent).toBe('<local>')
   document.querySelector<HTMLButtonElement>('#settings')!.click()
@@ -238,6 +239,22 @@ it('embeds market search and plugin management in settings without opening a lib
   expect(pluginLibrary.plugins.catalog).toHaveBeenCalledOnce()
   expect(invoke.mock.calls.some(([operation]) => operation === 'open')).toBe(false)
   expect(document.querySelectorAll<HTMLButtonElement>('#plugin-instances button')[1]?.disabled).toBe(true)
+})
+it('shows kernel controls and the plugin library in an unpackaged runtime-backed shell', async () => {
+  const kernel: KernelStatus = { phase: 'idle', current: '0.2.1-rc.2', automatic: false, restartRequired: false, modernSettings: true }
+  const { dom, snapshot } = page(undefined, 'en', false, undefined, kernel)
+  snapshot.packaged = false
+  const document = dom.window.document
+  document.querySelector<HTMLButtonElement>('#settings')!.click()
+  await expect.poll(() => document.querySelector('#kernel-status')?.textContent).toContain('0.2.1-rc.2')
+  const status = document.querySelector('#kernel-status')!.textContent
+  const checkEnabled = !document.querySelector<HTMLButtonElement>('#kernel-check')!.disabled
+  document.querySelector<HTMLButtonElement>('[data-settings-tab=plugins]')!.click()
+  await expect.poll(() => document.querySelector('#library-catalog-status')?.textContent).toContain('0 matching')
+  await expect(JSON.stringify({ packaged: snapshot.packaged, kernel: status, checkEnabled,
+    pluginLibraryVisible: document.querySelector('.plugin-management #library-plugins') !== null,
+    developmentHintHidden: document.querySelector<HTMLElement>('#plugin-development-hint')!.hidden }, null, 2) + '\n')
+    .toMatchFileSnapshot('expected/development-runtime-controls.json')
 })
 it('offers direct local and remote choices on the first launch', async () => {
   const { dom, invoke } = page()
