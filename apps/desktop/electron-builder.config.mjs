@@ -57,8 +57,9 @@ export function createElectronBuilderConfig(
   const buildPaths = desktopTargetBuildPaths(resolveDesktopBuildTarget(env, hostPlatform, hostArch))
   return {
     appId,
+    electronVersion: '44.7.0',
     productName: 'DshManager',
-    extraMetadata: { productName: 'DshManager', version: '0.1.2' },
+    extraMetadata: { productName: 'DshManager', version: '0.1.3' },
     artifactName: 'DshManager-V${version}-${os}-${arch}-Setup.${ext}',
     icon: fileURLToPath(new URL('./renderer/icon.png', import.meta.url)),
     directories: { output: unsigned ? join(buildPaths.root, 'unsigned-artifacts') : buildPaths.artifacts },
@@ -86,6 +87,14 @@ export function createElectronBuilderConfig(
           throw new Error(`Desktop runtime must be unpacked outside ASAR: ${join(runtime, path)}`, { cause: error })
         }
       }
+      const executable = context.electronPlatformName === 'darwin'
+        ? join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, 'Contents', 'MacOS', context.packager.appInfo.productFilename)
+        : join(context.appOutDir, `${context.packager.appInfo.productFilename}.exe`)
+      await promisify(execFile)(executable, ['-e', "require(process.resourcesPath + '/dsh/node_modules/node-addon-require-builtin').requireBuiltin('internal/modules/esm/loader')"], {
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+        timeout: 30_000,
+        windowsHide: true,
+      })
     },
     files: [
       'lib/*.js',

@@ -94,7 +94,7 @@ try {
     await page.locator('[data-settings-tab=instances]').click()
   }
   const state: ManagerSnapshot = await page.evaluate(async () => (window as Window & { dshManager?: { invoke: (operation: string) => Promise<ManagerSnapshot> } }).dshManager!.invoke('snapshot'))
-  if (state.version !== '0.1.2') throw new Error('Unexpected desktop version: ' + state.version)
+  if (state.version !== '0.1.3') throw new Error('Unexpected desktop version: ' + state.version)
   const kernelState = await invoke('kernel', { action: 'read' }) as { current: string }
   if (kernelState.current !== '0.2.1-rc.2') throw new Error('Unexpected running kernel: ' + kernelState.current)
   if (state.instances.some(config => state.statuses[config.id]?.connection !== 'connected')) throw new Error(`Local instances did not connect: ${JSON.stringify(state.statuses)}`)

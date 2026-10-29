@@ -21,7 +21,7 @@ function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTab
   dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
   dom.window.HTMLDialogElement.prototype.close = function (returnValue = '') { this.returnValue = returnValue; this.open = false; this.dispatchEvent(new dom.window.Event('close')) }
   const instances = config ? Array.isArray(config) ? config : [config] : []
-  const snapshot: ManagerSnapshot = { version: '0.1.2', instances, tabs: { ids: openTabs ? instances.map(item => item.id) : [], active: openTabs ? instances.at(-1)!.id : null }, statuses: Object.fromEntries(instances.map(item => [item.id, { process: 'unknown', connection: 'disconnected' }])), messages: managerMessages(locale), packaged: kernel !== undefined, pluginManagement: kernel !== undefined, maximized: false }
+  const snapshot: ManagerSnapshot = { version: '0.1.3', instances, tabs: { ids: openTabs ? instances.map(item => item.id) : [], active: openTabs ? instances.at(-1)!.id : null }, statuses: Object.fromEntries(instances.map(item => [item.id, { process: 'unknown', connection: 'disconnected' }])), messages: managerMessages(locale), packaged: kernel !== undefined, pluginManagement: kernel !== undefined, maximized: false }
   const settings = { revision: 0, debugMode: false, appearance: { theme: theme || 'system', fontSize: 14, language: '', busyEnter: 'queue', motionEnabled: true },
     personalization: structuredClone(DEFAULT_PERSONAL_APPEARANCE),
     dsh: { ...DEFAULT_DSH_SETTINGS }, modelSources: [] as ModelSourceView[], credentials: [] as string[],

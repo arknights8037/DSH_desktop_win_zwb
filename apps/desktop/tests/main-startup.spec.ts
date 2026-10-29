@@ -116,7 +116,7 @@ const harness = await vi.hoisted(async () => {
   }>()
   const app = Object.assign(new EventEmitter(), {
     isPackaged: true, getAppPath: () => fileURLToPath(new URL('..', import.meta.url)), getLocale: () => 'en', whenReady: () => Promise.resolve(),
-    requestSingleInstanceLock: () => true, quit: vi.fn(), exit: vi.fn(), relaunch: vi.fn(), getVersion: () => '0.1.2',
+    requestSingleInstanceLock: () => true, quit: vi.fn(), exit: vi.fn(), relaunch: vi.fn(), getVersion: () => '0.1.3',
     getPath: () => join(harness.root, 'browser'),
   })
   const library = {

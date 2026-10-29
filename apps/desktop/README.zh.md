@@ -145,7 +145,7 @@ $env:DSH_DESKTOP_APP_ID = 'dev.dsh.agentmanager'
 pnpm run package:desktop:win:x64:unsigned
 ```
 
-DshManager V0.1.2 安装包输出到 `apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts`。应用版本独立于内置 DSH 内核版本，内核版本固定在 `apps/desktop/config/kernel-release.json`。正式构建在隔离临时目录中安装对应版本的已发布 npm 包；DSH 源码包不属于构建输入。Desktop Host 和 Electron 外壳源码使用这些已安装包的声明编译，Host 通过注入式插件提供外壳 API。复制资源前，electron-builder 校验内核版本、第一方包版本、平台、文件清单和已准备的工具版本；陈旧资源会阻止打包。官方外壳安装包更新器关闭，独立内核更新使用应用设置。应用和安装程序图标使用 [DeepSeek 官网的鲸鱼 favicon](https://www.deepseek.com/favicon.ico)，转换为 PNG 和多尺寸 Windows ICO；品牌素材归 DeepSeek 所有。
+DshManager V0.1.3 安装包输出到 `apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts`。应用版本独立于内置 DSH 内核版本，内核版本固定在 `apps/desktop/config/kernel-release.json`。正式构建在隔离临时目录中安装对应版本的已发布 npm 包；DSH 源码包不属于构建输入。Desktop Host 和 Electron 外壳源码使用这些已安装包的声明编译，Host 通过注入式插件提供外壳 API。Electron 固定为内置原生加载器明确支持的版本，打包时会在最终 Electron 运行时中实际调用该加载器做兼容性检查。复制资源前，electron-builder 校验内核版本、第一方包版本、平台、文件清单和已准备的工具版本；陈旧资源会阻止打包。官方外壳安装包更新器关闭，独立内核更新使用应用设置。应用和安装程序图标使用 [DeepSeek 官网的鲸鱼 favicon](https://www.deepseek.com/favicon.ico)，转换为 PNG 和多尺寸 Windows ICO；品牌素材归 DeepSeek 所有。
 
 <a id="implementation"></a>
 
