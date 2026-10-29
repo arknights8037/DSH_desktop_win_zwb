@@ -56,10 +56,6 @@
 .plugin-workspace .plugin-card-heading strong { font-size: 14px; }
 .plugin-workspace .plugin-badge, .plugin-workspace .plugin-count { display: inline-flex; align-items: center; justify-content: center; color: var(--brand); background: var(--plugin-tint); border-radius: 5px; padding: 1px 7px; font-size: 11px; font-weight: 500; white-space: nowrap; }
 .plugin-workspace .plugin-count { min-width: 20px; border-radius: 20px; }
-.plugin-workspace .plugin-card-description { margin: 0 0 8px; font-size: 12px; }
-.plugin-workspace .plugin-card-description summary { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; list-style: none; }
-.plugin-workspace .plugin-card-description[open] summary { display: block; }
-.plugin-workspace .plugin-card-description summary:hover { color: var(--brand); }
 .plugin-workspace .plugin-card small, .plugin-workspace .plugin-card a { font-size: 11px; }
 .plugin-workspace small, .plugin-workspace .package-version, .plugin-workspace .plugin-package-name { color: var(--muted); font-size: 11px; }
 .plugin-workspace .plugin-package-name { display: block; margin-top: 4px; font-family: var(--mono); }
@@ -78,7 +74,6 @@
 .plugin-workspace [id$="install-plan"] { margin: 0 0 20px; padding: 16px; border: 1px solid var(--brand); border-radius: 10px; background: var(--plugin-tint); }
 .plugin-workspace .plugin-eyebrow { display: block; font-size: 11px; color: var(--brand); margin-bottom: 6px; }
 .plugin-workspace [id$="plan-heading"] { overflow-wrap: anywhere; }
-.plugin-workspace [id$="plan-description"] { font-size: 12px; }
 .plugin-workspace dl { font-size: 12px; margin: 12px 0; }
 .plugin-workspace dt { margin-top: 10px; color: var(--muted); font-size: 11px; }
 .plugin-workspace dd { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -94,8 +89,6 @@
 .plugin-workspace .plugin-status:empty { display: none; }
 .plugin-workspace .plugin-status[data-tone="success"]::before { content: '\2713'; color: var(--brand); }
 .plugin-workspace .plugin-status[data-tone="error"] { color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); }
-.plugin-workspace .plugin-status[data-tone="busy"]::before { content: ''; flex: 0 0 12px; width: 12px; height: 12px; margin-top: 3px; border: 2px solid var(--line); border-top-color: var(--brand); border-radius: 50%; animation: plugin-spin .8s linear infinite; }
-@keyframes plugin-spin { to { transform: rotate(360deg); } }
 @media (max-width: 1150px) {
   .plugin-workspace .plugin-columns { grid-template-columns: minmax(0, 1fr) minmax(280px, .9fr); gap: 16px; }
   .plugin-workspace .plugin-discovery, .plugin-workspace .plugin-management { padding: 16px; }

@@ -34,7 +34,7 @@ async function fixture(
   const appRoot = join(repositoryRoot, 'apps', 'desktop')
   const artifactsRoot = join(appRoot, '.desktop-build', 'artifacts')
   await mkdir(artifactsRoot, { recursive: true })
-  await writeFile(join(repositoryRoot, 'package.json'), `${JSON.stringify({ version })}\n`)
+  await writeFile(join(repositoryRoot, 'package.json'), `${JSON.stringify({ version: '0.2.1-rc.2' })}\n`)
   await writeFile(join(appRoot, 'package.json'), `${JSON.stringify({ version })}\n`)
 
   const [os, arch] = target.split('-') as ['mac' | 'win', 'arm64' | 'x64']
@@ -46,6 +46,7 @@ async function fixture(
     schemaVersion: 1,
     target,
     version,
+    kernelVersion: '0.2.1-rc.2',
     environment,
     publicUrl: `${origin}/_/harness/desktop/stable/${target}/`,
   })}\n`)

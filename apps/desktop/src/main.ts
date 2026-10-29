@@ -1,10 +1,9 @@
 /** Electron manager owns tab views and independently scoped local/SSH runtimes. */
 import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
-import { extname, join, resolve, sep } from 'node:path'
+import { dirname, extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow, WebContentsView, dialog, ipcMain, Menu, net, protocol, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
-import { resolveDesktopPaths } from './paths.ts'
 import { removeOwnedDirectoryAsync } from './owned-directory.ts'
 import { InstanceRegistry, instanceId, parseCredentials, parseInstance, type InstanceId } from './instances.ts'
 import { InstanceService } from './instance-service.ts'
@@ -18,7 +17,7 @@ import { DesktopProfileMutationError, type DesktopProjectMutation, type DesktopR
 import { inspectPluginInstall, queryPluginCatalog, type DesktopInstallPlanId, type DesktopPluginInstallPlan } from './plugin-market.ts'
 import { SoftwareSettings } from './software-settings.ts'
 import { DEFAULT_PERSONAL_APPEARANCE, parsePersonalAppearance, type PersonalAppearance } from './personal-appearance.ts'
-import { instanceAppearanceCss } from './instance-appearance.ts'
+import { instanceAppearanceCss, loadingAppearanceCss } from './instance-appearance.ts'
 import { resolveInstanceSettings, type InstanceSettingsDocument, type InstanceSettingsSupport } from './settings-adapter.ts'
 import { instanceSettings } from './manager-settings.ts'
 import { DEFAULT_SHORTCUTS, shortcutBinding, type ManagerShortcuts } from './manager-shortcuts.ts'
@@ -26,7 +25,14 @@ import { claimDesktopSingleInstance } from './single-instance.ts'
 import { DesktopPluginLibrary } from './plugin-library.ts'
 import { DesktopKernelManager } from './kernel-manager.ts'
 import { prepareDesktopKernel } from './kernel-install.ts'
-import { prepareLocalKernel } from './local-kernel.ts'
+import { DesktopPluginUpdates } from './plugin-updates.ts'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { DesktopDataStorage, type StorageCategory } from './data-storage.ts'
+import { discoverSourceModels } from './model-discovery.ts'
+import { modelSourceId, parseModelSource } from './model-sources.ts'
+import { startupLoadingDocument } from './startup-document.ts'
+import { DesktopDiagnostics } from './diagnostics.ts'
+import type { DesktopInstallProgress } from './install-progress.ts'
 
 const SCHEME = 'dsh-app'
 const MANAGER_URL = 'dsh-app://shell/manager.html'
@@ -41,7 +47,7 @@ function resources(): DesktopRuntimeExecutables {
   return {
     node: app.isPackaged ? process.execPath : process.env.DSH_DESKTOP_NODE_BINARY ?? process.execPath,
     pnpm: (!app.isPackaged ? process.env.DSH_DESKTOP_PNPM_ENTRY : undefined) ?? join(process.resourcesPath, 'runtime', 'pnpm', 'bin', 'pnpm.mjs'),
-    dsh: developmentRuntime ?? (app.isPackaged ? join(app.getAppPath(), 'dsh') : join(process.resourcesPath, 'dsh')),
+    dsh: developmentRuntime ?? join(process.resourcesPath, 'dsh'),
     ...(app.isPackaged || developmentRuntime ? { profileResolution: 'runtime' as const } : {}),
   }
 }
@@ -89,10 +95,44 @@ async function directoryBytes(path: string, excludedNames: ReadonlySet<string> =
   }
 }
 
-async function main(): Promise<void> {
+async function main(diagnostics: DesktopDiagnostics): Promise<void> {
+  const window = new BrowserWindow({
+    icon: join(app.getAppPath(), 'renderer', 'icon.png'),
+    title: resolveDesktopLocale(app.getLocale()).messages.managerTitle, width: 1440, height: 920, minWidth: 940, minHeight: 640, backgroundColor: '#ffffff', frame: false,
+    webPreferences: { preload: fileURLToPath(new URL('./preload-manager.cjs', import.meta.url)), nodeIntegration: false, contextIsolation: true, sandbox: true },
+  })
+  focus = () => { if (window.isMinimized()) window.restore(); window.show(); window.focus() }
+  const loadingCss = await readFile(join(app.getAppPath(), 'renderer', 'loading.css'), 'utf8')
+  const storage = new DesktopDataStorage(join(app.getPath('userData'), 'data-location.json'), resolveDshHome())
+  await storage.readLocation()
+  const startupSettings = new SoftwareSettings(join(storage.paths().manager, 'software-settings.json'), {
+    available: () => safeStorage.isEncryptionAvailable(),
+    encrypt: value => safeStorage.encryptString(value),
+    decrypt: value => safeStorage.decryptString(value),
+  }).snapshot()
+  const loadingAppearance = loadingAppearanceCss(
+    startupSettings.personalization,
+    startupSettings.appearance.theme,
+    startupSettings.appearance.motionEnabled,
+  )
+  await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(startupLoadingDocument(resolveDesktopLocale(startupSettings.appearance.language || app.getLocale()), loadingCss, undefined, loadingAppearance))}`)
+  let managerReady = false
+  let kernelProgressChanged = (): void => {}
+  let startupRendering = Promise.resolve()
+  const startupProgress = (progress: DesktopInstallProgress): void => {
+    diagnostics.info('kernel-preparation', progress)
+    if (managerReady) { kernelProgressChanged(); return }
+    const copy = resolveDesktopLocale(app.getLocale())
+    const detail = `${copy.messages[`installStage_${progress.stage}`]}${progress.package ? ` · ${progress.package}` : ''}`
+    startupRendering = startupRendering.then(async () => {
+      if (!window.webContents.isDestroyed()) await window.webContents.executeJavaScript(`document.getElementById('startup-detail').textContent = ${JSON.stringify(detail)}`)
+    })
+      .catch((error) => { diagnostics.error('startup-progress-render', error) })
+  }
   const motionCss = await readFile(join(app.getAppPath(), 'renderer', 'motion.css'), 'utf8')
-  const desktopPaths = resolveDesktopPaths()
-  const root = join(desktopPaths.root, 'agent-manager')
+  const dataHome = await storage.initialize()
+  const storagePaths = storage.paths()
+  const root = storagePaths.manager
   const registry = new InstanceRegistry(join(root, 'instances.json'))
   const software = new SoftwareSettings(join(root, 'software-settings.json'), {
     available: () => safeStorage.isEncryptionAvailable(),
@@ -104,11 +144,15 @@ async function main(): Promise<void> {
   const settingsSupport = new Map<InstanceId, InstanceSettingsSupport>()
   let messages = managerMessages(software.snapshot().appearance.language || app.getLocale())
   let locale = resolveDesktopLocale(software.snapshot().appearance.language || app.getLocale())
-  const bundled = resources()
+  const packageRoot = storagePaths.cache
+  const bundled = { ...resources(), packageData: { root: packageRoot, store: join(packageRoot, 'store'),
+    cache: join(packageRoot, 'cache'), state: join(packageRoot, 'state'), config: join(packageRoot, 'config'), home: join(packageRoot, 'home') } }
+  diagnostics.info('runtime-resources', { version: app.getVersion(), runtime: bundled.dsh })
   const kernelRoot = app.isPackaged ? join(root, 'kernels') : process.env.DSH_DESKTOP_KERNEL_ROOT
   const registryFetch: typeof fetch = (input, init) => net.fetch(input instanceof URL ? input.href : input, init)
   const createKernels = (): DesktopKernelManager | undefined => kernelRoot ? new DesktopKernelManager(kernelRoot, bundled,
-    (version, directory) => prepareDesktopKernel(version, directory, bundled, join(root, 'kernel-probe-library'), registryFetch), registryFetch) : undefined
+    (version, directory, report) => prepareDesktopKernel(version, directory, bundled, join(root, 'kernel-probe-library'), registryFetch,
+      (progress) => { report?.(progress); startupProgress(progress) }), registryFetch, app.isPackaged) : undefined
   let kernels = createKernels()
   if (!app.isPackaged) {
     if (!kernels) throw new Error('Development kernel store is missing; use pnpm run start:desktop')
@@ -119,7 +163,8 @@ async function main(): Promise<void> {
   await kernels?.initialize()
   const runtime = kernels?.runtime() ?? bundled
   console.log(`desktop kernel: version=${kernels?.snapshot().current ?? 'bundled'} runtime=${runtime.dsh}`)
-  const library = new DesktopPluginLibrary(join(root, 'plugin-library'), runtime)
+  diagnostics.info('kernel-selected', { version: kernels?.snapshot().current ?? 'bundled', path: runtime.dsh })
+  const library = new DesktopPluginLibrary(storagePaths.plugins, runtime)
   const views = new Map<InstanceId, WebContentsView>()
   const presentationStyles = new Map<InstanceId, string>()
   let previewAppearance: PersonalAppearance | undefined
@@ -130,20 +175,26 @@ async function main(): Promise<void> {
   const retryTimers = new Map<InstanceId, ReturnType<typeof setTimeout>>()
   const retryCounts = new Map<InstanceId, number>()
   const mutations = new Set<InstanceId>()
+  const loggedStatuses = new Map<InstanceId, string>()
   let overlay = true
   let closing = false
   let quitAllowed = false
   let quitPending = false
-  const window = new BrowserWindow({
-    title: messages.title, width: 1440, height: 920, minWidth: 940, minHeight: 640, backgroundColor: '#ffffff', frame: false,
-    webPreferences: { preload: fileURLToPath(new URL('./preload-manager.cjs', import.meta.url)), nodeIntegration: false, contextIsolation: true, sandbox: true },
-  })
+  let relocateOnQuit = false
   let shortcuts: ManagerShortcuts = software.snapshot().shortcuts
   let shortcutCapture = false
   const installShortcuts = (contents: Electron.WebContents): void => {
     contents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown' || input.isAutoRepeat || (shortcutCapture && contents === window.webContents)) return
       const binding = shortcutBinding(input)
+      if (binding === 'F12') {
+        event.preventDefault()
+        if (software.snapshot().debugMode) {
+          if (contents.isDevToolsOpened()) contents.closeDevTools()
+          else contents.openDevTools({ mode: 'detach' })
+        }
+        return
+      }
       const action = Object.keys(shortcuts).find(key => shortcuts[key as keyof ManagerShortcuts] === binding && binding)
       if (!action) return
       event.preventDefault()
@@ -179,6 +230,13 @@ async function main(): Promise<void> {
   }
   const publish = (): void => {
     if (window.isDestroyed() || closing) return
+    for (const config of registry.snapshot().instances) {
+      const status = service.status(config)
+      const signature = JSON.stringify(status)
+      if (loggedStatuses.get(config.id) === signature) continue
+      loggedStatuses.set(config.id, signature)
+      diagnostics.info(`instance-state:${config.id}`, status)
+    }
     window.webContents.send(MANAGER_CHANGED)
     layout()
     for (const [id, plugin] of pluginWindows) {
@@ -194,6 +252,7 @@ async function main(): Promise<void> {
       scheduleRetry(config.id)
     }
   }
+  kernelProgressChanged = publish
   const verify = async (endpoint: string, fingerprint: string): Promise<boolean> => {
     const previous = registry.fingerprint(endpoint)
     if (previous) {
@@ -210,23 +269,32 @@ async function main(): Promise<void> {
     return true
   }
   let localPreparation = Promise.resolve()
+  const pluginUpdates = new DesktopPluginUpdates(join(root, 'plugin-updates.json'), library, (report) => {
+    if (report) diagnostics.info('plugin-preparation', report)
+    publish()
+  }, registryFetch)
   const service = new InstanceService((config, report) => {
     if (config.kind === 'ssh') return new RemoteInstance(config, verify, report)
-    const home = join(root, 'instances', config.id)
+    const home = join(storagePaths.instances, config.id)
     const local = new LocalInstance(home, runtime, report,
-      (manager) => {
-        const pending = localPreparation.then(() => prepareLocalKernel(home, manager, library))
+      (manager, signal) => {
+        const pending = localPreparation.then(() => pluginUpdates.prepare(config.id, home, manager, signal)).catch((error: unknown) => {
+          diagnostics.error(`instance-prepare:${config.id}`, error)
+          throw error
+        })
         localPreparation = pending.catch(() => {})
         return pending
-      })
+      }, progress => pluginUpdates.progress(config.id, progress))
     locals.set(config.id, local)
     return local
   }, publish)
   const snapshot = (): ManagerSnapshot => {
     const value = registry.snapshot()
-    return { ...value, statuses: Object.fromEntries(value.instances.map(config => [config.id, service.status(config)])),
+    return { ...value, version: app.getVersion(),
+      statuses: Object.fromEntries(value.instances.map(config => [config.id, service.status(config)])),
       messages, packaged: app.isPackaged, pluginManagement: app.isPackaged || process.env.DSH_DESKTOP_DSH_DIR !== undefined,
-      maximized: window.isMaximized() }
+      maximized: window.isMaximized(), installationProgress: Object.fromEntries(pluginUpdates.snapshot().reports
+        .flatMap(report => report.progress ? [[report.id, report.progress]] : [])) }
   }
   const clearRetry = (id: InstanceId): void => { clearTimeout(retryTimers.get(id)); retryTimers.delete(id); retryCounts.delete(id) }
   const destroyView = (id: InstanceId): void => {
@@ -267,9 +335,16 @@ async function main(): Promise<void> {
       if (views.get(id) !== view) return
       settingsSupport.set(id, resolved.support)
       const failures = resolved.failures
+      const removed = software.removedSourceIds()
       for (const section of document.namespaces) {
         const namespace = section.ns
         const edits = resolved.edits.find(([ns]) => ns === namespace)?.[1]
+        if (namespace === 'agent-default-model' && !preferences.dsh.defaultProvider
+          && removed.some(source => `desktop-${source}` === section.value.provider)) {
+          try { await call('resetModel', { revision: section.revision, reasoningEffort: edits?.reasoningEffort }) }
+          catch (error) { failures.push(`${namespace}: ${error instanceof Error ? error.message : String(error)}`) }
+          continue
+        }
         if (!edits) continue
         try {
           await call('update', { namespace, edits, revision: section.revision })
@@ -281,7 +356,6 @@ async function main(): Promise<void> {
         await call(credential.value === undefined ? 'credentialRemove' : 'credentialSet', credential)
       }
       const sources = software.instanceSources()
-      const removed = software.removedSourceIds()
       if (sources.length || removed.length) {
         const section = document.namespaces.find(item => item.ns === 'llm-pi-ai')
         if (!section) failures.push('Unsupported DSH settings: llm-pi-ai')
@@ -358,6 +432,7 @@ async function main(): Promise<void> {
       await syncSoftware(id)
       layout()
     })().catch((error: unknown) => {
+      diagnostics.error(`instance-open:${id}`, error)
       if (service.status(registry.get(id)).connection === 'connected') { destroyView(id); service.pageFailed(id, error) }
       throw error
     }).finally(() => { if (viewConnections.get(id) === operation) viewConnections.delete(id); publish() })
@@ -368,6 +443,16 @@ async function main(): Promise<void> {
     const owner = [...views.values()].find(view => view.webContents === event.sender)
     if (closing || !owner || event.senderFrame !== owner.webContents.mainFrame) throw new Error('Rejected instance settings sender')
     window.webContents.send(MANAGER_SHORTCUT, 'settings')
+  })
+  ipcMain.handle(DESKTOP_IPC.directoryPick, async (event) => {
+    const owner = [...views].find(([, view]) => view.webContents === event.sender)
+    if (closing || !owner || registry.get(owner[0]).kind !== 'local'
+      || event.senderFrame !== owner[1].webContents.mainFrame
+      || !owner[1].webContents.getURL().startsWith('dsh-app://app/')) {
+      throw new Error('Rejected directory picker sender')
+    }
+    const selected = await dialog.showOpenDialog(window, { title: messages.workspaceDirectory, properties: ['openDirectory', 'createDirectory'] })
+    return selected.canceled ? null : selected.filePaths[0] ?? null
   })
   const localFor = (id: InstanceId): LocalInstance => {
     if (registry.get(id).kind !== 'local') throw new Error('Use the remote instance settings to manage remote plugins')
@@ -411,6 +496,15 @@ async function main(): Promise<void> {
     const plugin = new BrowserWindow({ parent: window, width: 900, height: 780, title: `${registry.get(id).name} — ${messages.plugins}`, webPreferences: {
       preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)), nodeIntegration: false, contextIsolation: true, sandbox: true,
     } })
+    plugin.webContents.on('did-finish-load', () => {
+      const preferences = software.snapshot()
+      void plugin.webContents.insertCSS(loadingAppearanceCss(
+        preferences.personalization,
+        preferences.appearance.theme,
+        preferences.appearance.motionEnabled,
+      ))
+        .catch((error) => { diagnostics.error('plugin-appearance', error) })
+    })
     pluginWindows.set(id, plugin)
     plugin.webContents.setWindowOpenHandler(({ url }) => {
       const target = new URL(url)
@@ -422,10 +516,27 @@ async function main(): Promise<void> {
     void plugin.loadURL('dsh-app://shell/plugin-manager.html')
   }
   protocol.handle(SCHEME, request => new URL(request.url).hostname === 'shell' ? shellAsset(request) : Promise.resolve(new Response(null, { status: 403 })))
-  ipcMain.handle(MANAGER_CHANNEL, async (event, operation: unknown, input: unknown) => {
+  const managerOperation = async (event: IpcMainInvokeEvent, operation: unknown, input: unknown): Promise<unknown> => {
     if (closing || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== MANAGER_URL) throw new Error('Rejected manager IPC sender')
     const args = payload(input)
     if (operation === 'snapshot') return snapshot()
+    if (operation === 'diagnostics') {
+      if (args.action === 'read') return { path: diagnostics.path, available: diagnostics.available() }
+      if (args.action !== 'open') throw new Error('Unsupported diagnostics operation')
+      const failure = await shell.openPath(dirname(diagnostics.path))
+      if (failure) throw new Error(failure)
+      return
+    }
+    if (operation === 'pluginUpdates') {
+      switch (args.action) {
+        case 'read': return pluginUpdates.snapshot()
+        case 'automatic': {
+          if (typeof args.visible !== 'boolean') throw new Error('Invalid automatic plugin update setting')
+          return pluginUpdates.automatic(args.visible)
+        }
+        default: throw new Error('Unsupported plugin update operation')
+      }
+    }
     if (operation === 'kernel') {
       if (!kernels) throw new Error('Kernel updates require a selected runtime-backed kernel')
       switch (args.action) {
@@ -475,6 +586,16 @@ async function main(): Promise<void> {
       const input = payload(args.input)
       switch (args.action) {
         case 'read': return softwareSnapshot()
+        case 'debugMode': {
+          software.setDebugMode(input.value)
+          if (!software.snapshot().debugMode) {
+            for (const contents of [window.webContents, ...[...views.values()].map(view => view.webContents)]) {
+              if (!contents.isDestroyed()) contents.closeDevTools()
+            }
+          }
+          publish()
+          return softwareSnapshot()
+        }
         case 'previewPersonalization': {
           previewAppearance = input.value === null ? undefined : parsePersonalAppearance(input.value)
           await Promise.all([...views.keys()].map(id => syncSoftware(id, true)))
@@ -502,6 +623,11 @@ async function main(): Promise<void> {
         case 'dshUpdate': software.updateDsh(input.value); break
         case 'personalize': software.personalize(input.value); previewAppearance = undefined; break
         case 'sourceSave': software.saveSource(input.id, input.config, input.key); break
+        case 'sourceModels': {
+          const source = parseModelSource(input.config, modelSourceId(input.id ?? randomUUID()))
+          const key = typeof input.key === 'string' && input.key ? input.key : software.sourceCredential(input.id)
+          return discoverSourceModels(source, key, registryFetch)
+        }
         case 'sourceRemove': software.removeSource(input.id); break
         default: throw new Error('Unsupported software settings operation')
       }
@@ -511,15 +637,24 @@ async function main(): Promise<void> {
     }
     if (operation === 'storage') {
       const action = args.action ?? 'read'
+      if (action === 'migrate') {
+        const category = args.input === undefined ? undefined : text(args.input)
+        if (category !== undefined && !['manager', 'instances', 'cache', 'plugins'].includes(category)) throw new Error('Unknown storage category')
+        const selected = await dialog.showOpenDialog(window, { title: messages.migrateData, properties: ['openDirectory', 'createDirectory'] })
+        if (selected.canceled || !selected.filePaths[0]) return
+        const destination = join(selected.filePaths[0], category ? `DshManager-${category}` : 'DshManagerData')
+        const confirmation = await dialog.showMessageBox(window, { type: 'question', title: messages.migrateData,
+          message: messages.migrateConfirm, detail: `${category ? storagePaths[category as StorageCategory] : dataHome}\n→ ${destination}`,
+          buttons: [messages.cancel, messages.migrateRestart], defaultId: 0, cancelId: 0 })
+        if (confirmation.response !== 1) return
+        await storage.schedule(destination, category as StorageCategory | undefined)
+        relocateOnQuit = true
+        app.quit()
+        return
+      }
       if (action === 'open') {
         const category = text(args.input)
-        const paths: Record<string, string> = {
-          manager: root,
-          instances: join(root, 'instances'),
-          cache: desktopPaths.pnpm.cache,
-          plugins: join(root, 'plugin-library'),
-        }
-        const path = paths[category]
+        const path = Object.hasOwn(storagePaths, category) ? storagePaths[category as StorageCategory] : undefined
         if (path === undefined) throw new Error('Unknown storage category')
         const failure = await shell.openPath(path)
         if (failure) throw new Error(failure)
@@ -527,15 +662,15 @@ async function main(): Promise<void> {
       }
       if (action !== 'read') throw new Error('Unsupported storage operation')
       const [managerBytes, instanceBytes, cacheBytes, pluginBytes] = await Promise.all([
-        directoryBytes(root, new Set(['instances', 'plugin-library'])), directoryBytes(join(root, 'instances')),
-        directoryBytes(desktopPaths.pnpm.cache), directoryBytes(join(root, 'plugin-library')),
+        directoryBytes(root, new Set(['instances', 'plugin-library'])), directoryBytes(storagePaths.instances),
+        directoryBytes(storagePaths.cache), directoryBytes(storagePaths.plugins),
       ])
       const instances = await Promise.all(registry.snapshot().instances.filter(item => item.kind === 'local').map(async item => ({
-        id: item.id, name: item.name, path: join(root, 'instances', item.id),
-        bytes: await directoryBytes(join(root, 'instances', item.id)),
+        id: item.id, name: item.name, path: join(storagePaths.instances, item.id),
+        bytes: await directoryBytes(join(storagePaths.instances, item.id)),
       })))
       return {
-        root,
+        root, dataHome, paths: storagePaths,
         totals: { manager: managerBytes, instances: instanceBytes, cache: cacheBytes, plugins: pluginBytes,
           total: managerBytes + instanceBytes + cacheBytes + pluginBytes },
         instances,
@@ -568,7 +703,7 @@ async function main(): Promise<void> {
           pluginWindows.get(id)?.close()
           await service.forget(id)
           locals.delete(id)
-          if (args.deleteData === true) await removeOwnedDirectoryAsync(join(root, 'instances', id))
+          if (args.deleteData === true) await removeOwnedDirectoryAsync(join(storagePaths.instances, id))
           registry.remove(id)
         }
         finally { mutations.delete(id) }
@@ -581,7 +716,14 @@ async function main(): Promise<void> {
     }
     publish()
     return snapshot()
-  })
+  }
+  ipcMain.handle(
+    MANAGER_CHANNEL,
+    (event, operation: unknown, input: unknown) => managerOperation(event, operation, input).catch((error: unknown) => {
+      diagnostics.error(`manager-operation:${typeof operation === 'string' ? operation : 'invalid'}`, error)
+      throw error
+    }),
+  )
   ipcMain.handle(DESKTOP_IPC.localeGet, (event) => { pluginOwner(event); return locale })
   ipcMain.handle(DESKTOP_IPC.pluginsList, event => pluginOwner(event) === 'library'
     ? library.list().map(plugin => ({ ...plugin, enabled: true })) : localFor(instancePluginOwner(event)).manager.listPlugins())
@@ -671,7 +813,7 @@ async function main(): Promise<void> {
     quitPending = true
     void (async () => {
       const activeLocals = registry.snapshot().instances.some(config => config.kind === 'local' && ['running', 'starting'].includes(service.status(config).process))
-      if (activeLocals) {
+      if (activeLocals && !relocateOnQuit) {
         const response = await dialog.showMessageBox(window, { type: 'question', title: messages.quitTitle, message: messages.quitMessage, buttons: [messages.cancel, messages.quit], defaultId: 0, cancelId: 0 })
         if (response.response !== 1) return
       }
@@ -681,20 +823,47 @@ async function main(): Promise<void> {
       for (const timer of retryTimers.values()) clearTimeout(timer)
       for (const id of [...views.keys()]) destroyView(id)
       await service.close()
+      if (relocateOnQuit) app.relaunch()
       quitAllowed = true
       app.quit()
     })().catch((error: unknown) => {
       closing = false
+      diagnostics.error('shutdown', error)
       dialog.showErrorBox(messages.title, String(error))
     }).finally(() => { quitPending = false })
   })
   focus = () => { if (window.isMinimized()) window.restore(); window.show(); window.focus() }
   app.on('activate', focus)
+  managerReady = true
+  await startupRendering
   await window.loadURL(MANAGER_URL)
-  if (kernels) void kernels.check().then(() => { if (!closing) publish() })
+  diagnostics.info('manager-ready', { version: app.getVersion() })
+  if (kernels) void kernels.check().then((status) => {
+    if (status.phase === 'error') diagnostics.error('kernel-update', status.message)
+    if (!closing) publish()
+  })
   if (!app.isPackaged && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') window.webContents.openDevTools({ mode: 'detach' })
 }
-if (claimDesktopSingleInstance(app, () => { focus() })) void app.whenReady().then(main).catch((error: unknown) => {
-  dialog.showErrorBox('Harness Agent Manager', error instanceof Error ? error.message : String(error))
+if (claimDesktopSingleInstance(app, () => { focus() })) void app.whenReady().then(async () => {
+  process.env.DSH_CLIENT_VERSION = app.getVersion()
+  const diagnostics = new DesktopDiagnostics(join(app.getPath('userData'), 'logs', 'desktop.log'))
+  diagnostics.info('application-start', { version: app.getVersion(), platform: process.platform, arch: process.arch })
+  process.on('uncaughtExceptionMonitor', (error) => { diagnostics.error('uncaught-exception', error) })
+  try { await main(diagnostics) }
+  catch (error) {
+    diagnostics.error('application-start', error)
+    const copy = resolveDesktopLocale(app.getLocale()).messages
+    const detail = `${error instanceof Error ? error.message : String(error)}\n\n${diagnostics.available() ? `${copy.diagnosticsSaved}: ${diagnostics.path}` : copy.diagnosticsUnavailable}`
+    const response = await dialog.showMessageBox({ type: 'error', title: copy.managerTitle, message: copy.startupFailed,
+      detail, buttons: [copy.openLogs, copy.closeApplication], defaultId: 0, cancelId: 1 })
+    if (response.response === 0) {
+      const failure = await shell.openPath(dirname(diagnostics.path))
+      if (failure) dialog.showErrorBox(copy.managerTitle, `${detail}\n${failure}`)
+    }
+    app.exit(1)
+  }
+}).catch((error: unknown) => {
+  process.stderr.write(`${String(error)}\n`)
+  dialog.showErrorBox('DshManager', error instanceof Error ? error.message : String(error))
   app.exit(1)
 })

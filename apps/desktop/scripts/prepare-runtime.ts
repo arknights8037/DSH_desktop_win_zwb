@@ -31,7 +31,7 @@ function target(): { platform: RuntimePlatform; arch: RuntimeArch } {
 }
 
 async function download(url: string, path: string): Promise<void> {
-  const response = await fetch(url)
+  const response = await fetch(url, { signal: AbortSignal.timeout(180_000) })
   if (!response.ok) throw new Error(`desktop runtime: ${url} returned HTTP ${String(response.status)}`)
   writeFileSync(path, new Uint8Array(await response.arrayBuffer()), { mode: 0o600 })
 }

@@ -5,6 +5,7 @@ import { resolveDesktopPaths } from './paths.ts'
 import { DesktopProjectManager, type DesktopRuntimeExecutables, type DesktopProjectMutation } from './project-manager.ts'
 import type { InstanceRuntime } from './instance-service.ts'
 import type { InstanceStatus } from './instances.ts'
+import type { DesktopInstallReporter } from './install-progress.ts'
 
 /** One profile manager and pipe host per local Harness home. */
 export class LocalInstance implements InstanceRuntime {
@@ -14,12 +15,14 @@ export class LocalInstance implements InstanceRuntime {
     home: string,
     resources: DesktopRuntimeExecutables,
     report: (status: InstanceStatus) => void,
-    private readonly prepare?: (manager: DesktopProjectManager) => Promise<void>,
+    private readonly prepare?: (manager: DesktopProjectManager, signal: AbortSignal) => Promise<void>,
+    private readonly progress: DesktopInstallReporter = () => {},
   ) {
     const paths = resolveDesktopPaths(home)
-    this.manager = new DesktopProjectManager(paths, resources)
+    this.manager = new DesktopProjectManager(paths, resources, progress)
     this.backend = new DesktopBackendController((onFailure) => {
       this.manager.assertProfileRuntime(paths.profile)
+      this.progress({ stage: 'starting' })
       return new DesktopHostProcess(resources.node, resources.dsh, paths.profile, undefined,
         { ...process.env, DSH_HOME: home }, onFailure)
     }, (state) => {
@@ -33,10 +36,11 @@ export class LocalInstance implements InstanceRuntime {
     signal.addEventListener('abort', abort, { once: true })
     try {
       await this.backend.start(async () => {
-        if (this.prepare) await this.prepare(this.manager)
+        if (this.prepare) await this.prepare(this.manager, signal)
         else await this.manager.applyRelease()
       })
       signal.throwIfAborted()
+      this.progress({ stage: 'ready' })
       return 'dsh-app://app/index.html'
     } finally { signal.removeEventListener('abort', abort) }
   }

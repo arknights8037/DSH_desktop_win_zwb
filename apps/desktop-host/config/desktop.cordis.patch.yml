@@ -9,6 +9,9 @@
 - id: web-runtime
   disabled: true
 
+- id: harness-dev-context
+  disabled: true
+
 - id: client-hmr
   disabled: true
 
@@ -21,12 +24,28 @@
 - id: directory-picker
   disabled: true
 
+# The shell owns package transactions; managed profiles only load their plugins.
+- id: plugin-manager
+  disabled: true
+
+- id: tool-plugin-manager
+  disabled: true
+
+- id: ui-plugin-manager
+  disabled: true
+
+- id: workspace
+  disabled: true
+
 - id: connection
   inject:
     - credentials
   config: {}
 
 - insert:
+    - id: desktop-workspace-editor
+      name: '@deepseek-ai/dsh-desktop-host'
+
     - id: directory-picker-native
       name: '@deepseek-ai/dsh-host-directory-picker-native'
 

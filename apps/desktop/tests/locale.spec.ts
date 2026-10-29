@@ -4,7 +4,7 @@ import { en, formatDesktopMessage, resolveDesktopLocale, zh } from '../src/local
 
 describe('desktop locale dictionaries', () => {
   it('ships the same key set in English and Chinese', () => {
-    expect(Object.keys(zh)).toEqual(Object.keys(en))
+    expect(Object.keys(zh).sort()).toEqual(Object.keys(en).sort())
     expect(resolveDesktopLocale('zh-Hans-CN')).toEqual({ id: 'zh-CN', messages: zh })
     expect(resolveDesktopLocale('en-US')).toEqual({ id: 'en', messages: en })
     expect(resolveDesktopLocale('fr-FR')).toEqual({ id: 'en', messages: en })

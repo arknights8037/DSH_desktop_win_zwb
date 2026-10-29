@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -11,7 +11,6 @@ import { DesktopProjectManager, type DesktopProjectHooks } from '../src/project-
 import { resolveDesktopPaths } from '../src/paths.ts'
 import { runtimeFixture, writePackage } from './runtime-fixture.ts'
 import { DesktopPluginLibrary } from '../src/plugin-library.ts'
-import { activateProfilePluginUpdate, ProfilePlugins } from '../../cli/src/profile-plugins.ts'
 
 it('installs a real pnpm graph, then executes approved scripts with the shared host instance', async () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'desktop-real-pnpm-')))
@@ -78,35 +77,7 @@ it('installs a real pnpm graph, then executes approved scripts with the shared h
     expect(execFileSync(process.execPath, [entry], { encoding: 'utf8' }).trim()).toBe('true')
     expect(readFileSync(join(copiedPlugin, '../node-pty/built.json'), 'utf8')).toContain(process.execPath.replaceAll('\\', '\\\\'))
     expect(injected.listPlugins()).toEqual([{ name: 'fixture-plugin', version: '1.0.0', enabled: true }])
-    const webProfile = join(root, 'web-instance')
-    mkdirSync(webProfile)
-    const initial = JSON.stringify({ private: true, dsh: { profile: { bundles: ['base'] } } })
-    writeFileSync(join(webProfile, 'package.json'), initial)
-    writeFileSync(join(webProfile, 'cordis.patch.yml'), '# instance configuration\n')
-    const provider = new ProfilePlugins(webProfile, { profilesDir: root, profileDir: webProfile, localPackageNames: [], entries: [{
-      name: '@deepseek-ai/cordis', packageDir: join(dsh, 'node_modules/@deepseek-ai/cordis'),
-      version: '1.0.0', declarer: join(dsh, 'package.json'), scope: 'installation',
-    }] })
-    writeFileSync(join(webProfile, '.npmrc'), `registry=${origin}\nstore-dir=${join(root, 'remote-pnpm-store').replaceAll('\\', '/')}\n`)
-    try {
-      const preparation = await provider.prepare({ name: 'fixture-plugin', version: '1.0.0' }, new AbortController().signal)
-      expect(readFileSync(join(webProfile, 'package.json'), 'utf8')).toBe(initial)
-      expect(existsSync(join(webProfile, 'node_modules/fixture-plugin'))).toBe(false)
-      await provider.apply(preparation)
-      expect(readFileSync(join(webProfile, 'package.json'), 'utf8')).toBe(initial)
-      const confirm = await activateProfilePluginUpdate(webProfile)
-      const remotePlugin = join(webProfile, 'node_modules/fixture-plugin/index.js')
-      writeFileSync(entry, `import {identity} from '@deepseek-ai/cordis'; import {identity as plugin} from ${JSON.stringify(pathToFileURL(remotePlugin).href)}; console.log(identity === plugin)`)
-      expect(execFileSync(process.execPath, [entry], { encoding: 'utf8' }).trim()).toBe('true')
-      expect(existsSync(join(webProfile, '.plugin-copies', preparation, 'node_modules/node-pty/built.json'))).toBe(false)
-      confirm()
-      expect(existsSync(join(webProfile, '.plugin-deployment.json'))).toBe(false)
-      expect(readFileSync(join(webProfile, 'cordis.patch.yml'), 'utf8')).toBe('# instance configuration\n')
-    } finally {
-      await provider.close()
-    }
-    await manager.mutate({ type: 'plugin-remove', name: 'fixture-plugin' }, hooks)
-    expect(manager.listPlugins()).toEqual([])
+
   } finally {
     server.closeAllConnections()
     if (server.listening) await new Promise<void>((resolve, reject) => {

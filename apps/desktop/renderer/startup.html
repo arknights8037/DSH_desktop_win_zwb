@@ -6,10 +6,11 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'self' data:">
     <title id="page-title"></title>
     <link rel="stylesheet" href="startup.css">
+    <link rel="stylesheet" href="loading.css">
   </head>
   <body>
     <main aria-busy="true">
-      <div id="spinner" aria-hidden="true"></div>
+      <div id="spinner" class="dsh-loader" aria-hidden="true"><span></span></div>
       <h1 id="title" role="status" aria-live="polite"></h1>
       <p id="description"></p>
       <p id="reset-advice" hidden></p>

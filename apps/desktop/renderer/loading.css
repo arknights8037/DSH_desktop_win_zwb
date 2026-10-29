@@ -1,0 +1,68 @@
+:root { --dsh-overlay-mask: rgb(15 17 21 / 32%); }
+/* Shared shell loading indicator; animation never represents a completion percentage. */
+.dsh-loader {
+  --loader-color: var(--brand, #4d6bfe);
+  position: relative;
+  width: 88px;
+  height: 88px;
+  margin: 0 auto 28px;
+  perspective: 220px;
+  isolation: isolate;
+}
+.dsh-loader::before, .dsh-loader::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1px solid color-mix(in srgb, var(--loader-color) 24%, transparent);
+  border-top: 2px solid var(--loader-color);
+  border-right-color: transparent;
+  border-radius: 50%;
+  box-shadow: 0 -3px 12px color-mix(in srgb, var(--loader-color) 22%, transparent);
+  animation: dsh-orbit 2s linear infinite;
+}
+.dsh-loader::after {
+  inset: 14px;
+  border-top-color: color-mix(in srgb, var(--loader-color) 65%, #b2f1ff);
+  animation: dsh-orbit-inner 1.6s linear infinite;
+}
+.dsh-loader > span {
+  position: absolute;
+  inset: 34px;
+  border-radius: 50%;
+  background: var(--loader-color);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--loader-color) 55%, transparent);
+  animation: dsh-core 1.8s ease-in-out infinite alternate;
+}
+.dsh-loading-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--dsh-overlay-mask);
+  backdrop-filter: blur(6px);
+  display: grid;
+  place-items: center;
+  pointer-events: auto;
+}
+.dsh-loading-content {
+  width: min(520px, calc(100vw - 64px));
+  padding: 32px;
+  box-sizing: border-box;
+  text-align: center;
+  color: var(--text, inherit);
+  background: var(--personal-content, var(--panel, Canvas));
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--line, #8883);
+  border-radius: 20px;
+  box-shadow: 0 16px 64px #0002;
+}
+.dsh-loading-content p { margin: 0; line-height: 1.6; overflow-wrap: anywhere; }
+.dsh-loader[hidden], .dsh-loading-layer[hidden] { display: none !important; }
+@keyframes dsh-orbit { from { transform: rotateX(52deg) rotateZ(0deg); } to { transform: rotateX(52deg) rotateZ(360deg); } }
+@keyframes dsh-orbit-inner { from { transform: rotateY(48deg) rotateZ(360deg); } to { transform: rotateY(48deg) rotateZ(0deg); } }
+@keyframes dsh-core { from { opacity: .55; scale: .8; } to { opacity: 1; scale: 1.1; } }
+@media (prefers-reduced-motion: reduce) {
+  .dsh-loader::before, .dsh-loader::after, .dsh-loader > span { animation: none; }
+}
+:root[data-dsh-motion="off"] .dsh-loader::before,
+:root[data-dsh-motion="off"] .dsh-loader::after,
+:root[data-dsh-motion="off"] .dsh-loader > span { animation: none; }

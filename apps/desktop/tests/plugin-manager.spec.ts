@@ -233,6 +233,8 @@ it.each(['en', 'zh-CN'])('searches the catalog, reviews metadata and installs on
     expect(api.plugins.plan).toHaveBeenCalledWith('@test/plugin')
     expect(api.plugins.add).not.toHaveBeenCalled()
     expect(document.querySelector('#install-plan img')).toBeNull()
+    expect(document.querySelector('#plan-description')).toBeNull()
+    expect(document.querySelector('.plugin-card-description')).toBeNull()
     expect(document.querySelector('#plan-fields')?.textContent).toContain('MIT')
     expect(document.querySelector('#plan-fields')?.textContent).toContain(locale.messages.unknown)
     expect(document.querySelector('#plan-fields')?.textContent).toContain('network')

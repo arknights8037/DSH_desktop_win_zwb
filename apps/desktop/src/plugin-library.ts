@@ -7,6 +7,7 @@ import { DesktopProjectManager, packageNameFromSpec, type DesktopRuntimeExecutab
 import { resolveDesktopPaths } from './paths.ts'
 import { readDesktopRuntime, desktopRuntimeId, type DesktopRuntimeDescriptor } from './runtime-tree.ts'
 import { removeOwnedDirectory } from './owned-directory.ts'
+import type { DesktopInstallReporter } from './install-progress.ts'
 
 /** One exact version retained by the shell independently of instance activation. */
 export interface LibraryPlugin { readonly name: string; readonly version: string }
@@ -14,6 +15,8 @@ export interface LibraryPlugin { readonly name: string; readonly version: string
 /** Installs each plugin version in its own dependency graph, outside instance profiles. */
 export class DesktopPluginLibrary {
   private pending: Promise<void> | undefined
+  private descriptor: DesktopRuntimeDescriptor | undefined
+  private runtimeIdentity: string | undefined
   constructor(readonly root: string, private readonly executables: DesktopRuntimeExecutables) {}
 
   private acquire(): () => void {
@@ -26,12 +29,13 @@ export class DesktopPluginLibrary {
   /** @returns Completion of the current installation or injection, for application shutdown. */
   settled(): Promise<void> { return this.pending ?? Promise.resolve() }
 
-  /** @returns The shell's verified runtime used for installation preflight. */
-  runtime(): DesktopRuntimeDescriptor { return readDesktopRuntime(this.executables.dsh) }
+  /** @returns Metadata for this owner's immutable, startup-selected runtime; retained until the owner is released. */
+  runtime(): DesktopRuntimeDescriptor { return this.descriptor ??= readDesktopRuntime(this.executables.dsh) }
 
   private home(name: string, version: string): string {
     if (packageNameFromSpec(`${name}@${version}`) !== name || valid(version) !== version) throw new Error('Invalid library plugin version')
-    const key = createHash('sha256').update(`${desktopRuntimeId(this.runtime())}\n${name}@${version}`).digest('hex')
+    const identity = this.runtimeIdentity ??= desktopRuntimeId(this.runtime())
+    const key = createHash('sha256').update(`${identity}\n${name}@${version}`).digest('hex')
     return join(this.root, key)
   }
 
@@ -94,20 +98,22 @@ export class DesktopPluginLibrary {
    * Install a reviewed exact version without starting or changing an instance.
    * @param name - Registry package name.
    * @param version - Reviewed exact version.
+   * @param progress - Installation stages; package names are attached by the library.
    * @returns Completion after dependency validation and approved builds.
    */
-  async install(name: string, version: string): Promise<void> {
+  async install(name: string, version: string, progress: DesktopInstallReporter = () => {}): Promise<void> {
     const release = this.acquire()
-    try { await this.prepareLocal(name, version) }
+    try { await this.prepareLocal(name, version, progress) }
     finally { release() }
   }
 
-  private async prepareLocal(name: string, version: string): Promise<void> {
+  private async prepareLocal(name: string, version: string, progress: DesktopInstallReporter = () => {}): Promise<void> {
     if (name === 'dshmarket') throw new Error('This plugin requires a Web instance; select a remote instance for injection')
     const home = this.home(name, version)
     if (existsSync(join(home, 'installed.json'))) return
     mkdirSync(home, { recursive: true, mode: 0o700 })
-    const manager = new DesktopProjectManager(resolveDesktopPaths(home), this.executables)
+    const manager = new DesktopProjectManager(resolveDesktopPaths(home), this.executables,
+      event => progress({ ...event, package: `${name}@${version}` }))
     await manager.applyRelease()
     await manager.mutate({ type: 'plugin-add', spec: `${name}@${version}` }, {
       beforeChange: async () => {}, afterChange: async () => {},
@@ -153,14 +159,44 @@ export class DesktopPluginLibrary {
    * @param name - Installed package name.
    * @param version - Installed exact version.
    * @param operation - Deployment using the validated source profile.
+   * @param progress - Stages while preparing this source for deployment.
    * @returns Deployment completion; library changes are rejected until it settles.
    */
-  async withSource(name: string, version: string, operation: (source: string) => Promise<void>): Promise<void> {
-    if (!this.list().some(plugin => plugin.name === name && plugin.version === version)) throw new Error('Add this version to the shell plugin library first')
+  async withSource(
+    name: string,
+    version: string,
+    operation: (source: string) => Promise<void>,
+    progress: DesktopInstallReporter = () => {},
+  ): Promise<void> {
+    await this.withSources([{ name, version }], (sources) => {
+      const source = sources.get(name)
+      if (source === undefined) throw new Error(`Missing prepared plugin source: ${name}`)
+      return operation(source)
+    }, progress)
+  }
+
+  /**
+   * Retain all sources throughout one instance's stopped-profile transaction.
+   * @param plugins - Selected exact versions, at most one per package name.
+   * @param operation - Deployment using validated source profiles indexed by package name.
+   * @param progress - Stages while preparing the selected sources.
+   * @returns Deployment completion while library changes remain locked.
+   */
+  async withSources(
+    plugins: readonly LibraryPlugin[], operation: (sources: ReadonlyMap<string, string>) => Promise<void>,
+    progress: DesktopInstallReporter = () => {},
+  ): Promise<void> {
     const release = this.acquire()
     try {
-      await this.prepareLocal(name, version)
-      await operation(this.source(name, version))
+      const selected = this.list()
+      const sources = new Map<string, string>()
+      for (const { name, version } of plugins) {
+        if (!selected.some(plugin => plugin.name === name && plugin.version === version)) throw new Error('Add this version to the shell plugin library first')
+        if (sources.has(name)) throw new Error(`Duplicate plugin deployment: ${name}`)
+        await this.prepareLocal(name, version, progress)
+        sources.set(name, this.source(name, version))
+      }
+      await operation(sources)
     }
     finally { release() }
   }

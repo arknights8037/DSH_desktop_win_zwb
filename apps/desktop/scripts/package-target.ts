@@ -1,7 +1,7 @@
 /** Build one release target with matching Electron, Node.js, and dsh architecture. */
 
 import { spawn } from 'node:child_process'
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { join, resolve } from 'node:path'
 import {
@@ -120,17 +120,15 @@ function writeReleaseRecord(
   artifactsRoot: string,
 ): void {
   const desktopVersion = packageVersion(join(APP_ROOT, 'package.json'), 'desktop package')
-  const dshVersion = packageVersion(join(REPOSITORY_ROOT, 'package.json'), 'dsh package')
-  if (desktopVersion !== dshVersion) {
-    throw new Error(`desktop package: desktop version ${desktopVersion} does not match dsh version ${dshVersion}`)
-  }
+  const dshVersion = packageVersion(join(APP_ROOT, 'config/kernel-release.json'), 'desktop kernel release')
   const update = resolveDesktopAutoUpdateConfig(environment, target.platform, target.arch)
   const recordPath = join(artifactsRoot, desktopBuildRecordFilename(target.name))
   const temporaryPath = `${recordPath}.tmp`
   writeFileSync(temporaryPath, `${JSON.stringify({
     schemaVersion: 1,
     target: target.name,
-    version: dshVersion,
+    version: desktopVersion,
+    kernelVersion: dshVersion,
     environment: update.environment,
     publicUrl: update.publicUrl,
   }, null, 2)}\n`)
@@ -287,8 +285,9 @@ async function main(): Promise<void> {
   for (const name of WINDOWS_SIGNING_ENV_NAMES) {
     if (!invocation.unsigned && process.env[name] !== undefined) electronBuilderEnv[name] = process.env[name]
   }
-  await runPnpm(['run', 'build:official'], buildEnv, REPOSITORY_ROOT)
-  await runPnpm(['run', 'release:pack', '--family', 'dsh', '--out', buildPaths.packedDsh], buildEnv, REPOSITORY_ROOT)
+  await runPnpm(['run', 'build:release'], buildEnv)
+  rmSync(buildPaths.packedDsh, { recursive: true, force: true })
+  mkdirSync(buildPaths.packedDsh, { recursive: true })
   await runPnpm([
     '--dir',
     'apps/desktop-host',
@@ -296,17 +295,17 @@ async function main(): Promise<void> {
     '--pack-destination',
     buildPaths.packedDsh,
   ], buildEnv, REPOSITORY_ROOT)
-  await runPnpm(['run', 'release:pack', '--family', 'vendor', '--out', buildPaths.packedVendor], buildEnv, REPOSITORY_ROOT)
-  rmSync(buildPaths.packedLandlock, { recursive: true, force: true })
-  mkdirSync(buildPaths.packedLandlock, { recursive: true })
-  await runPnpm(['--dir', 'native/system', 'run', 'build:ts'], buildEnv, REPOSITORY_ROOT)
+  const hostTarball = readdirSync(buildPaths.packedDsh).find(file => file.includes('dsh-desktop-host-') && file.endsWith('.tgz'))
+  if (hostTarball === undefined) throw new Error('desktop package: pnpm pack did not create the Desktop Host tarball')
   await runPnpm([
-    '--dir',
-    'native/system/packages/entry',
-    'pack',
-    '--pack-destination',
-    buildPaths.packedLandlock,
-  ], buildEnv, REPOSITORY_ROOT)
+    'run',
+    'prepare:kernel-packages',
+    '--',
+    '--host',
+    join(buildPaths.packedDsh, hostTarball),
+    '--out',
+    buildPaths.packedVendor,
+  ], buildEnv)
   await runPnpm(['run', 'prepare:runtime'], targetEnv)
   await runPnpm(['run', 'prepare:packages'], targetEnv)
   await runPnpm(['run', 'prepare:dsh'], targetEnv)

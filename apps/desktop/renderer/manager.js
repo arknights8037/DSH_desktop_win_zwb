@@ -16,6 +16,10 @@ let refreshing = false
 let refreshAgain = false
 let noticeTimer
 const t = key => state.messages[key]
+function installationText(progress) {
+  const count = progress.total > 0 ? t('installProgressCount').replace('{completed}', progress.completed || 0).replace('{total}', progress.total) : ''
+  return [t(`installStage_${progress.stage}`), progress.package, count].filter(Boolean).join(' · ')
+}
 function button(key, callback, className = '') {
   const node = document.createElement('button')
   node.textContent = t(key)
@@ -300,8 +304,18 @@ function render() {
   $('panel').hidden = !managerVisible
   $('instance-state').hidden = managerVisible || !config || status.connection === 'connected'
   if (config) {
+    const busy = status.connection === 'connecting' || status.process === 'starting'
+    $('instance-state').setAttribute('aria-busy', String(busy))
+    $('instance-state').dataset.loading = String(busy)
+    $('instance-loader').hidden = !busy
+    $('instance-state-symbol').hidden = busy
+    $('recover').hidden = busy
     $('state-title').textContent = `${config.name} — ${t(status.connection)}`
     $('state-message').textContent = status.message || t(status.process)
+    const progress = state.installationProgress?.[config.id]
+    if (busy && progress) {
+      $('state-message').textContent = installationText(progress)
+    }
   }
 }
 function sshFields() {

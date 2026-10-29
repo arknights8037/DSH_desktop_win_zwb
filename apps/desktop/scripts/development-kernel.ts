@@ -1,7 +1,7 @@
 /** Resolve the verified kernel selection independently of the writable development home. */
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { valid } from 'semver'
+import { lt, valid } from 'semver'
 import { readDesktopRuntime } from '../src/runtime-tree.ts'
 
 /** Tools and selected kernel supplied to an unpackaged shell. */
@@ -31,6 +31,8 @@ export function resolveDevelopmentKernel(kernelHome: string, runtime: string): D
   const directory = join(root, 'releases', selection.selected)
   const descriptor = readDesktopRuntime(directory)
   if (descriptor.release.version !== selection.selected) throw new Error('desktop development: selected kernel version mismatch')
+  const required = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8')) as { version: string }
+  if (lt(descriptor.release.version, required.version)) throw new Error(`desktop development: selected kernel must be at least ${required.version}`)
   const tools: unknown = JSON.parse(readFileSync(join(runtime, 'versions.json'), 'utf8'))
   if (typeof tools !== 'object' || tools === null || !('node' in tools) || tools.node !== descriptor.release.nodeVersion
     || !('pnpm' in tools) || tools.pnpm !== descriptor.release.pnpmVersion) {

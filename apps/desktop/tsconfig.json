@@ -1,13 +1,8 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "lib/types"
-  },
-  "include": ["src"],
+  "files": [],
   "references": [
-    { "path": "../../vendor/schemastery" },
-    { "path": "../../packages/util/brand" },
-    { "path": "../../packages/util/home-paths" }
+    {
+      "path": "./tsconfig.host.json"
+    }
   ]
 }

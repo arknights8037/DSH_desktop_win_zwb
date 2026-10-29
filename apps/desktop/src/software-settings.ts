@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { DEFAULT_SHORTCUTS, parseShortcuts, type ManagerShortcuts } from './manager-shortcuts.ts'
 import { DEFAULT_PERSONAL_APPEARANCE, parsePersonalAppearance, type PersonalAppearance } from './personal-appearance.ts'
 import { DEFAULT_DSH_SETTINGS, parseDshSettings, type DshSettings } from './dsh-settings.ts'
-import { modelSourceId, parseModelSource, sourceKeyRef, type ModelSource, type ModelSourceId, type ModelSourceView } from './model-sources.ts'
+import { modelSourceId, parseModelSource, sourceKeyRef, sourceRoute, type ModelSource, type ModelSourceId, type ModelSourceView } from './model-sources.ts'
 
 /** Shared product preferences applied from the desktop software to each instance. */
 export interface SoftwareAppearance {
@@ -24,6 +24,7 @@ export interface SoftwareEncryption {
 interface StoredSettings {
   version: 1
   revision: number
+  debugMode: boolean
   appearance: SoftwareAppearance
   personalization: PersonalAppearance
   dsh: DshSettings
@@ -36,6 +37,7 @@ interface StoredSettings {
 /** Public software configuration contains credential names and status only. */
 export interface SoftwareSettingsSnapshot {
   revision: number
+  debugMode: boolean
   appearance: SoftwareAppearance
   personalization: PersonalAppearance
   dsh: DshSettings
@@ -67,12 +69,14 @@ function record(value: unknown): Record<string, unknown> {
 export class SoftwareSettings {
   private data: StoredSettings
   constructor(private readonly path: string, private readonly encryption: SoftwareEncryption) {
-    this.data = { version: 1, revision: 0, appearance: { ...appearance },
+    this.data = { version: 1, revision: 0, debugMode: false, appearance: { ...appearance },
       personalization: structuredClone(DEFAULT_PERSONAL_APPEARANCE), dsh: { ...DEFAULT_DSH_SETTINGS },
       shortcuts: { ...DEFAULT_SHORTCUTS },
       credentials: {}, removedCredentials: [], modelSources: [], removedSources: [] }
     if (!existsSync(path)) return
     const data = record(JSON.parse(readFileSync(path, 'utf8')))
+    const debugMode = data.debugMode === undefined ? false : data.debugMode
+    if (typeof debugMode !== 'boolean') throw new Error('Invalid software debug mode')
     const values = record(data.appearance)
     // Earlier software preference files have no motion choice.
     if (!Object.hasOwn(values, 'motionEnabled')) values.motionEnabled = appearance.motionEnabled
@@ -93,7 +97,7 @@ export class SoftwareSettings {
     if (new Set(sources.map(source => source.id)).size !== sources.length || sources.some(source => removed.includes(source.id))) {
       throw new Error('Duplicate model source ownership')
     }
-    this.data = { version: 1, revision: data.revision,
+    this.data = { version: 1, revision: data.revision, debugMode,
       personalization: data.personalization === undefined
         ? structuredClone(DEFAULT_PERSONAL_APPEARANCE) : parsePersonalAppearance(data.personalization),
       appearance: { theme: values.theme as SoftwareAppearance['theme'], fontSize: values.fontSize as number,
@@ -105,7 +109,7 @@ export class SoftwareSettings {
   }
   /** @returns detached software preferences and credential metadata. */
   snapshot(): SoftwareSettingsSnapshot {
-    return structuredClone({ revision: this.data.revision, appearance: this.data.appearance,
+    return structuredClone({ revision: this.data.revision, debugMode: this.data.debugMode, appearance: this.data.appearance,
       personalization: this.data.personalization, dsh: this.data.dsh,
       modelSources: this.data.modelSources.map(source => ({ ...source,
         keyConfigured: Object.hasOwn(this.data.credentials, sourceKeyRef(source.id)) })),
@@ -122,11 +126,23 @@ export class SoftwareSettings {
     Object.assign(next.appearance, { [field]: value })
     this.commit(next)
   }
+  /** Persist the shell-only F12 preference. @param value - Untrusted IPC setting. */
+  setDebugMode(value: unknown): void {
+    if (typeof value !== 'boolean') throw new Error('Invalid software debug mode')
+    this.commit({ ...this.data, debugMode: value })
+  }
   /**
    * Save the complete DSH form for connected and future instances.
    * @param input - untrusted non-secret preferences from the manager.
    */
-  updateDsh(input: unknown): void { this.commit({ ...this.data, dsh: parseDshSettings(input) }) }
+  updateDsh(input: unknown): void {
+    const dsh = parseDshSettings(input)
+    if (dsh.defaultProvider.startsWith('desktop-')) {
+      const source = this.data.modelSources.find(source => sourceRoute(source.id) === dsh.defaultProvider)
+      if (!source?.models.includes(dsh.defaultModel)) throw new Error('Select an existing source and model')
+    }
+    this.commit({ ...this.data, dsh })
+  }
   /**
    * Save wallpaper and region colors atomically for connected and future instances.
    * @param input - Untrusted complete personal appearance document.
@@ -154,6 +170,9 @@ export class SoftwareSettings {
     const index = next.modelSources.findIndex(item => item.id === owner)
     if (index < 0) next.modelSources.push(source)
     else next.modelSources[index] = source
+    if (next.dsh.defaultProvider === sourceRoute(owner) && !source.models.includes(next.dsh.defaultModel)) {
+      next.dsh.defaultModel = source.models[0] as string
+    }
     this.commit(next)
   }
   /**
@@ -165,6 +184,10 @@ export class SoftwareSettings {
     if (!this.data.modelSources.some(source => source.id === owner)) throw new Error('Unknown model source')
     const next = structuredClone(this.data)
     next.modelSources = next.modelSources.filter(source => source.id !== owner)
+    if (next.dsh.defaultProvider === sourceRoute(owner)) {
+      next.dsh.defaultProvider = ''
+      next.dsh.defaultModel = ''
+    }
     next.removedSources.push(owner)
     const ref = sourceKeyRef(owner)
     next.credentials = Object.fromEntries(Object.entries(next.credentials).filter(([name]) => name !== ref))
@@ -175,6 +198,18 @@ export class SoftwareSettings {
   removedSourceIds(): ModelSourceId[] { return [...this.data.removedSources] }
   /** @returns detached non-secret source definitions for instance delivery. */
   instanceSources(): ModelSource[] { return structuredClone(this.data.modelSources) }
+  /**
+   * Decrypt only the selected source key for a main-process model catalog request.
+   * @param id - Existing source owner from IPC.
+   * @returns The saved key; never expose this value to a renderer.
+   */
+  sourceCredential(id: unknown): string {
+    const owner = modelSourceId(id)
+    if (!this.data.modelSources.some(source => source.id === owner)) throw new Error('Unknown model source')
+    const encrypted = this.data.credentials[sourceKeyRef(owner)]
+    if (!encrypted || !this.encryption.available()) throw new Error('Saved model credential is unavailable')
+    return this.encryption.decrypt(Buffer.from(encrypted, 'base64'))
+  }
   /**
    * Save complete validated shortcut bindings.
    * @param bindings - untrusted keyboard preferences.

@@ -164,7 +164,7 @@ export class DesktopHostRequestDecoder {
   private parseStart(streamId: number, payload: Buffer): DesktopHostRequestFrame {
     let value: unknown
     try {
-      value = JSON.parse(payload.toString('utf8')) as unknown
+      value = JSON.parse(payload.toString('utf8'))
     } catch (error) {
       throw new Error(`dsh desktop: Electron request start payload is not JSON: ${error instanceof Error ? error.message : String(error)}`)
     }

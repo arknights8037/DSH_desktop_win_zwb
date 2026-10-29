@@ -7,6 +7,11 @@ import electronUpdater, { type AppUpdater } from 'electron-updater'
 import type { DesktopUpdateState } from './ipc.ts'
 const { autoUpdater } = electronUpdater
 
+/** Artifact operations used by the shell; version checks consume only release availability and version. */
+type DesktopArtifactUpdater = Pick<AppUpdater, 'autoDownload' | 'autoInstallOnAppQuit' | 'downloadUpdate' | 'quitAndInstall'> & {
+  checkForUpdates(): Promise<{ isUpdateAvailable: boolean; updateInfo: { version: string } } | null>
+}
+
 /** Checks, downloads, and installs one complete Desktop release. */
 export class DesktopUpdateCoordinator {
   private availableVersion: string | undefined
@@ -22,7 +27,7 @@ export class DesktopUpdateCoordinator {
   constructor(
     private readonly publish: (state: DesktopUpdateState) => DesktopUpdateState,
     private readonly beforeRestart: () => Promise<void> = async () => {},
-    private readonly updater: AppUpdater = autoUpdater,
+    private readonly updater: DesktopArtifactUpdater = autoUpdater,
     private readonly enabled: () => boolean = () => (
       app.isPackaged && existsSync(join(process.resourcesPath, 'app-update.yml'))
     ),

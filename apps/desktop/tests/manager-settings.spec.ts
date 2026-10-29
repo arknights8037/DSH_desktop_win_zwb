@@ -85,3 +85,14 @@ it('accepts distinct shortcuts, supports disabling, and rejects collisions or ba
   expect(shortcutBinding({ key: 't', control: true, alt: false, shift: true, meta: false, isComposing: false })).toBe('Ctrl+Shift+T')
   expect(shortcutBinding({ key: 't', control: true, alt: false, shift: false, meta: false, isComposing: true })).toBe('')
 })
+
+it('restores composition model defaults with revision-fenced unsets while preserving a reasoning edit', async () => {
+  const fetcher = transport()
+  await instanceSettings(fetcher, 'dsh-app://app/', 'resetModel', { revision: 9, reasoningEffort: 'high' })
+  const body = await fetcher.mock.calls[0]![0].json() as { payload: { args: unknown } }
+  expect(body.payload.args).toEqual({ ns: 'agent-default-model', expectedRevision: 9, ops: [
+    { op: 'unset', path: ['provider'] }, { op: 'unset', path: ['model'] },
+    { op: 'set', path: ['reasoningEffort'], value: 'high' },
+  ] })
+  await expect(instanceSettings(fetcher, 'dsh-app://app/', 'resetModel', {})).rejects.toThrow('Invalid')
+})

@@ -207,7 +207,8 @@ export class DesktopHostResponseDecoder {
 
   private parseJson(payload: Buffer, subject: string): unknown {
     try {
-      return JSON.parse(payload.toString('utf8')) as unknown
+      const value: unknown = JSON.parse(payload.toString('utf8'))
+      return value
     } catch (error) {
       throw new Error(`dsh desktop: Host response ${subject} payload is not JSON: ${error instanceof Error ? error.message : String(error)}`)
     }

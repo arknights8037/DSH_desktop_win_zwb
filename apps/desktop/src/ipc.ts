@@ -8,6 +8,7 @@ import type { InstanceId } from './instances.ts'
 
 /** IPC channel names kept private to the desktop application bundle. */
 export const DESKTOP_IPC = {
+  directoryPick: 'dsh-desktop:directory-pick',
   localeGet: 'dsh-desktop:locale-get',
   pluginsList: 'dsh-desktop:plugins-list',
   pluginsLibrary: 'dsh-desktop:plugins-library',

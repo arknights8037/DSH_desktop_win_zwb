@@ -1,0 +1,5 @@
+Current runtime context. This snapshot supersedes earlier runtime-context snapshots.
+
+Workspace source folders (primary first):
+"<primary>"
+"<extra>"

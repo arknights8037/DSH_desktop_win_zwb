@@ -11,6 +11,18 @@ import { parseModelSource, modelSourceId, sourceKeyRef } from '../src/model-sour
 const sourceConfig = { name: 'Gateway', protocol: 'openai-completions', baseURL: 'https://gateway.test/v1',
   models: ['model-a', 'model-b'], contextWindow: 128000, maxTokens: 4096 }
 
+it('keeps debug mode off for older files and persists explicit F12 enablement', () => {
+  const { path, encryption, settings } = fixture()
+  expect(settings.snapshot().debugMode).toBe(false)
+  settings.setDebugMode(true)
+  expect(new SoftwareSettings(path, encryption).snapshot().debugMode).toBe(true)
+  expect(() => settings.setDebugMode('true')).toThrow('Invalid software debug mode')
+  const saved = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+  delete saved.debugMode
+  writeFileSync(path, JSON.stringify(saved))
+  expect(new SoftwareSettings(path, encryption).snapshot().debugMode).toBe(false)
+})
+
 it('defaults older settings to motion enabled and preserves an explicit off choice across restarts', () => {
   const { path, encryption, settings } = fixture()
   expect(settings.snapshot().appearance.motionEnabled).toBe(true)

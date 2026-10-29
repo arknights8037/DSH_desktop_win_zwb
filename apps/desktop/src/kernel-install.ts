@@ -14,13 +14,22 @@ import { removeOwnedDirectoryAsync, renameOwnedDirectory } from './owned-directo
 import { DesktopPluginLibrary } from './plugin-library.ts'
 import { DESKTOP_DEFAULT_PLUGINS } from './default-plugins.ts'
 import { instanceSettings } from './manager-settings.ts'
+import type { DesktopInstallReporter } from './install-progress.ts'
 
 async function pnpm(runtime: DesktopRuntimeExecutables, cwd: string, args: readonly string[]): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(runtime.node, [runtime.pnpm, '--dir', cwd, '--config.userconfig=' + join(cwd, 'npmrc'),
-      '--config.registry=https://registry.npmjs.org/', '--config.enable-global-virtual-store=false', ...args], {
+      '--config.registry=https://registry.npmjs.org/', '--config.enable-global-virtual-store=false',
+      ...(runtime.packageData ? [`--config.store-dir=${runtime.packageData.store}`] : []), ...args], {
       windowsHide: true, env: {
         ...Object.fromEntries(Object.entries(process.env).filter(([name]) => name !== 'NODE_OPTIONS' && name !== 'NODE_PATH' && !/^(?:npm|pnpm|corepack)_/iu.test(name))),
+        ...(runtime.packageData ? {
+          PNPM_HOME: runtime.packageData.home,
+          COREPACK_HOME: runtime.packageData.home,
+          XDG_CACHE_HOME: runtime.packageData.cache,
+          XDG_STATE_HOME: runtime.packageData.state,
+          XDG_CONFIG_HOME: runtime.packageData.config,
+        } : {}),
         ELECTRON_RUN_AS_NODE: '1', PATH: `${dirname(runtime.node)}${delimiter}${process.env.PATH ?? ''}`,
       }, stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -38,17 +47,20 @@ async function pnpm(runtime: DesktopRuntimeExecutables, cwd: string, args: reado
 }
 
 /**
- * Materialize and launch-test one kernel and its three default plugins without opening user data.
+ * Materialize and launch-test one kernel and its default plugins without opening user data.
  * @param version - Exact official npm version.
  * @param directory - Unpublished version directory under the shell kernel store.
  * @param bundled - Bundled Node, pnpm, and matching Desktop transport implementation.
  * @param libraryRoot - Shared shell plugin-library location.
  * @param fetcher - Registry metadata transport, including shell proxy settings.
+ * @param progress - Actual preparation stages for startup or background kernel settings.
  * @returns Completion after version publication; failed stages remain unselected.
  */
 export async function prepareDesktopKernel(
   version: string, directory: string, bundled: DesktopRuntimeExecutables, libraryRoot: string, fetcher: typeof fetch = fetch,
+  progress: DesktopInstallReporter = () => {},
 ): Promise<void> {
+  progress({ stage: 'validating', package: `DSH ${version}` })
   if (existsSync(join(directory, 'desktop-runtime.json'))) {
     const descriptor = await verifyDesktopRuntime(directory, version)
     const previousBridge = await readFile(join(directory, 'node_modules', DESKTOP_HOST_PACKAGE, 'lib/index.js'))
@@ -64,7 +76,7 @@ export async function prepareDesktopKernel(
   let host: DesktopHostProcess | undefined
   try {
     const hostManifest = JSON.parse(await readFile(join(bundled.dsh, 'node_modules', DESKTOP_HOST_PACKAGE, 'package.json'), 'utf8')) as { dependencies: Record<string, string> }
-    const dependencies: Record<string, string> = { '@deepseek-ai/dsh': version, '@deepseek-ai/dsh-client-store': version }
+    const dependencies: Record<string, string> = { '@deepseek-ai/dsh': version }
     for (const name of Object.keys(hostManifest.dependencies)) if (name.startsWith('@deepseek-ai/dsh-')) dependencies[name] = version
     for (const plugin of DESKTOP_DEFAULT_PLUGINS) {
       const response = await fetcher(`https://registry.npmjs.org/${encodeURIComponent(plugin.name)}/${plugin.version}`, {
@@ -77,16 +89,17 @@ export async function prepareDesktopKernel(
         throw new Error(`Default plugin metadata lacks Host peers: ${plugin.name}`)
       }
       for (const [name, range] of Object.entries(metadata.peerDependencies)) {
-        // The pinned at-file adapter replaces its retired runtime peer with client-store.
-        if (name.startsWith('@deepseek-ai/dsh-') && name !== '@deepseek-ai/dsh-client-runtime') dependencies[name] = version
+        if (name.startsWith('@deepseek-ai/dsh-')) dependencies[name] = version
         if ((name === 'react' || name === 'react-dom') && typeof range === 'string') dependencies[name] = range
       }
     }
     await writeFile(join(installation, 'package.json'), `${JSON.stringify({ name: 'dsh-managed-kernel', private: true, type: 'module', dependencies })}\n`)
     await writeFile(join(installation, 'npmrc'), '')
     await writeFile(join(installation, 'pnpm-workspace.yaml'), 'nodeLinker: hoisted\nautoInstallPeers: true\nstrictDepBuilds: true\nallowBuilds:\n  node-pty: true\n  koffi: true\n  fs-ext: true\n  node-addon-require-builtin: true\n')
+    progress({ stage: 'installing', package: `DSH ${version}` })
     await pnpm(bundled, installation, ['install', '--prod', '--ignore-scripts', '--registry=https://registry.npmjs.org/'])
     await pnpm(bundled, installation, ['rebuild', '--pending'])
+    progress({ stage: 'copying', package: `DSH ${version}` })
     await cp(join(installation, 'node_modules'), join(stage, 'node_modules'), {
       recursive: true, dereference: true, filter: source => !source.split(/[\\/]/u).includes('.bin'),
     })
@@ -104,15 +117,16 @@ export async function prepareDesktopKernel(
     writeDesktopRuntime(stage, { ...bundledRelease, version, hostProtocolVersion: DESKTOP_HOST_PROTOCOL_VERSION }, shared)
     const runtime: DesktopRuntimeExecutables = { ...bundled, dsh: stage, profileResolution: 'runtime' }
     const library = new DesktopPluginLibrary(libraryRoot, runtime)
-    const manager = new DesktopProjectManager(resolveDesktopPaths(home), runtime)
+    const manager = new DesktopProjectManager(resolveDesktopPaths(home), runtime, progress)
     await manager.applyRelease()
     for (const plugin of DESKTOP_DEFAULT_PLUGINS) {
       library.select(plugin.name, plugin.version)
       await library.withSource(plugin.name, plugin.version, source => manager.mutate({ type: 'plugin-inject', ...plugin, source }, {
         beforeChange: async () => {}, afterChange: async () => {},
-      }))
+      }), progress)
     }
     host = new DesktopHostProcess(runtime.node, stage, manager.paths.profile, undefined, { ...process.env, DSH_HOME: home }, () => {})
+    progress({ stage: 'starting', package: `DSH ${version}` })
     const ready = await host.start()
     if (ready.dshVersion !== version) throw new Error('Kernel probe reported a different DSH version')
     const response = await host.fetch(new Request('dsh-app://app/index.html'))

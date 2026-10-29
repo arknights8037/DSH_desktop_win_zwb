@@ -1,5 +1,8 @@
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { stat } from 'node:fs/promises'
 import {
   resolveDesktopAppId,
   resolveMacOSNotarizationEnvironment,
@@ -54,20 +57,41 @@ export function createElectronBuilderConfig(
   const buildPaths = desktopTargetBuildPaths(resolveDesktopBuildTarget(env, hostPlatform, hostArch))
   return {
     appId,
-    productName: 'Harness Agent Manager',
-    artifactName: 'harness-agent-manager-${version}-${os}-${arch}.${ext}',
+    productName: 'DshManager',
+    extraMetadata: { productName: 'DshManager', version: '0.1.2' },
+    artifactName: 'DshManager-V${version}-${os}-${arch}-Setup.${ext}',
+    icon: fileURLToPath(new URL('./renderer/icon.png', import.meta.url)),
     directories: { output: unsigned ? join(buildPaths.root, 'unsigned-artifacts') : buildPaths.artifacts },
     asar: true,
     // The shell uses ssh2's JS implementation; Host native dependencies are prepared and verified separately.
     npmRebuild: false,
+    beforePack: async () => {
+      await promisify(execFile)(process.execPath, [
+        '--import', 'tsx/esm',
+        fileURLToPath(new URL('./scripts/verify-bundled-runtime.ts', import.meta.url)),
+        buildPaths.dsh, buildPaths.runtime, resolvedPlatform, resolvedArch,
+      ], { cwd: fileURLToPath(new URL('../../', import.meta.url)) })
+    },
+    afterPack: async context => {
+      const resources = context.electronPlatformName === 'darwin'
+        ? join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, 'Contents', 'Resources')
+        : join(context.appOutDir, 'resources')
+      const runtime = join(resources, 'dsh')
+      for (const path of ['desktop-runtime.json', 'node_modules/@deepseek-ai/dsh-desktop-host/lib/index.js',
+        'node_modules/@deepseek-ai/dsh-desktop-host/lib/client.js',
+        'node_modules/@deepseek-ai/dsh-desktop-host/config/desktop.cordis.patch.yml']) {
+        try {
+          if (!(await stat(join(runtime, path))).isFile()) throw new Error('Expected a runtime file')
+        } catch (error) {
+          throw new Error(`Desktop runtime must be unpacked outside ASAR: ${join(runtime, path)}`, { cause: error })
+        }
+      }
+    },
     files: [
       'lib/*.js',
       'lib/*.cjs',
       'renderer/**/*',
       'package.json',
-      { from: buildPaths.dsh, to: 'dsh', filter: ['**/*'] },
-      // electron-builder excludes a source directory's root node_modules.
-      { from: join(buildPaths.dsh, 'node_modules'), to: 'dsh/node_modules', filter: ['**/*'] },
     ],
     asarUnpack: [
       '**/*.{node,dylib,dll,so,exe}',
@@ -76,6 +100,9 @@ export function createElectronBuilderConfig(
       '**/@vscode/ripgrep/bin/rg',
     ],
     extraResources: [
+      // Host children, native realpaths and directory copies require a physical runtime tree.
+      { from: buildPaths.dsh, to: 'dsh', filter: ['**/*'] },
+      { from: join(buildPaths.dsh, 'node_modules'), to: 'dsh/node_modules', filter: ['**/*'] },
       { from: buildPaths.runtime, to: 'runtime' },
     ],
     mac: {
@@ -105,6 +132,7 @@ export function createElectronBuilderConfig(
       )
     },
     win: {
+      icon: fileURLToPath(new URL('./resources/icon.ico', import.meta.url)),
       forceCodeSigning: !unsigned,
       signtoolOptions: {
         sign: windowsSigner,
@@ -119,6 +147,8 @@ export function createElectronBuilderConfig(
     nsis: {
       include: fileURLToPath(new URL('./scripts/installer.nsh', import.meta.url)),
       oneClick: false,
+      installerLanguages: ['en_US', 'zh_CN'],
+      displayLanguageSelector: true,
       allowToChangeInstallationDirectory: true,
       differentialPackage: true,
     },

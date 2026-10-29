@@ -5,7 +5,7 @@ import type { DesktopRuntimeDescriptor } from '../src/runtime-tree.ts'
 
 const runtime: DesktopRuntimeDescriptor = {
   schemaVersion: 1, platform: 'win32', arch: 'x64', files: [],
-  release: { schemaVersion: 1, version: '0.1.6-alpha.1', nodeVersion: '24.17.0', pnpmVersion: '11.7.0', hostProtocolVersion: DESKTOP_HOST_PROTOCOL_VERSION },
+  release: { schemaVersion: 1, version: '0.2.1-rc.2', nodeVersion: '24.17.0', pnpmVersion: '11.7.0', hostProtocolVersion: DESKTOP_HOST_PROTOCOL_VERSION },
   sharedPackages: [{ name: '@deepseek-ai/cordis', version: '4.0.1', path: 'node_modules/@deepseek-ai/cordis' }],
 }
 const manifest = {
@@ -28,7 +28,7 @@ describe('Desktop registry preflight', () => {
     expect(fetcher).toHaveBeenCalledWith('https://registry.npmjs.org/%40test%2Fplugin/next', expect.anything())
     expect(plan).toMatchObject({ name: '@test/plugin', version: '1.2.3', license: 'MIT', repository: 'https://github.com/example/plugin',
       compatibility: 'compatible', permissions: ['network'], scripts: ['preinstall', 'postinstall'], integrity: 'sha512-example', blockers: [] })
-    expect(plan.requirements.map(item => item.actual)).toEqual(['0.1.6-alpha.1', '24.17.0', '4.0.1'])
+    expect(plan.requirements.map(item => item.actual)).toEqual(['0.2.1-rc.2', '24.17.0', '4.0.1'])
   })
 
   it.each([

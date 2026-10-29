@@ -45,12 +45,9 @@ if (command !== 'rebuild') {
     mkdirSync(packageRoot, { recursive: true })
     writeFileSync(join(packageRoot, 'package.json'), JSON.stringify({name, version,
       peerDependencies: {'@deepseek-ai/cordis': '^1.0.0'}, dsh: {bundle: {patch: './bundle.yml'},
-        ...(name === 'dsh-at-file' ? {client: {inject:['@deepseek-ai/dsh-client-runtime']}} : {})}}))
+        }}))
     writeFileSync(join(packageRoot, 'bundle.yml'), '[]\\n')
-    if (name === 'dsh-at-file') {
-      mkdirSync(join(packageRoot, 'lib'), {recursive:true})
-      writeFileSync(join(packageRoot, 'lib/client.js'), 'require("@deepseek-ai/dsh-client-runtime/client")\\n')
-    }
+
   }
   writeFileSync(join(project, 'pnpm-lock.yaml'), JSON.stringify(manifest.dependencies))
 }
@@ -85,10 +82,10 @@ it('retries interrupted baseline installation and respects later removal and dis
   await prepareLocalKernel(join(root, '.dsh'), manager, library)
   expect(manager.listPlugins().map(({ name, version }) => ({ name, version })))
     .toEqual([...DESKTOP_DEFAULT_PLUGINS].sort((a, b) => a.name.localeCompare(b.name)))
-  await manager.mutate({ type: 'plugin-remove', name: 'dsh-at-file' }, hooks())
+  await manager.mutate({ type: 'plugin-remove', name: 'dsh-cost-meter' }, hooks())
   await manager.mutate({ type: 'plugin-toggle', name: 'dsh-context', enabled: false }, hooks())
   await prepareLocalKernel(join(root, '.dsh'), manager, library)
-  expect(manager.listPlugins().some(plugin => plugin.name === 'dsh-at-file')).toBe(false)
+  expect(manager.listPlugins().some(plugin => plugin.name === 'dsh-cost-meter')).toBe(false)
   expect(manager.listPlugins().find(plugin => plugin.name === 'dsh-context')?.enabled).toBe(false)
 })
 
@@ -118,7 +115,7 @@ it('backs up the complete instance home and prepares the same plugin versions fo
   expect(readFileSync(join(next.paths.profile, 'cordis.patch.yml'), 'utf8')).toBe('[]\n')
 })
 
-it.each([{}, { '@deepseek-ai/dsh': '0.1.6-alpha.1', '@deepseek-ai/dsh-desktop-host': '0.1.6-alpha.1' }])('backs up and detaches a legacy development package container before using a selected runtime (%j)', async (dependencies) => {
+it.each([{}, { '@deepseek-ai/dsh': '0.2.1-rc.1', '@deepseek-ai/dsh-desktop-host': '0.2.1-rc.1' }])('backs up and detaches a legacy development package container before using a selected runtime (%j)', async (dependencies) => {
   const { root, manager } = setup()
   const home = join(root, '.dsh')
   mkdirSync(manager.paths.profile, { recursive: true })

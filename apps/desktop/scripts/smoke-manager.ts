@@ -1,5 +1,7 @@
 /** Exercise real Electron tabs and local Hosts using an isolated development home. */
 import { createRequire } from 'node:module'
+import { createServer } from 'node:http'
+import type { WorkspaceView } from '../../../packages/api/workspace-controller/src/types.ts'
 import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -20,6 +22,11 @@ const home = mkdtempSync(join(tmpdir(), 'dsh-manager-smoke-'))
 const output = join(appRoot, '.desktop-build', 'manager-smoke')
 mkdirSync(output, { recursive: true })
 const packagedExecutable = process.argv[2]
+if (packagedExecutable) {
+  const selection = join(home, 'desktop', 'agent-manager', 'kernels')
+  mkdirSync(selection, { recursive: true })
+  writeFileSync(join(selection, 'selection.json'), JSON.stringify({ version: 1, selected: null, previous: null, automatic: false }))
+}
 const kernel = packagedExecutable ? undefined
   : resolveDevelopmentKernel(process.env.DSH_DESKTOP_KERNEL_HOME ?? resolveDshHome(), resolveDesktopTargetBuildPaths().runtime)
 const environment: NodeJS.ProcessEnv = { ...process.env, DSH_HOME: home, DSH_DESKTOP_NODE_BINARY: process.execPath, DSH_DESKTOP_OPEN_DEVTOOLS: '0' }
@@ -62,11 +69,11 @@ try {
     await page.locator('[data-settings-tab=instances]').click()
   }
   await capture('instances.png')
-  const configs: InstanceConfig[] = await page.evaluate(async () => (await (window as unknown as { dshManager: { invoke: (operation: string) => Promise<ManagerSnapshot> } }).dshManager.invoke('snapshot')).instances)
+  const configs: InstanceConfig[] = await page.evaluate(async () => (await (window as Window & { dshManager?: { invoke: (operation: string) => Promise<ManagerSnapshot> } }).dshManager!.invoke('snapshot')).instances)
   const invoke = (operation: string, args?: unknown) => page.evaluate(async (
     { operation, args }: { operation: string; args?: unknown },
   ) => {
-    const api = (window as unknown as { dshManager: { invoke: (operation: string, args?: unknown) => Promise<unknown> } }).dshManager
+    const api = (window as Window & { dshManager?: { invoke: (operation: string, args?: unknown) => Promise<unknown> } }).dshManager!
     return api.invoke(operation, args)
   }, { operation, args })
   const hostRead = (method: string, args: Record<string, unknown> = {}) => electron.evaluate(async ({ webContents }: typeof import('electron'), { method, args }: { method: string; args: Record<string, unknown> }) => {
@@ -82,11 +89,14 @@ try {
   for (const [index, config] of configs.entries()) {
     await page.locator('#add-tab').click()
     await page.locator('#menu-instances button').nth(index).click()
-    await page.evaluate(async (id: string) => { await (window as unknown as { dshManager: { invoke: (operation: string, args: unknown) => Promise<unknown> } }).dshManager.invoke('open', { id }) }, config.id)
+    await page.evaluate(async (id: string) => { await (window as Window & { dshManager?: { invoke: (operation: string, args: unknown) => Promise<unknown> } }).dshManager!.invoke('open', { id }) }, config.id)
     await page.locator('#settings').click()
     await page.locator('[data-settings-tab=instances]').click()
   }
-  const state: ManagerSnapshot = await page.evaluate(async () => (window as unknown as { dshManager: { invoke: (operation: string) => Promise<ManagerSnapshot> } }).dshManager.invoke('snapshot'))
+  const state: ManagerSnapshot = await page.evaluate(async () => (window as Window & { dshManager?: { invoke: (operation: string) => Promise<ManagerSnapshot> } }).dshManager!.invoke('snapshot'))
+  if (state.version !== '0.1.2') throw new Error('Unexpected desktop version: ' + state.version)
+  const kernelState = await invoke('kernel', { action: 'read' }) as { current: string }
+  if (kernelState.current !== '0.2.1-rc.2') throw new Error('Unexpected running kernel: ' + kernelState.current)
   if (state.instances.some(config => state.statuses[config.id]?.connection !== 'connected')) throw new Error(`Local instances did not connect: ${JSON.stringify(state.statuses)}`)
   const screenshot = await electron.evaluate(async ({ BrowserWindow }: typeof import('electron')) => (await BrowserWindow.getAllWindows()[0]!.capturePage()).toPNG().toString('base64'))
   writeFileSync(join(output, 'two-local-tabs.png'), Buffer.from(screenshot, 'base64'))
@@ -97,6 +107,49 @@ try {
   if (hostPages.length !== 2 || hostPages.some((item: { text: string }) => !item.text.trim())) throw new Error('Instance page did not render')
   for (const [index, hostPage] of hostPages.entries()) writeFileSync(join(output, `host-${index}.png`), Buffer.from(hostPage.image, 'base64'))
   console.log('Rendered instance pages:', hostPages.map(({ url, title, text }: { url: string; title: string; text: string }) => ({ url, title, text })))
+  const firstDirectory = join(home, 'workspace-first'), secondDirectory = join(home, 'workspace-second')
+  mkdirSync(firstDirectory); mkdirSync(secondDirectory)
+  writeFileSync(join(firstDirectory, 'retain.txt'), 'project files remain')
+  const added = await hostRead('workspace/create', { request: { path: firstDirectory } }) as Array<{ workspace: WorkspaceView }>
+  const registered = added[0]!.workspace
+  const edited = await electron.evaluate(async ({ webContents }: typeof import('electron'), { ids, folders }: { ids: string[]; folders: string[] }) => {
+    const contents = webContents.getAllWebContents().filter(item => item.getURL().startsWith('dsh-app://app/'))
+    return Promise.all(contents.map((item, index) => item.executeJavaScript(`(async () => {
+      const id = ${JSON.stringify(ids)}[${index}];
+      const response = await fetch('/.dsh/workspace', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({workspaceId: id, title: 'Combined sources', folders: ${JSON.stringify(folders)}}) });
+      if (!response.ok) throw new Error('Workspace save failed');
+      const read = await fetch('/.dsh/workspace?workspaceId=' + encodeURIComponent(id));
+      if (!read.ok) throw new Error('Workspace read failed');
+      return read.json();
+    })()`)))
+  }, { ids: added.map(item => item.workspace.workspaceId), folders: [secondDirectory, firstDirectory] }) as Array<{ title: string; folders: string[] }>
+  if (edited.some(item => item.title !== 'Combined sources' || item.folders.length !== 2)) throw new Error('Workspace edit lost its name or source folders')
+  await hostRead('workspace/delete', { request: { workspaceId: registered.workspaceId } })
+  if (readFileSync(join(firstDirectory, 'retain.txt'), 'utf8') !== 'project files remain') throw new Error('Workspace removal affected project data')
+  const fixture = createServer((request, response) => {
+    const key = request.url?.startsWith('/anthropic') ? request.headers['x-api-key'] : request.headers.authorization
+    if (key !== 'fixture-key' && key !== 'Bearer fixture-key') { response.writeHead(401); response.end(); return }
+    response.setHeader('content-type', 'application/json')
+    response.end(JSON.stringify({ data: [{ id: 'fixture-discovered-model' }] }))
+  })
+  await new Promise<void>((resolve, reject) => { fixture.once('error', reject); fixture.listen(0, '127.0.0.1', resolve) })
+  try {
+    const address = fixture.address()
+    if (!address || typeof address === 'string') throw new Error('Fixture did not allocate a TCP port')
+    for (const protocol of ['openai-completions', 'openai-responses', 'anthropic-messages']) {
+      const models = await invoke('softwareSettings', { action: 'sourceModels', input: { key: 'fixture-key', config: {
+        name: 'Catalog fixture', protocol, baseURL: 'http://127.0.0.1:' + address.port + (protocol === 'anthropic-messages' ? '/anthropic' : '/v1'),
+        models: ['discovery'], contextWindow: 128000, maxTokens: 4096,
+      } } })
+      if (JSON.stringify(models) !== JSON.stringify(['fixture-discovered-model'])) throw new Error('Main-process model discovery failed')
+    }
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      fixture.close((error) => { if (error) reject(error); else resolve() })
+      fixture.closeAllConnections()
+    })
+  }
+  console.log('Workspace registration and authenticated model-catalog fixture checks passed')
   const firstTab = page.locator('.tab').first()
   const lastTabBounds = await page.locator('.tab').last().boundingBox()
   const addBounds = await page.locator('#add-tab').boundingBox()
@@ -109,7 +162,7 @@ try {
   await page.locator('.tab-rename').fill('Renamed local')
   await page.locator('.tab-rename').press('Enter')
   await page.waitForFunction(() => document.querySelector('.tab-name')?.textContent === 'Renamed local')
-  const renamed: ManagerSnapshot = await page.evaluate(async () => (window as unknown as { dshManager: { invoke: (operation: string) => Promise<ManagerSnapshot> } }).dshManager.invoke('snapshot'))
+  const renamed: ManagerSnapshot = await page.evaluate(async () => (window as Window & { dshManager?: { invoke: (operation: string) => Promise<ManagerSnapshot> } }).dshManager!.invoke('snapshot'))
   const contentsAfter = await electron.evaluate(({ webContents }: typeof import('electron')) => webContents.getAllWebContents().filter(item => item.getURL().startsWith('dsh-app://app/')).map(item => item.id).sort())
   if (JSON.stringify(contentsBefore) !== JSON.stringify(contentsAfter) || renamed.statuses[configs[0]!.id]?.connection !== 'connected') throw new Error('Renaming replaced a live instance view')
   if (renamed.instances.find(item => item.id === configs[0]!.id)?.name !== 'Renamed local') throw new Error('Renamed instance was not saved')
@@ -199,14 +252,32 @@ try {
   if (unmaskedWallpaper === maskedWallpaper) throw new Error('Disabling the mask did not change the shell wallpaper')
   await page.locator('.settings-content').evaluate((node: HTMLElement) => { node.scrollTop = 0 })
   await capture('appearance-unmasked.png')
-  await electron.evaluate(async ({ webContents }: typeof import('electron')) => Promise.all(webContents.getAllWebContents().filter(item => item.getURL().startsWith('dsh-app://app/')).map(item => item.executeJavaScript('(async () => { for (const text of ["继续", "Continue", "稍后配置", "Configure later"]) { const button = Array.from(document.querySelectorAll("[role=dialog] button")).find(button => button.textContent === text); if (button) { button.click(); await new Promise(resolve => setTimeout(resolve, 150)); } } })()'))))
+  const dismissOnboarding = async (host: {
+    waitForFunction: (predicate: (labels: string[]) => boolean, labels: string[]) => Promise<unknown>
+    locator: (selector: string) => { allTextContents: () => Promise<string[]> }
+  }): Promise<void> => {
+    try {
+      await host.waitForFunction((labels: string[]) => {
+        const dialogs = [...document.querySelectorAll<HTMLElement>('[role=dialog], dialog[open]')].filter(node => node.checkVisibility())
+        if (!dialogs.length) return true
+        for (const dialog of dialogs) {
+          const action = [...dialog.querySelectorAll<HTMLButtonElement>('button')].find(button => labels.includes(button.textContent?.trim() || ''))
+          if (action) action.click()
+        }
+        return false
+      }, ['继续', 'Continue', '稍后配置', 'Configure later', '保留当前显示', 'Keep current display', '暂不开启', '暂不启用', 'Not now', '保留原样', 'Keep original', '知道了', '我知道了', 'Got it'])
+    } catch (error) {
+      console.error('Unresolved onboarding:', await host.locator('[role=dialog], dialog[open]').allTextContents())
+      throw error
+    }
+  }
+  for (const host of electron.context().pages().filter((item: { url(): string }) => item.url().startsWith('dsh-app://app/'))) await dismissOnboarding(host)
   await page.locator('.tab').first().dispatchEvent('click')
   await page.waitForFunction(() => document.querySelector('#tabs .tab')?.getAttribute('aria-selected') === 'true')
-  await capture('appearance-composited.png')
-  // Pixel evidence uses an unobstructed region of the visible conversation,
-  // after both onboarding steps have settled and the compositor has painted.
+  await invoke('overlay', { visible: false })
   const visibleHost = electron.context().pages().find((item: { url(): string }) => item.url().startsWith('dsh-app://app/'))!
-  await visibleHost.waitForFunction(() => !document.querySelector('[role=dialog]'))
+  await dismissOnboarding(visibleHost)
+  await capture('appearance-composited.png')
   const visualAppearance = { ...appearanceState.personalization, maskEnabled: false, surfaceOpacity: 0 }
   await invoke('softwareSettings', { action: 'personalize', input: { value: visualAppearance } })
   await visibleHost.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
@@ -216,9 +287,17 @@ try {
     const image = await view.webContents.capturePage({ x: 1000, y: 258, width: 1, height: 1 })
     return [...image.toBitmap().subarray(0, 4)]
   })
-  if (pixel[3] !== 0) throw new Error(`Instance still blocks the shell wallpaper: ${JSON.stringify(pixel)}`)
+  await visibleHost.screenshot({ path: join(output, 'instance-wallpaper.png') })
+  if (pixel[3] !== 0) {
+    console.error('Wallpaper occlusion:', await visibleHost.evaluate(() => document.elementsFromPoint(1000, 258).map((node) => {
+      const style = getComputedStyle(node)
+      return { tag: node.tagName, class: node.className, slot: node.getAttribute('data-slot'), background: style.background, opacity: style.opacity }
+    })))
+    throw new Error(`Instance still blocks the shell wallpaper: ${JSON.stringify(pixel)}`)
+  }
   await capture('appearance-through-instance.png')
-  await visibleHost.getByRole('button', { name: '设置', exact: true }).dispatchEvent('click')
+  await visibleHost.getByRole('button', { name: '更多', exact: true }).click()
+  await visibleHost.getByRole('menuitem', { name: '设置', exact: true }).click()
   await page.locator('#settings-tab.active').waitFor()
   await page.locator('#settings').click()
   await page.locator('[data-settings-tab=appearance]').click()
@@ -295,6 +374,7 @@ try {
   if (readFileSync(join(home, 'desktop', 'agent-manager', 'software-settings.json'), 'utf8').includes('fixture-key-')) throw new Error('Source key persisted in plaintext')
   await capture('settings-sources-dark.png')
   await page.locator('.model-source button').first().click()
+  if (await page.locator('#source-key-field').isVisible()) throw new Error('Configured source key input is visible')
   if (await page.locator('#source-key').inputValue()) throw new Error('Source editor exposed a saved key')
   await page.locator('#source-name').fill('Renamed source')
   await page.locator('#source-form [type=submit]').click()
@@ -302,11 +382,26 @@ try {
   const first = sources.modelSources[0]!
   const keyMetadata = await hostRead('credentials/describe', { refs: [sourceKeyRef(first.id)] }) as Array<Record<string, { configured: boolean }>>
   if (keyMetadata.some(info => !info[sourceKeyRef(first.id)]?.configured)) throw new Error('Blank replacement removed the saved source key')
+  const defaultsBeforeRemoval = await hostRead('settings/describe') as Array<{ namespaces: Array<{ ns: string; value: Record<string, unknown> }> }>
+  const hasDefaultModel = defaultsBeforeRemoval.every(doc => doc.namespaces.some(section => section.ns === 'agent-default-model'))
+  if (hasDefaultModel) {
+    const software = await invoke('softwareSettings', { action: 'read' }) as SoftwareSettingsSnapshot
+    await invoke('softwareSettings', { action: 'dshUpdate', input: { value: {
+      ...software.dsh, defaultProvider: sourceRoute(first.id), defaultModel: first.models[0],
+    } } })
+  }
   await invoke('close', { id: configs[0]!.id })
   await page.locator('.model-source').first().locator('button').nth(1).click()
   await page.locator('.model-source').first().locator('button').nth(1).click()
   await page.waitForFunction(() => document.querySelectorAll('.model-source').length === 2)
   await invoke('open', { id: configs[0]!.id })
+  if (hasDefaultModel) {
+    const defaults = await hostRead('settings/describe') as typeof defaultsBeforeRemoval
+    if (defaults.some((doc) => {
+      const value = doc.namespaces.find(section => section.ns === 'agent-default-model')!.value
+      return !value.provider || !value.model || value.provider === sourceRoute(first.id)
+    })) throw new Error('Removing the default source did not restore the composed model selection')
+  }
   const afterRemoval = await hostRead('llm/listProviders') as typeof providerLists
   if (afterRemoval.some(providers => providers.some(provider => provider.id === sourceRoute(first.id)))) throw new Error('Deleted source survived reconnection')
   const deletedKey = await hostRead('credentials/describe', { refs: [sourceKeyRef(first.id)] }) as typeof keyMetadata
@@ -322,6 +417,7 @@ try {
   if (metadata.length !== 2 || metadata.some(item => !item.MANAGER_SMOKE_API_KEY?.configured)) throw new Error('Software key did not reach both instances')
   if (readFileSync(join(home, 'desktop', 'agent-manager', 'software-settings.json'), 'utf8').includes('fixture-only-manager-smoke-key')) throw new Error('Software stored a plaintext key')
   if (JSON.stringify(await invoke('softwareSettings', { action: 'read' })).includes('fixture-only-manager-smoke-key')) throw new Error('Software exposed a key in metadata')
+  if (await page.locator('#api-key-field').isVisible()) throw new Error('Configured standalone key input is visible')
   await capture('settings-keys.png')
   await invoke('close', { id: configs[0]!.id })
   await invoke('softwareSettings', { action: 'credentialRemove', input: { ref: 'MANAGER_SMOKE_API_KEY' } })
@@ -383,15 +479,15 @@ try {
   await page.locator('#settings').click()
   await page.locator('[data-settings-tab=instances]').click()
   if (packagedExecutable) {
-    await page.evaluate(async (id: string) => { await (window as unknown as { dshManager: { invoke: (operation: string, args: unknown) => Promise<unknown> } }).dshManager.invoke('disablePlugins', { id }) }, configs[0]!.id)
-    await page.evaluate(async (id: string) => { await (window as unknown as { dshManager: { invoke: (operation: string, args: unknown) => Promise<unknown> } }).dshManager.invoke('reset', { id }) }, configs[0]!.id)
-    const states: ManagerSnapshot = await page.evaluate(async () => (window as unknown as { dshManager: { invoke: (operation: string) => Promise<ManagerSnapshot> } }).dshManager.invoke('snapshot'))
+    await page.evaluate(async (id: string) => { await (window as Window & { dshManager?: { invoke: (operation: string, args: unknown) => Promise<unknown> } }).dshManager!.invoke('disablePlugins', { id }) }, configs[0]!.id)
+    await page.evaluate(async (id: string) => { await (window as Window & { dshManager?: { invoke: (operation: string, args: unknown) => Promise<unknown> } }).dshManager!.invoke('reset', { id }) }, configs[0]!.id)
+    const states: ManagerSnapshot = await page.evaluate(async () => (window as Window & { dshManager?: { invoke: (operation: string) => Promise<ManagerSnapshot> } }).dshManager!.invoke('snapshot'))
     if (Object.values(states.statuses).some(status => status.connection !== 'connected')) throw new Error('Profile recovery disrupted another instance')
   }
-  await page.evaluate(async (id: string) => { await (window as unknown as { dshManager: { invoke: (operation: string, args: unknown) => Promise<unknown> } }).dshManager.invoke('close', { id }) }, configs[0]!.id)
-  const retained: ManagerSnapshot = await page.evaluate(async () => (window as unknown as { dshManager: { invoke: (operation: string) => Promise<ManagerSnapshot> } }).dshManager.invoke('snapshot'))
+  await page.evaluate(async (id: string) => { await (window as Window & { dshManager?: { invoke: (operation: string, args: unknown) => Promise<unknown> } }).dshManager!.invoke('close', { id }) }, configs[0]!.id)
+  const retained: ManagerSnapshot = await page.evaluate(async () => (window as Window & { dshManager?: { invoke: (operation: string) => Promise<ManagerSnapshot> } }).dshManager!.invoke('snapshot'))
   if (retained.statuses[configs[0]!.id]?.process !== 'running') throw new Error('Closing a tab stopped its local process')
-  for (const config of configs) await page.evaluate(async (id: string) => { await (window as unknown as { dshManager: { invoke: (operation: string, args: unknown) => Promise<unknown> } }).dshManager.invoke('stop', { id }) }, config.id)
+  for (const config of configs) await page.evaluate(async (id: string) => { await (window as Window & { dshManager?: { invoke: (operation: string, args: unknown) => Promise<unknown> } }).dshManager!.invoke('stop', { id }) }, config.id)
   writeFileSync(join(output, 'result.json'), JSON.stringify({ home, instances: configs.map(config => config.id), result: 'two local Hosts connected; closed tab retained its process; both stopped' }, null, 2))
   console.log(`Manager smoke passed: ${output}`)
 } finally {

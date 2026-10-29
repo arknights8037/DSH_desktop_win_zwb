@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { AppUpdater } from 'electron-updater'
 import { DESKTOP_HOST_PROTOCOL_VERSION } from '../src/host-protocol.ts'
 import { parseDesktopRelease } from '../src/release.ts'
 import type { DesktopUpdateState } from '../src/ipc.ts'
@@ -56,7 +55,7 @@ describe('desktop update coordinator', () => {
       })),
       downloadUpdate,
       quitAndInstall,
-    } as unknown as AppUpdater
+    }
     const coordinator = new DesktopUpdateCoordinator(
       (state) => {
         states.push(state)
@@ -87,7 +86,7 @@ describe('desktop update coordinator', () => {
       checkForUpdates: vi.fn(() => checked.promise),
       downloadUpdate,
       quitAndInstall: vi.fn(),
-    } as unknown as AppUpdater
+    }
     const coordinator = new DesktopUpdateCoordinator(state => state, async () => {}, updater, () => true)
 
     const checking = coordinator.check()

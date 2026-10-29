@@ -24,7 +24,7 @@ describe('desktop package-set selection', () => {
   it('includes only the available internal production closure', () => {
     const available = new Map<string, PackedDesktopPackage>([
       ['@deepseek-ai/dsh', packed('@deepseek-ai/dsh', {
-        dependencies: { '@deepseek-ai/dsh-base': '^1.0.0', external: '^2.0.0' },
+        dependencies: { '@deepseek-ai/dsh-base': '^1.0.0', external: '^2.0.0', '@deepseek-ai/libreoffice-kit': '^0.1.5' },
         optionalDependencies: { '@deepseek-ai/platform-package': '1.0.0', '@deepseek-ai/missing-platform': '1.0.0' },
       })],
       ['@deepseek-ai/dsh-desktop-host', packed('@deepseek-ai/dsh-desktop-host', {
@@ -64,6 +64,7 @@ describe('desktop package-set selection', () => {
   it('requires the Desktop Host entry and its packaged overlay', () => {
     const files = [
       'package/lib/index.js',
+      'package/lib/client.js',
       'package/config/desktop.cordis.patch.yml',
     ]
     expect(() => {
@@ -71,9 +72,12 @@ describe('desktop package-set selection', () => {
     }).not.toThrow()
     expect(() => {
       assertDesktopHostPackageFiles(files.slice(0, 1))
-    }).toThrow(/desktop\.cordis\.patch\.yml/u)
+    }).toThrow(/lib\/client\.js/u)
     expect(() => {
       assertDesktopHostPackageFiles(files.slice(1))
     }).toThrow(/lib\/index\.js/u)
+    expect(() => {
+      assertDesktopHostPackageFiles(files.slice(0, 2))
+    }).toThrow(/desktop\.cordis\.patch\.yml/u)
   })
 })

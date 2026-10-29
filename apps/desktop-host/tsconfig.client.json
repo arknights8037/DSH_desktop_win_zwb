@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.client.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": ["src/client/index.ts", "src/client.tsx", "src/css-modules.d.ts", "src/workspace-wire.ts", "src/workspace-menu.ts"],
+  "references": [
+    { "path": "../../vendor/cordis" },
+    { "path": "../../packages/api/workspace-controller/tsconfig.client.json" },
+    { "path": "../../packages/client/locale/tsconfig.client.json" },
+    { "path": "../../packages/client/store" },
+    { "path": "../../packages/client/ui-primitives" },
+    { "path": "../../packages/client/ui-layout" },
+    { "path": "../../packages/client/ui-renderer" },
+    { "path": "../../packages/client/ui-slots" },
+    { "path": "../../packages/client/ui-workspace" }
+  ]
+}

@@ -62,11 +62,11 @@ it('carries browser duplex frames and completion through the real Fetch adapter'
   const runtime = {
     fetch: (path: string, init: RequestInit) => handler.fetch(new Request(`dsh-app://app${path}`, init)),
     AbortController, AbortSignal, TextDecoder, crypto: { randomUUID },
-    __DSH_TRANSPORT__: undefined as unknown as BrowserTransport,
+    __DSH_TRANSPORT__: undefined as BrowserTransport | undefined,
   }
   runInNewContext(DESKTOP_TRANSPORT_SCRIPT, runtime)
   const values: unknown[] = []
-  for await (const value of runtime.__DSH_TRANSPORT__.openStream('echo', { args: {} }, new AbortController().signal,
+  for await (const value of runtime.__DSH_TRANSPORT__!.openStream('echo', { args: {} }, new AbortController().signal,
     (async function* () { yield 'first'; yield 'second' })())) values.push(value)
   expect(values).toEqual(['ready', { echoed: 'first' }, { echoed: 'second' }])
 })
@@ -80,9 +80,9 @@ it('stops a browser input pump whose producer is waiting when its output is canc
     for await (const item of uplink) yield item
   })
   const runtime = { fetch: (path: string, init: RequestInit) => handler.fetch(new Request(`dsh-app://app${path}`, init)),
-    AbortController, AbortSignal, TextDecoder, crypto: { randomUUID }, __DSH_TRANSPORT__: undefined as unknown as BrowserTransport }
+    AbortController, AbortSignal, TextDecoder, crypto: { randomUUID }, __DSH_TRANSPORT__: undefined as BrowserTransport | undefined }
   runInNewContext(DESKTOP_TRANSPORT_SCRIPT, runtime)
-  const output = runtime.__DSH_TRANSPORT__.openStream('echo', {}, new AbortController().signal, input)
+  const output = runtime.__DSH_TRANSPORT__!.openStream('echo', {}, new AbortController().signal, input)
   try {
     expect((await output.next()).value).toBe('ready')
     await output.return(undefined)

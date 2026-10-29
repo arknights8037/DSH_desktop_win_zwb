@@ -90,7 +90,8 @@ async function json(url: string, fetcher: typeof fetch): Promise<unknown> {
       chunks.push(part.value)
     }
   } finally { await reader.cancel() }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown
+  const value: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  return value
 }
 
 /**
@@ -169,6 +170,9 @@ export async function inspectPluginInstall(
   if (record(manifest.peerDependencies)) {
     for (const [peer, range] of Object.entries(manifest.peerDependencies)) {
       const actual = runtime.sharedPackages.find(pkg => pkg.name === peer)?.version
+      const optional = record(manifest.peerDependenciesMeta) && record(manifest.peerDependenciesMeta[peer])
+        && manifest.peerDependenciesMeta[peer].optional === true
+      if (actual === undefined && optional) continue
       compare(peer, range, actual)
     }
   }

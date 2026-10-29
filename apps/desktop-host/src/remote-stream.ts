@@ -1,5 +1,9 @@
 /** Portless Remote streams with bounded, acknowledged Client-to-Host input. */
-import type { ConnectionFetchHandler } from '@deepseek-ai/dsh-client-connection'
+/** Local transport route; its enclosing Host owns authentication and the Peer. */
+export interface DesktopFetchHandler {
+  /** @param request - Host-owned request. @returns The streamed local response. */
+  fetch(request: Request): Promise<Response>
+}
 
 /** Custom-protocol route for opening a logical Remote stream. */
 export const DESKTOP_STREAM_PATH = '/.dsh/remote-stream'
@@ -21,10 +25,9 @@ export type OpenDesktopStream = (
  * @param open - Kernel-specific Gateway invocation.
  * @returns Handler for the stream route and its `/input` subroute; writes acknowledge consumption.
  */
-export function createDesktopStreamHandler(open: OpenDesktopStream): ConnectionFetchHandler {
+export function createDesktopStreamHandler(open: OpenDesktopStream): DesktopFetchHandler {
   const inputs = new Map<string, { writer: WritableStreamDefaultWriter<unknown>; writing: boolean }>()
   return {
-    requestBodyMode: () => 'buffered',
     async fetch(request) {
       if (request.method !== 'POST') return new Response(null, { status: 405 })
       let body: unknown

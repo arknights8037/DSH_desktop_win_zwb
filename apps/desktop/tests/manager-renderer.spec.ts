@@ -21,8 +21,8 @@ function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTab
   dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
   dom.window.HTMLDialogElement.prototype.close = function (returnValue = '') { this.returnValue = returnValue; this.open = false; this.dispatchEvent(new dom.window.Event('close')) }
   const instances = config ? Array.isArray(config) ? config : [config] : []
-  const snapshot: ManagerSnapshot = { instances, tabs: { ids: openTabs ? instances.map(item => item.id) : [], active: openTabs ? instances.at(-1)!.id : null }, statuses: Object.fromEntries(instances.map(item => [item.id, { process: 'unknown', connection: 'disconnected' }])), messages: managerMessages(locale), packaged: kernel !== undefined, pluginManagement: kernel !== undefined, maximized: false }
-  const settings = { revision: 0, appearance: { theme: theme || 'system', fontSize: 14, language: '', busyEnter: 'queue', motionEnabled: true },
+  const snapshot: ManagerSnapshot = { version: '0.1.2', instances, tabs: { ids: openTabs ? instances.map(item => item.id) : [], active: openTabs ? instances.at(-1)!.id : null }, statuses: Object.fromEntries(instances.map(item => [item.id, { process: 'unknown', connection: 'disconnected' }])), messages: managerMessages(locale), packaged: kernel !== undefined, pluginManagement: kernel !== undefined, maximized: false }
+  const settings = { revision: 0, debugMode: false, appearance: { theme: theme || 'system', fontSize: 14, language: '', busyEnter: 'queue', motionEnabled: true },
     personalization: structuredClone(DEFAULT_PERSONAL_APPEARANCE),
     dsh: { ...DEFAULT_DSH_SETTINGS }, modelSources: [] as ModelSourceView[], credentials: [] as string[],
     credentialWritable: true, syncErrors: {}, settingsSupport: {} as Record<string, InstanceSettingsSupport> }
@@ -35,7 +35,7 @@ function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTab
     bindings?: Record<string, string>
     visible?: boolean
     deleteData?: boolean
-  }) => {
+  }): Promise<unknown> => {
     if (operation === 'snapshot') return snapshot
     if (operation === 'kernel' && kernel) {
       if (payload?.action === 'automatic') kernel.automatic = payload.visible!
@@ -46,6 +46,7 @@ function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTab
     if (operation === 'storage') {
       if (payload?.action === 'read') return {
         root: 'C:/dsh/desktop/agent-manager',
+        dataHome: 'C:/dsh',
         totals: { manager: 1024, instances: 2048, cache: 4096, plugins: 512, total: 7680 },
         instances: [{ id, name: 'Local', path: 'C:/dsh/desktop/agent-manager/instances/aabbccdd-1234-4321-8123-123456789012', bytes: 2048 }],
       }
@@ -61,6 +62,7 @@ function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTab
     if (operation === 'shortcuts') { if (payload?.bindings) shortcutBindings = payload.bindings; if (payload?.action === 'reset') shortcutBindings = { ...DEFAULT_SHORTCUTS }; return shortcutBindings }
     if (operation === 'softwareSettings') {
       if (payload?.action === 'read') return structuredClone(settings)
+      if (payload?.action === 'debugMode') settings.debugMode = payload.input?.value === true
       if (payload?.action === 'credentialInfo') return { [String(payload.input?.ref)]: { configured: settings.credentials.includes(String(payload.input?.ref)), writable: true, source: 'software' } }
       if (payload?.action === 'update') {
         Object.assign(settings.appearance, { [String(payload.input?.field)]: payload.input?.value })
@@ -131,6 +133,20 @@ it('does not offer local data deletion for remote instances and cancel does not 
   expect(invoke).toHaveBeenCalledWith('overlay', { visible: true })
   expect(invoke.mock.calls.some(([operation]) => operation === 'remove')).toBe(false)
 })
+it('saves the debug switch and opens diagnostic logs from their settings rows', async () => {
+  const { dom, invoke, settings } = page()
+  const document = dom.window.document
+  const toggle = document.querySelector<HTMLInputElement>('#debug-mode')!
+  await expect.poll(() => toggle.disabled).toBe(false)
+  toggle.click()
+  await expect.poll(() => settings.debugMode).toBe(true)
+  await expect.poll(() => toggle.disabled).toBe(false)
+  expect(toggle.checked).toBe(true)
+  document.querySelector<HTMLButtonElement>('#diagnostics-open')!.click()
+  await expect.poll(() => invoke).toHaveBeenCalledWith('diagnostics', { action: 'open' })
+  expect(document.querySelector('#storage-migrate')).toBeNull()
+})
+
 it('shows kernel updates without guessing settings support from its release generation', async () => {
   const kernel: KernelStatus = { phase: 'idle', current: '0.2.0-rc.2', automatic: true, restartRequired: false, modernSettings: true }
   const { dom, invoke } = page(undefined, 'en', false, undefined, kernel)
@@ -168,8 +184,8 @@ it('shows exact instance fields, applies schema options and limits, and identifi
   document.querySelector<HTMLButtonElement>('#settings')!.click()
   document.querySelector<HTMLButtonElement>('[data-settings-tab=advanced]')!.click()
   await expect.poll(() => document.querySelector<HTMLInputElement>('#dsh-transcriptView')!.disabled).toBe(true)
-  expect(document.querySelector('#dsh-transcriptView')!.closest('label')!.textContent).toContain('Not supported')
-  expect(document.querySelector('#dsh-defaultModel')!.closest('label')!.textContent).toContain('agent-default-model.model')
+  expect(document.querySelector('#dsh-transcriptView')!.closest('label')!.textContent).not.toContain('Not supported')
+  expect(document.querySelector('#dsh-defaultModel')!.closest('label')!.textContent).not.toContain('agent-default-model.model')
   expect(document.querySelector<HTMLInputElement>('#dsh-deepseekMaxTokens')!.max).toBe('8192')
   expect(document.querySelector<HTMLOptionElement>('#dsh-deepseekProtocol [value="chat-completions"]')!.disabled).toBe(true)
   const provider = document.querySelector<HTMLInputElement>('#dsh-defaultProvider')!
@@ -243,6 +259,8 @@ it('shows storage usage and opens a selected storage directory', async () => {
   await expect.poll(() => document.querySelector('#storage-total strong')?.textContent).toBe('7.5 KB')
   expect(document.querySelectorAll('#storage-list .storage-row')).toHaveLength(4)
   expect(document.querySelector('#storage-instances .instance-summary strong')?.textContent).toBe('Local')
+  expect(document.querySelector('#storage-total')?.textContent).not.toContain('Desktop data')
+  expect(document.querySelector('#storage-total')?.textContent).toContain('C:/dsh')
   document.querySelector<HTMLButtonElement>('#storage-list .storage-row button')!.click()
   await vi.waitFor(() => { expect(invoke).toHaveBeenCalledWith('storage', { action: 'open', input: 'manager' }) })
 })
@@ -607,4 +625,35 @@ it('selects the settings tab when the final instance tab closes', async () => {
   await expect.poll(() => document.querySelector('#settings-tab.active')).not.toBeNull()
   expect(document.querySelectorAll('.tab')).toHaveLength(1)
   expect(invoke).toHaveBeenCalledWith('close', { id })
+})
+
+it('keeps configured source keys hidden, fetches catalogs automatically, and discards a closed form response', async () => {
+  const { dom, invoke, settings } = page()
+  const document = dom.window.document
+  await expect.poll(() => document.querySelector<HTMLButtonElement>('#source-add')!.disabled).toBe(false)
+  settings.modelSources.push({ id: 'aabbccdd-1234-4321-8123-123456789012' as ModelSourceView['id'], name: 'API',
+    protocol: 'openai-completions', baseURL: 'https://fixture.test/v1', models: ['saved'], contextWindow: 128000, maxTokens: 4096, keyConfigured: true })
+  let release!: (value: string[]) => void
+  const original = invoke.getMockImplementation()!
+  invoke.mockImplementation((operation, payload) => operation === 'softwareSettings' && payload?.action === 'sourceModels'
+    ? new Promise<string[]>((resolve) => { release = resolve }) : original(operation, payload))
+  document.querySelector<HTMLButtonElement>('#settings')!.click()
+  document.querySelector<HTMLButtonElement>('[data-settings-tab=keys]')!.click()
+  await expect.poll(() => document.querySelector('.source-actions button')).not.toBeNull()
+  document.querySelector<HTMLButtonElement>('.source-actions button')!.click()
+  await expect.poll(() => release).toBeTypeOf('function')
+  expect(document.querySelector<HTMLElement>('#source-key-field')!.hidden).toBe(true)
+  expect(document.querySelector<HTMLInputElement>('#source-key')!.value).toBe('')
+  document.querySelector<HTMLButtonElement>('#source-key-replace')!.click()
+  expect(document.querySelector<HTMLElement>('#source-key-field')!.hidden).toBe(false)
+  document.querySelector<HTMLButtonElement>('#source-cancel')!.click()
+  document.querySelector<HTMLButtonElement>('#source-add')!.click()
+  release(['stale'])
+  await Promise.resolve(); await Promise.resolve()
+  expect(document.querySelector<HTMLTextAreaElement>('#source-models')!.value).toBe('')
+  expect(document.querySelector<HTMLElement>('#source-catalog-field')!.hidden).toBe(true)
+  const template = document.querySelector<HTMLSelectElement>('#source-template')!
+  template.value = 'anthropic'; template.dispatchEvent(new dom.window.Event('change'))
+  expect(document.querySelector<HTMLInputElement>('#source-url')!.value).toBe('https://api.anthropic.com')
+  expect(document.querySelector<HTMLInputElement>('#source-max-tokens')!.value).toBe('4096')
 })

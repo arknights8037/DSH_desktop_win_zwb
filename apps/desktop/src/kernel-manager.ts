@@ -1,9 +1,10 @@
 /** Shell-owned kernel selection; prepared releases take effect on the next application launch. */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { gt, valid } from 'semver'
+import { eq, gt, valid } from 'semver'
 import type { DesktopRuntimeExecutables } from './project-manager.ts'
 import { readDesktopRuntime } from './runtime-tree.ts'
+import type { DesktopInstallProgress, DesktopInstallReporter } from './install-progress.ts'
 
 /** Versions and preparation diagnostics exposed only to shell settings. */
 export interface KernelStatus {
@@ -14,10 +15,11 @@ export interface KernelStatus {
   restartRequired: boolean
   modernSettings: boolean
   message?: string
+  progress?: DesktopInstallProgress
 }
 interface Selection { version: 1; selected: string | null; previous: string | null; automatic: boolean }
 /** Installation publishes a verified, self-contained directory only after a disposable Host succeeds. */
-export type PrepareKernel = (version: string, directory: string) => Promise<void>
+export type PrepareKernel = (version: string, directory: string, progress?: DesktopInstallReporter) => Promise<void>
 
 /**
  * Download and prepare kernels without changing any running instance.
@@ -25,6 +27,7 @@ export type PrepareKernel = (version: string, directory: string) => Promise<void
  * @param bundled - Installer's fallback runtime and execution tools.
  * @param prepare - Verify or publish a complete kernel before selection.
  * @param fetcher - Official registry transport.
+ * @param preferBundledOnEqual - Prefer installer resources at the same release; development keeps its selected store.
  */
 export class DesktopKernelManager {
   private selection: Selection
@@ -35,6 +38,7 @@ export class DesktopKernelManager {
   constructor(
     private readonly root: string, private readonly bundled: DesktopRuntimeExecutables,
     private readonly prepare: PrepareKernel, private readonly fetcher: typeof fetch = fetch,
+    preferBundledOnEqual = true,
   ) {
     const path = join(root, 'selection.json')
     const data: unknown = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { version: 1, selected: null, previous: null, automatic: true }
@@ -43,7 +47,8 @@ export class DesktopKernelManager {
       || !('automatic' in data) || typeof data.automatic !== 'boolean') throw new Error('Invalid desktop kernel selection')
     this.selection = data as Selection
     const bundledVersion = readDesktopRuntime(bundled.dsh).release.version
-    if (this.selection.selected !== null && gt(bundledVersion, this.selection.selected)) {
+    if (this.selection.selected !== null && (gt(bundledVersion, this.selection.selected)
+      || (preferBundledOnEqual && eq(bundledVersion, this.selection.selected)))) {
       this.commit({ ...this.selection, previous: this.selection.selected, selected: null })
     }
     this.started = this.selection.selected
@@ -65,7 +70,11 @@ export class DesktopKernelManager {
    * @returns Completion before local startup; failed verification rejects without a downgrade.
    */
   async initialize(): Promise<void> {
-    if (this.started !== null) await this.prepare(this.started, this.directory(this.started))
+    if (this.started !== null) {
+      await this.prepare(this.started, this.directory(this.started), (progress) => {
+        this.state = { ...this.state, progress }
+      })
+    }
   }
   /** @returns Detached update state for shell-owned settings. */
   snapshot(): KernelStatus { return { ...this.state } }
@@ -104,7 +113,7 @@ export class DesktopKernelManager {
         this.state = { ...this.state, phase: 'idle', available: version }
         if (!this.installRequested && !this.selection.automatic) return this.snapshot()
         this.state = { ...this.state, phase: 'installing' }
-        await this.prepare(version, this.directory(version))
+        await this.prepare(version, this.directory(version), (progress) => { this.state = { ...this.state, progress } })
         const descriptor = readDesktopRuntime(this.directory(version))
         if (descriptor.release.version !== version) throw new Error('Prepared DSH runtime has a different version')
         this.commit({ ...this.selection, selected: version, previous: this.selection.selected })

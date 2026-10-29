@@ -1,0 +1,23 @@
+.dialog { width: min(720px, 100%); }
+.editor { display: grid; gap: 16px; min-width: 0; }
+.fields { display: grid; gap: 16px; min-width: 0; border: 0; padding: 0; margin: 0; }
+.editor h3 { margin: 4px 0 0; font-size: 14px; font-weight: 500; }
+.name, .folder { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.name { padding: 12px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 12px; }
+.editor input { min-width: 0; flex: 1; border: 0; outline: none; background: transparent; color: inherit; font: inherit; }
+.name:focus-within, .folder:focus-within { outline: 1px solid var(--dsw-alias-brand-primary); }
+.name input { font-size: 16px; }
+.folders { border: 1px solid var(--dsw-alias-border-l3); border-radius: 12px; overflow: hidden; }
+.folder { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; padding: 16px 12px; border-bottom: 1px solid var(--dsw-alias-border-l3); }
+.folderActions { display: flex; gap: 8px; align-items: center; white-space: nowrap; }
+.folder input { width: 100%; font-size: 13px; }
+.folder svg, .name svg { width: 20px; height: 20px; flex-shrink: 0; }
+.folder button, .add { border: 0; border-radius: 6px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; font: inherit; font-size: 13px; padding: 5px; }
+@media (hover: hover) { .folder button:hover, .add:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); } }
+.primary { font-size: 12px; padding: 4px 8px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 9px; color: var(--dsw-alias-label-secondary); }
+.add { display: block; padding: 16px; width: 100%; text-align: left; }
+.error, .remove { color: var(--dsw-alias-state-error-primary); }
+.error { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.remove { margin-right: auto; }
+.editor button:disabled { opacity: .5; cursor: default; }
+@media (max-width: 600px) { .folder { grid-template-columns: 20px minmax(0, 1fr); } .folderActions { grid-column: 2; justify-content: flex-end; flex-wrap: wrap; white-space: normal; } }

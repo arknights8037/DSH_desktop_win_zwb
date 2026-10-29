@@ -54,10 +54,22 @@ it.each(['missing', 'directory'])('checks a %s Host entry only during build veri
   expect(readDesktopRuntime(dsh).release.version).toBe('1.0.0')
   await expect(verifyDesktopRuntime(dsh, '1.0.0')).rejects.toThrow(/integrity/u)
 })
-it('checks the shell version only during build verification', async () => {
+it('checks the required kernel version during build verification', async () => {
   const dsh = join(fixture(), 'dsh')
   expect(readDesktopRuntime(dsh).release.version).toBe('1.0.0')
-  await expect(verifyDesktopRuntime(dsh, '2.0.0')).rejects.toThrow(/does not match Electron/u)
+  await expect(verifyDesktopRuntime(dsh, '2.0.0')).rejects.toThrow(/does not match required kernel/u)
+})
+
+it('rejects a mixed first-party graph even when the descriptor records matching bytes', async () => {
+  const dsh = join(fixture(), 'dsh')
+  const descriptor = readDesktopRuntime(dsh)
+  const path = join(dsh, 'node_modules/@deepseek-ai/dsh-client-store/package.json')
+  const manifest = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+  writeFileSync(path, JSON.stringify({ ...manifest, version: '0.9.0' }))
+  const sharedPackages = descriptor.sharedPackages.map(entry => entry.name === '@deepseek-ai/dsh-client-store'
+    ? { ...entry, version: '0.9.0' } : entry)
+  writeFileSync(join(dsh, DESKTOP_RUNTIME_FILE), JSON.stringify({ ...descriptor, sharedPackages }))
+  await expect(verifyDesktopRuntime(dsh, '1.0.0')).rejects.toThrow('mixed kernel package')
 })
 it.each([
   { schemaVersion: 2 },

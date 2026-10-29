@@ -2,8 +2,8 @@
 const personalDefaults = () => ({ backgroundImage: '', backgroundEnabled: true, maskEnabled: true,
   maskColor: '#000000', maskOpacity: 35, surfaceOpacity: 80,
   colors: { canvas: '', tabs: '', sidebar: '', content: '', input: '', accent: '', text: '', muted: '' } })
-const personalLabels = { canvas: 'colorCanvas', tabs: 'colorTabs', sidebar: 'colorSidebar', content: 'colorContent',
-  input: 'colorInput', accent: 'colorAccent', text: 'colorText', muted: 'colorMuted' }
+const personalLabels = { canvas: () => t('colorCanvas'), tabs: () => t('colorTabs'), sidebar: () => t('colorSidebar'), content: () => t('colorContent'),
+  input: () => t('colorInput'), accent: () => t('colorAccent'), text: () => t('colorText'), muted: () => t('colorMuted') }
 const personalPresets = {
   ocean: { canvas: '#edf4fa', tabs: '#dce9f5', sidebar: '#e0edf7', content: '#f5f9fd', input: '#ffffff', accent: '#236baf', text: '#142e45', muted: '#526d83' },
   forest: { canvas: '#eef4ed', tabs: '#dfeadd', sidebar: '#e3eddf', content: '#f6f9f3', input: '#ffffff', accent: '#42744a', text: '#203623', muted: '#60765f' },
@@ -74,7 +74,7 @@ function renderPersonalAppearance() {
     input.id = `personal-color-${key}`
     input.value = value.colors[key] || (key === 'text' ? '#202124' : '#ffffff')
     const name = document.createElement('span')
-    name.textContent = t(copy)
+    name.textContent = copy()
     label.append(input, name)
     const reset = document.createElement('button')
     reset.type = 'button'

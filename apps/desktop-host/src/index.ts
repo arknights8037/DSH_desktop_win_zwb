@@ -11,10 +11,14 @@ import { readFile } from 'node:fs/promises'
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
-import { bootDesktopProfile, desktopOwnerPeer } from './profile-boot.ts'
-import { createDesktopStreamHandler, DESKTOP_STREAM_PATH, DESKTOP_TRANSPORT_SCRIPT } from './remote-stream.ts'
+import { bootDesktopProfile } from './profile-boot.ts'
+import { registerWorkspaceContext } from './workspace-context.ts'
+import DesktopWorkspaceRegistry from './workspace/registry.ts'
+import { DesktopRoutes } from './routes.ts'
+import { registerWorkspaceRoutes } from './workspace/routes.ts'
+import { createDesktopStreamHandler, DESKTOP_STREAM_PATH, DESKTOP_TRANSPORT_SCRIPT, type DesktopFetchHandler } from './remote-stream.ts'
 import type {} from '@deepseek-ai/dsh-api-gateway'
-import type { ConnectionFetchHandler } from '@deepseek-ai/dsh-client-connection'
+import { Peer, type PeerScope } from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-client-modules'
 import { renderIndexInjections, type IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import {
@@ -31,6 +35,17 @@ import {
 } from './wire.ts'
 
 export { DESKTOP_HOST_PROTOCOL_VERSION } from './wire.ts'
+
+/**
+ * Mount Desktop-owned Workspace contributions in the selected profile.
+ * @param ctx - Shell-injected plugin context.
+ */
+export function apply(ctx: Context): void {
+  ctx.plugin(DesktopRoutes)
+  ctx.plugin(DesktopWorkspaceRegistry)
+  registerWorkspaceRoutes(ctx)
+  registerWorkspaceContext(ctx)
+}
 
 /** One request forwarded from Electron's `dsh-app://` handler. */
 export interface DesktopHostFetchCommand {
@@ -116,7 +131,7 @@ function dshVersion(runtimeDir: string): string {
   return manifest.version
 }
 
-function assetHandler(ctx: Context, runtimeDir: string): ConnectionFetchHandler {
+function assetHandler(ctx: Context, runtimeDir: string): DesktopFetchHandler {
   const require = createRequire(join(runtimeDir, 'package.json'))
   const distIndex = require.resolve('@deepseek-ai/dsh-web-frontend/dist/index.html')
   const distRoot = realpathSync(dirname(distIndex))
@@ -127,7 +142,6 @@ function assetHandler(ctx: Context, runtimeDir: string): ConnectionFetchHandler 
     return new Response(body, { headers: { 'content-type': MIME['.html'] ?? 'text/html; charset=utf-8' } })
   }
   return {
-    requestBodyMode: () => 'buffered',
     async fetch(request): Promise<Response> {
       if (request.method !== 'GET' && request.method !== 'HEAD') return new Response(null, { status: 405 })
       const url = new URL(request.url)
@@ -154,15 +168,11 @@ function assetHandler(ctx: Context, runtimeDir: string): ConnectionFetchHandler 
   }
 }
 
-function remoteStreamHandler(ctx: Context, peer: unknown): ConnectionFetchHandler {
+function remoteStreamHandler(ctx: Context, peer: PeerScope): DesktopFetchHandler {
   return createDesktopStreamHandler(async (endpoint, payload, signal, uplink) => {
     const gateway = ctx.get('typertGateway')
     if (gateway === undefined) throw new Error('Desktop Gateway unavailable')
-    if (peer === undefined) return gateway.wireStream.open(endpoint, payload, signal)
-    const open = gateway.wireStream.open.bind(gateway.wireStream) as unknown as (
-      endpoint: string, payload: unknown, uplink: AsyncIterable<unknown>, peer: unknown, signal: AbortSignal,
-    ) => Promise<AsyncIterable<unknown>>
-    return open(endpoint, payload, uplink, peer, signal)
+    return gateway.wireStream.open(endpoint, payload, uplink, peer, signal)
   })
 }
 interface NodeRequestInit extends RequestInit {
@@ -189,7 +199,7 @@ export async function runDesktopHost(
   const rootConfig = join(absoluteProject, ROOT_CONFIG_FILENAME)
   writeFileSync(rootConfig, ROOT_CONFIG)
   let current: Context | undefined
-  const ctx = await bootDesktopProfile(absoluteRuntime, absoluteProject, rootConfig, DESKTOP_PATCH, options.allowLinkedPackages === true)
+  const ctx = await bootDesktopProfile(absoluteRuntime, absoluteProject, DESKTOP_PATCH, options.allowLinkedPackages === true)
   current = ctx
   const connection = ctx.get('connection')
   const clientModules = ctx.get('clientModules')
@@ -199,8 +209,7 @@ export async function runDesktopHost(
     throw new Error('dsh desktop: composition did not provide connection, typertGateway, and clientModules')
   }
   const api = connection.createSharedFetchHandler('/api')
-  const peer = await desktopOwnerPeer(absoluteRuntime, ctx)
-  const apiFetch = api.fetch.bind(api) as (request: Request, peer: unknown) => Promise<Response>
+  const peer = new Peer(ctx, { principal: { kind: 'owner' } })
   const assets = assetHandler(ctx, absoluteRuntime)
   const streams = remoteStreamHandler(ctx, peer)
   const requests = new Map<number, AbortController>()
@@ -234,10 +243,12 @@ export async function runDesktopHost(
           signal: controller.signal,
         }
         const request = new Request(url, init)
-        const response = (url.pathname === DESKTOP_STREAM_PATH || url.pathname === `${DESKTOP_STREAM_PATH}/input`)
+        const route = ctx.get('desktopRoutes')?.get(url.pathname)
+        const response = route ? await route.fetch(request)
+          : (url.pathname === DESKTOP_STREAM_PATH || url.pathname === `${DESKTOP_STREAM_PATH}/input`)
           ? await streams.fetch(request)
           : url.pathname.startsWith('/api/')
-            ? await apiFetch(request, peer)
+            ? await api.fetch(request, peer)
             : await assets.fetch(request)
         await writeResponse(encodeDesktopResponseStart(command.streamId, {
           status: response.status,

@@ -4,7 +4,7 @@ import { modelSourceId, parseModelSource, sourceProfile, sourceRoute } from './m
 import { SOFTWARE_SETTING_TARGETS } from './settings-adapter.ts'
 
 /** Operations exposed by the manager without exposing an arbitrary RPC dispatcher. */
-export type InstanceSettingsAction = 'read' | 'update' | 'sources' | 'credentialInfo' | 'credentialSet' | 'credentialRemove'
+export type InstanceSettingsAction = 'read' | 'update' | 'resetModel' | 'sources' | 'credentialInfo' | 'credentialSet' | 'credentialRemove'
 
 /** Editable product fields; the instance remains responsible for schema validation and persistence. */
 const fields = new Map<string, Set<string>>()
@@ -37,6 +37,15 @@ export async function instanceSettings(
   let values: Record<string, unknown>
   switch (action) {
     case 'read': endpoint = 'settings/describe'; values = {}; break
+    case 'resetModel': {
+      if (!Number.isSafeInteger(args.revision) || Number(args.revision) < 0) throw new Error('Invalid model reset')
+      if (args.reasoningEffort !== undefined && typeof args.reasoningEffort !== 'string') throw new Error('Invalid reasoning effort')
+      endpoint = 'settings/mutate'
+      values = { ns: 'agent-default-model', expectedRevision: args.revision,
+        ops: [...['provider', 'model'].map(field => ({ op: 'unset', path: [field] })),
+          ...args.reasoningEffort === undefined ? [] : [{ op: 'set', path: ['reasoningEffort'], value: args.reasoningEffort }]] }
+      break
+    }
     case 'sources': {
       if (!Array.isArray(args.sources) || !Array.isArray(args.removed)
         || !Number.isSafeInteger(args.revision) || Number(args.revision) < 0) throw new Error('Invalid model sources edit')

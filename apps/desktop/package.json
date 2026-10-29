@@ -1,16 +1,18 @@
 {
   "name": "@deepseek-ai/dsh-desktop",
   "description": "Electron desktop shell for a bundled dsh runtime and external plugins",
-  "version": "0.1.6-alpha.1",
+  "version": "0.1.2",
   "private": true,
   "license": "MIT",
   "type": "module",
   "main": "lib/main.js",
   "scripts": {
-    "build": "tsc -b && tsdown",
+    "build": "tsc -p tsconfig.release.json && pnpm run bundle",
     "dev": "tsx scripts/dev.ts",
     "start": "tsx scripts/dev.ts --skip-build",
     "prepare:runtime": "tsx scripts/prepare-runtime.ts",
+    "prepare:kernel-packages": "tsx scripts/fetch-kernel-packages.ts",
+    "build:release": "tsx scripts/build-release.ts",
     "prepare:packages": "tsx scripts/prepare-package-set.ts",
     "prepare:dsh": "tsx scripts/prepare-dsh.ts",
     "prepare:package": "tsx scripts/package-target.ts --prepare-only",
@@ -26,18 +28,19 @@
     "package:win:x64:dir": "tsx scripts/package-target.ts win-x64 --dir",
     "upload:mac:arm64": "tsx scripts/upload-target.ts mac-arm64",
     "upload:mac:x64": "tsx scripts/upload-target.ts mac-x64",
-    "upload:win:x64": "tsx scripts/upload-target.ts win-x64"
+    "upload:win:x64": "tsx scripts/upload-target.ts win-x64",
+    "bundle": "tsdown --config-loader native"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "workspace:^",
+    "@deepseek-ai/dsh-home-paths": "0.2.1-rc.2",
+    "@deepseek-ai/schemastery": "3.18.5",
     "electron-updater": "^6.8.9",
     "semver": "^7.8.5",
     "ssh2": "^1.17.0"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "3.1067.0",
-    "@deepseek-ai/dsh-brand": "workspace:^",
-    "@deepseek-ai/dsh-home-paths": "workspace:^",
+    "@deepseek-ai/dsh-brand": "0.2.1-rc.2",
     "@electron/notarize": "2.5.0",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.20.0",
@@ -48,8 +51,9 @@
     "electron-builder": "^26.15.3",
     "extract-zip": "^2.0.1",
     "js-yaml": "^4.2.0",
-    "pnpm": "11.7.0",
+    "pnpm": "11.28.5",
     "tar": "^7.5.0",
+    "tsdown": "0.22.2",
     "typescript": "^6.0.3"
   }
 }

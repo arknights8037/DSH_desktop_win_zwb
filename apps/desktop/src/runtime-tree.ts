@@ -116,7 +116,7 @@ async function inventoryRuntimeForVerification(root: string): Promise<DesktopRun
 /**
  * Seal the final runtime tree after materialization and native signing.
  * @param root - Runtime output directory.
- * @param release - Matching shell, dsh, Host, and executable versions.
+ * @param release - Matching dsh, private Host, and executable versions.
  * @param sharedNames - Release-owned packages supplied to plugins.
  * @param target - Platform and architecture selected by runtime preparation.
  * @returns Descriptor written beside the production packages.
@@ -128,7 +128,7 @@ export function writeDesktopRuntime(
   const sharedPackages = [...new Set(sharedNames)].sort().map((name) => {
     if (!PACKAGE_NAME.test(name)) throw new Error(`desktop runtime: invalid shared package ${name}`)
     const path = `node_modules/${name}`
-    const manifest = JSON.parse(readFileSync(join(runtimePath(root, path), 'package.json'), 'utf8')) as unknown
+    const manifest: unknown = JSON.parse(readFileSync(join(runtimePath(root, path), 'package.json'), 'utf8'))
     if (!record(manifest) || manifest.name !== name || typeof manifest.version !== 'string' || valid(manifest.version) === null) {
       throw new Error(`desktop runtime: invalid shared package manifest ${name}`)
     }
@@ -181,12 +181,12 @@ export function readDesktopRuntime(root: string): DesktopRuntimeDescriptor {
 /**
  * Verify every packaged runtime file against its recorded bytes and permissions at build time.
  * @param root - Materialized runtime resources.
- * @param electronVersion - Expected shell version.
+ * @param expectedKernelVersion - Required dsh kernel version, independent of the Electron application version.
  * @param target - Required execution target; defaults to the current process.
  * @returns Validated runtime descriptor.
  */
 export async function verifyDesktopRuntime(
-  root: string, electronVersion: string, target: { platform: NodeJS.Platform; arch: string } = process,
+  root: string, expectedKernelVersion: string, target: { platform: NodeJS.Platform; arch: string } = process,
 ): Promise<DesktopRuntimeDescriptor> {
   const descriptor = readDesktopRuntime(root)
   // readDesktopRuntime preserves the disk schema value without validating release compatibility.
@@ -195,8 +195,11 @@ export async function verifyDesktopRuntime(
     throw new Error('desktop runtime: invalid descriptor or incompatible platform/architecture')
   }
   const release = parseDesktopRelease(descriptor.release)
-  if (release.version !== electronVersion) throw new Error(`desktop runtime: ${release.version} does not match Electron ${electronVersion}`)
+  if (release.version !== expectedKernelVersion) throw new Error(`desktop runtime: ${release.version} does not match required kernel ${expectedKernelVersion}`)
   for (const entry of descriptor.sharedPackages) {
+    if ((entry.name === '@deepseek-ai/dsh' || entry.name.startsWith('@deepseek-ai/dsh-')) && entry.version !== expectedKernelVersion) {
+      throw new Error(`desktop runtime: mixed kernel package ${entry.name}@${entry.version}; required ${expectedKernelVersion}`)
+    }
     const manifest: unknown = JSON.parse(readFileSync(join(runtimePath(root, entry.path), 'package.json'), 'utf8'))
     if (!record(manifest) || manifest.name !== entry.name || manifest.version !== entry.version) {
       throw new Error(`desktop runtime: shared package metadata mismatch for ${entry.name}`)

@@ -9,7 +9,7 @@ import type { SoftwareSettingsSnapshot } from '../src/software-settings.ts'
 import { legacySettingsDocument, mixedSettingsDocument } from './settings-fixtures.ts'
 
 function preferences(): SoftwareSettingsSnapshot {
-  return { revision: 0, appearance: { theme: 'light', fontSize: 16, language: '', busyEnter: 'queue', motionEnabled: true },
+  return { revision: 0, debugMode: false, appearance: { theme: 'light', fontSize: 16, language: '', busyEnter: 'queue', motionEnabled: true },
     personalization: structuredClone(DEFAULT_PERSONAL_APPEARANCE), dsh: { ...DEFAULT_DSH_SETTINGS },
     shortcuts: { ...DEFAULT_SHORTCUTS }, credentials: [], credentialWritable: true, modelSources: [] }
 }
@@ -26,7 +26,8 @@ it('maps coexisting namespaces by field and keeps model reasoning separate from 
   expect(edits['ui-chat']).toEqual({ transcriptView: 'compact' })
   expect(edits['agent-presets']).toEqual({ default: 'standard', modeSelectionEnabled: true })
   expect(edits['agent-default-model']).toEqual({ provider: 'custom-provider', model: 'custom-model', reasoningEffort: 'medium' })
-  expect(edits['llm-deepseek']).toMatchObject({ protocol: 'messages', baseURL: value.dsh.deepseekBaseURL })
+  expect(edits['llm-deepseek']).toMatchObject({ baseURL: value.dsh.deepseekBaseURL })
+  expect(result.support.fields.deepseekProtocol).toEqual({ namespace: null, field: null })
   expect(edits['llm-deepseek']).not.toHaveProperty('reasoningEffort')
   expect(result.support.fields.reasoningEffort).toMatchObject({ namespace: 'agent-default-model', field: 'reasoningEffort' })
 })

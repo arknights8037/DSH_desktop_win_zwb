@@ -28,7 +28,7 @@ import {
 import type { DesktopPaths } from './paths.ts'
 import { removeOwnedDirectory, renameOwnedDirectory } from './owned-directory.ts'
 import type { DesktopRelease } from './release.ts'
-import { adaptDesktopPlugin } from './plugin-compat.ts'
+import type { DesktopInstallReporter } from './install-progress.ts'
 import { desktopRuntimeId, readDesktopRuntime, type DesktopRuntimeDescriptor } from './runtime-tree.ts'
 import {
   desktopPluginLockHash, linkDesktopHostPackages, readDesktopProfileState, recordDesktopRuntimeProfile,
@@ -40,6 +40,23 @@ export interface DesktopPluginRecord {
   readonly name: string
   readonly version: string
   readonly enabled: boolean
+}
+
+/** Prepared independent deployment selected for an automatic plugin update. */
+export interface DesktopPluginReplacement {
+  readonly name: string
+  readonly version: string
+  readonly source: string
+}
+
+/** Startup upgrade failure; the Host stays stopped even when profile files are restored. */
+export class DesktopPluginUpgradeError extends Error {
+  /**
+   * @param message - Recovery outcome and retained snapshot location.
+   * @param restored - Whether profile recovery completed; startup remains stopped either way.
+   * @param cause - Deployment failure, including recovery failure when present.
+   */
+  constructor(message: string, readonly restored: boolean, cause: unknown) { super(message, { cause }) }
 }
 
 /** Installed desktop project manifest slice. */
@@ -63,6 +80,8 @@ export interface DesktopRuntimeExecutables {
   readonly dsh: string
   /** How the Host obtains release-owned packages outside the writable profile. */
   readonly profileResolution?: 'link' | 'runtime'
+  /** Shared package-manager state selected by Desktop storage settings. */
+  readonly packageData?: DesktopPaths['pnpm']
 }
 
 /** Hooks that stop the backend before writes and start the prepared or restored Profile. */
@@ -211,7 +230,7 @@ function projectManifest(projectDir: string): DesktopProjectManifest {
       || typeof directory !== 'string' || !/^copy-[a-zA-Z0-9]+$/u.test(directory)))) {
     throw new Error(`desktop project: invalid injected plugin records ${path}`)
   }
-  const manifest = { ...value, dependencies: value.dependencies ?? {} } as unknown as DesktopProjectManifest
+  const manifest = { ...value, dependencies: value.dependencies ?? {} } as DesktopProjectManifest
   if (Object.entries(manifest.dependencies).some(([name, version]) => !PACKAGE_NAME_PATTERN.test(name)
     || typeof version !== 'string' || valid(version) !== version)) {
     throw new Error('desktop project: plugin dependencies must use exact registry versions')
@@ -281,11 +300,13 @@ export class DesktopProjectManager {
   /**
    * @param paths - Electron-owned package state and reserved desktop profile paths.
    * @param runtime - absolute bundled Node.js and pnpm entry paths.
+   * @param progress - Installation stages for the owning shell or instance.
    */
   constructor(
     readonly paths: DesktopPaths,
     readonly runtime: DesktopRuntimeExecutables,
-  ) {}
+    private readonly progress: DesktopInstallReporter = () => {},
+  ) { if (runtime.packageData) this.paths = { ...paths, pnpm: runtime.packageData } }
 
   /** Read the active desktop plugin inventory. */
   listPlugins(): readonly DesktopPluginRecord[] {
@@ -362,6 +383,7 @@ export class DesktopProjectManager {
   }
 
   private prepareProfile(projectDir: string): void {
+    this.progress({ stage: 'validating' })
     const runtime = this.currentRuntime()
     const resolutionMode = this.runtime.profileResolution ?? 'link'
     if (resolutionMode === 'link') linkDesktopHostPackages(projectDir, this.runtime.dsh, runtime)
@@ -384,14 +406,17 @@ export class DesktopProjectManager {
   /**
    * Reconcile a stopped profile, preserving injected versions across kernel upgrades.
    * @param sources - Fresh installations for each injected plugin when its kernel changes.
-   * @returns Whether the profile required preparation; incompatible plugins reject startup.
+   * @param updates - Prepared replacements applied together before validating the new kernel.
+   * @returns Whether preparation was required; failed updates restore the profile and reject startup.
    */
-  async applyRelease(sources: ReadonlyMap<string, string> = new Map()): Promise<boolean> {
+  async applyRelease(
+    sources: ReadonlyMap<string, string> = new Map(), updates: readonly DesktopPluginReplacement[] = [],
+  ): Promise<boolean> {
     return this.withLock(async () => {
       const target = this.readRuntime()
       this.descriptor = target
       const previous = readDesktopProfileState(this.paths.profile)
-      if (!existsSync(this.pendingPackages) && previous?.runtimeId === desktopRuntimeId(target)
+      if (updates.length === 0 && !existsSync(this.pendingPackages) && previous?.runtimeId === desktopRuntimeId(target)
         && previous.lockHash === desktopPluginLockHash(this.paths.profile)
         && (this.runtime.profileResolution === 'runtime' || (previous.links.length === target.sharedPackages.length
           && previous.links.every(link => existsSync(link.target)
@@ -400,18 +425,32 @@ export class DesktopProjectManager {
         return false
       }
       if (previous === undefined) createPluginProfile(this.paths.profile)
-      if (previous !== undefined && previous.runtimeId !== desktopRuntimeId(target)) {
-        const manifest = projectManifest(this.paths.profile)
-        for (const name of Object.keys(manifest.dsh.profile.injectedPlugins ?? {})) {
-          const source = sources.get(name)
-          if (source === undefined) throw new Error(`desktop project: re-inject ${name} from the shell library for this application runtime`)
-          const version = manifest.dependencies[name]
-          if (version === undefined) throw new Error(`desktop project: missing injected plugin version: ${name}`)
-          await this.applyMutation(this.paths.profile, { type: 'plugin-inject', name, version, source })
+      if (updates.length > 0) await this.snapshotProfile()
+      try {
+        for (const update of updates) await this.applyMutation(this.paths.profile, { type: 'plugin-inject', ...update })
+        if (previous !== undefined && previous.runtimeId !== desktopRuntimeId(target)) {
+          const manifest = projectManifest(this.paths.profile)
+          for (const name of Object.keys(manifest.dsh.profile.injectedPlugins ?? {})) {
+            if (updates.some(update => update.name === name)) continue
+            const source = sources.get(name)
+            if (source === undefined) throw new Error(`desktop project: re-inject ${name} from the shell library for this application runtime`)
+            const version = manifest.dependencies[name]
+            if (version === undefined) throw new Error(`desktop project: missing injected plugin version: ${name}`)
+            await this.applyMutation(this.paths.profile, { type: 'plugin-inject', name, version, source })
+          }
         }
+        await this.reconcileProfile(this.paths.profile, previous)
+        return true
+      } catch (error) {
+        if (updates.length === 0) throw error
+        try { await this.restoreProfile() }
+        catch (recoveryError) {
+          throw new DesktopPluginUpgradeError(`Plugin upgrade and profile restore failed. Preserve ${this.snapshotPath()} and stop this instance. ${String(error)}; ${String(recoveryError)}`,
+            false, new AggregateError([error, recoveryError]))
+        }
+        throw new DesktopPluginUpgradeError(`Plugin upgrade failed; the original profile was restored. Review plugins before retrying. Snapshot: ${this.snapshotPath()}. ${String(error)}`,
+          true, error)
       }
-      await this.reconcileProfile(this.paths.profile, previous)
-      return true
     })
   }
 
@@ -464,11 +503,7 @@ export class DesktopProjectManager {
         try {
           if (startupAttempted) await hooks.beforeChange()
           if (snapshotReady) {
-            for (const entry of readdirSync(this.paths.profile)) {
-              const path = join(this.paths.profile, entry)
-              if (path !== this.paths.lock) this.removeProfileEntry(path)
-            }
-            await this.copyProfile(this.snapshotPath(), this.paths.profile)
+            await this.restoreProfile()
           }
           await hooks.afterChange()
         } catch (recoveryError) {
@@ -486,6 +521,15 @@ export class DesktopProjectManager {
     else unlinkSync(path)
   }
 
+  private async restoreProfile(): Promise<void> {
+    this.progress({ stage: 'restoring' })
+    for (const entry of readdirSync(this.paths.profile)) {
+      const path = join(this.paths.profile, entry)
+      if (path !== this.paths.lock) this.removeProfileEntry(path)
+    }
+    await this.copyProfile(this.snapshotPath(), this.paths.profile)
+  }
+
   private async copyProfile(source: string, destination: string): Promise<void> {
     for (const entry of readdirSync(source)) {
       if (entry === 'lock') continue
@@ -496,6 +540,7 @@ export class DesktopProjectManager {
   }
 
   private async snapshotProfile(): Promise<void> {
+    this.progress({ stage: 'backup' })
     mkdirSync(this.paths.root, { recursive: true, mode: 0o700 })
     const temporary = mkdtempSync(join(this.paths.root, 'profile-snapshot-'))
     try {
@@ -533,6 +578,7 @@ export class DesktopProjectManager {
   private async applyMutation(projectDir: string, mutation: Exclude<DesktopProjectMutation, { type: 'plugins-disable-all' }>): Promise<void> {
     switch (mutation.type) {
       case 'plugin-inject': {
+        this.progress({ stage: 'copying', package: `${mutation.name}@${mutation.version}` })
         assertPackageName(mutation.name)
         assertVersion(mutation.version)
         const runtime = this.currentRuntime()
@@ -579,7 +625,6 @@ export class DesktopProjectManager {
         }
         await this.runPnpm(projectDir, ['add', mutation.spec, '--save-exact', '--ignore-scripts'])
         if (this.runtime.profileResolution === 'runtime') await this.runPnpm(projectDir, ['install', '--ignore-scripts'])
-        adaptDesktopPlugin(join(projectDir, 'node_modules', requestedName), requestedName)
         const installed = { ...inspectPlugin(projectDir, requestedName), enabled: true }
         const current = pluginRecords(projectDir).filter(plugin => plugin.name !== installed.name)
         writeProfilePlugins(
@@ -615,7 +660,6 @@ export class DesktopProjectManager {
         }
         await this.runPnpm(projectDir, ['add', `${mutation.name}@${mutation.version}`, '--save-exact', '--ignore-scripts'])
         if (this.runtime.profileResolution === 'runtime') await this.runPnpm(projectDir, ['install', '--ignore-scripts'])
-        adaptDesktopPlugin(join(projectDir, 'node_modules', mutation.name), mutation.name)
         {
           const installed = inspectPlugin(projectDir, mutation.name)
           writeProfilePlugins(
@@ -664,6 +708,7 @@ export class DesktopProjectManager {
   }
 
   private async runPnpmProcess(projectDir: string, args: readonly string[]): Promise<void> {
+    this.progress({ stage: 'installing' })
     const [command, ...commandArgs] = args
     if (command === undefined) throw new Error('desktop project: pnpm command is required')
     if (this.runtime.profileResolution === 'runtime') {
@@ -692,6 +737,7 @@ export class DesktopProjectManager {
         ...commandArgs,
       ], {
         cwd: projectDir,
+        windowsHide: true,
         env: {
           ...inherited,
           ELECTRON_RUN_AS_NODE: '1',

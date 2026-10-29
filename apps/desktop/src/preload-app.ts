@@ -23,3 +23,9 @@ const startup: DshDesktopStartupApi = {
 
 contextBridge.exposeInMainWorld('dshDesktop', location.protocol === 'dsh-app:' && location.hostname === 'shell'
   ? startup : { protocolVersion: 1, openSettings: () => ipcRenderer.invoke(INSTANCE_OPEN_SETTINGS) as Promise<void> })
+
+if (location.protocol === 'dsh-app:' && location.hostname === 'app') {
+  contextBridge.exposeInMainWorld('__DSH_DIRECTORY_PICKER__', {
+    pick: () => ipcRenderer.invoke(DESKTOP_IPC.directoryPick) as Promise<string | null>,
+  })
+}

@@ -2,12 +2,17 @@
 let softwareDocument
 let softwareSaving = false
 let credentialState
+let credentialEditing = false
 let settingsTab = 'general'
 let dshDirty = false
 let shortcutBindings
 let keyGeneration = 0
 let kernelDocument
 let kernelBusy = false
+let pluginUpdateDocument
+let pluginUpdateLoading
+let pluginUpdateSaving = false
+$('diagnostics-open').onclick = () => { void perform(() => api.invoke('diagnostics', { action: 'open' })) }
 let storageDocument
 let storageLoading = false
 const storageLabels = { manager: 'storageManager', instances: 'storageInstances', cache: 'storageCache', plugins: 'storagePlugins' }
@@ -24,6 +29,63 @@ async function loadKernel() {
   kernelDocument = await api.invoke('kernel', { action: 'read' })
   renderKernel()
 }
+async function loadPluginUpdates() {
+  if (!state.pluginManagement || pluginUpdateSaving) return
+  if (pluginUpdateLoading) return pluginUpdateLoading
+  pluginUpdateLoading = (async () => {
+    pluginUpdateDocument = await api.invoke('pluginUpdates', { action: 'read' })
+    renderPluginUpdates()
+  })()
+  try { await pluginUpdateLoading } finally { pluginUpdateLoading = undefined }
+}
+function renderPluginUpdates() {
+  $('plugin-update-automatic').disabled = !state.pluginManagement || pluginUpdateSaving || !pluginUpdateDocument
+  if (!pluginUpdateSaving && pluginUpdateDocument) $('plugin-update-automatic').checked = pluginUpdateDocument.automatic
+  const target = $('plugin-update-reports')
+  target.replaceChildren()
+  const reports = (pluginUpdateDocument?.reports || []).filter(report => state.instances.some(item => item.id === report.id))
+  if (!reports.length) { target.textContent = t(state.pluginManagement ? 'pluginUpdateIdle' : 'pluginPackagedOnly'); return }
+  for (const report of reports) {
+    const row = document.createElement('div')
+    const title = document.createElement('p')
+    const key = { checking: 'pluginUpdateChecking', ready: report.changes.length ? 'pluginUpdateReady' : 'pluginUpdateUnchanged', warning: 'pluginUpdateWarning', error: 'pluginUpdateError' }[report.phase]
+    title.textContent = `${state.instances.find(item => item.id === report.id).name}: ${t(key)}`
+    row.append(title)
+    if (report.phase === 'checking' && report.progress) {
+      const message = document.createElement('p')
+      message.textContent = installationText(report.progress)
+      row.append(message)
+    }
+    if (report.changes.length || report.diagnostics.length || report.error) {
+      const details = document.createElement('details')
+      const summary = document.createElement('summary')
+      summary.textContent = t('pluginUpdateDetails')
+      details.append(summary)
+      const lines = [
+        ...report.changes.map(change => `${change.name}: ${change.from} → ${change.to}`),
+        ...report.diagnostics.map(item => `${item.name}: ${t(item.reason === 'skipped' ? 'pluginUpdateSkipped' : 'pluginUpdateUnavailable')} · ${item.detail}`),
+        ...(report.error ? [report.error] : []),
+      ]
+      for (const line of lines) {
+        const text = document.createElement('p')
+        text.className = 'settings-hint'
+        text.textContent = line
+        details.append(text)
+      }
+      row.append(details)
+    }
+    target.append(row)
+  }
+}
+$('plugin-update-automatic').onchange = () => {
+  const enabled = $('plugin-update-automatic').checked
+  void perform(async () => {
+    pluginUpdateSaving = true
+    renderPluginUpdates()
+    try { pluginUpdateDocument = await api.invoke('pluginUpdates', { action: 'automatic', visible: enabled }) }
+    finally { pluginUpdateSaving = false; await loadPluginUpdates() }
+  })
+}
 function renderKernel() {
   const busy = kernelBusy || ['checking', 'installing'].includes(kernelDocument?.phase)
   $('kernel-check').disabled = !state.pluginManagement || busy
@@ -32,7 +94,23 @@ function renderKernel() {
   if (!kernelDocument) { $('kernel-status').textContent = t('pluginPackagedOnly'); return }
   $('kernel-automatic').checked = kernelDocument.automatic
   const phase = { idle: 'kernelIdle', checking: 'kernelChecking', installing: 'kernelInstalling', ready: 'kernelRestart', error: 'kernelError' }
-  $('kernel-status').textContent = `${t('kernelCurrent')}: ${kernelDocument.current}${kernelDocument.available ? ` · ${t('kernelAvailable')}: ${kernelDocument.available}` : ''}\n${t(phase[kernelDocument.phase])}${kernelDocument.message ? `: ${kernelDocument.message}` : ''}`
+  const versions = document.createElement('div')
+  versions.className = 'kernel-versions'
+  for (const [label, value] of [['kernelCurrent', kernelDocument.current], ['kernelAvailable', kernelDocument.available]]) {
+    if (!value) continue
+    const item = document.createElement('span')
+    item.className = 'kernel-version'
+    const tag = document.createElement('span')
+    tag.className = 'version-tag'
+    tag.textContent = value
+    item.append(`${t(label)}: `, tag)
+    versions.append(item)
+  }
+  const message = document.createElement('p')
+  message.className = 'kernel-message'
+  message.textContent = `${t(phase[kernelDocument.phase])}${kernelDocument.message ? `: ${kernelDocument.message}` : ''}`
+  if (busy && kernelDocument.progress) message.textContent += `\n${installationText(kernelDocument.progress)}`
+  $('kernel-status').replaceChildren(versions, '\n', message)
 }
 async function kernelAction(action) {
   const automatic = $('kernel-automatic').checked
@@ -49,6 +127,7 @@ const settingsFields = {
   'motion-enabled': 'motionEnabled',
 }
 const settingsTitles = {
+  storage: 'storageTitle',
   general: 'applicationSettings', instances: 'manageTitle', appearance: 'appearance', shortcuts: 'keyboardShortcuts', keys: 'modelCredentials', advanced: 'instanceSettings', plugins: 'plugins',
 }
 const shortcutLabels = {
@@ -66,9 +145,13 @@ function renderSettings() {
   $('dsh-sync-status').hidden = !errors.length
   $('sources-sync-status').textContent = $('dsh-sync-status').textContent
   $('sources-sync-status').hidden = !errors.length
-  $('software-status').textContent = errors.length ? t('settingsPartial') : t('softwareSettingsHint')
-  $('software-status').hidden = settingsTab !== 'general' && !errors.length
+  $('software-status').textContent = errors.length ? t('settingsPartial') : ''
+  $('software-status').hidden = settingsTab !== 'general' || !errors.length
   $('settings-product').hidden = settingsTab !== 'general'
+  $('app-version').hidden = settingsTab !== 'general'
+  $('app-version').textContent = t('appVersion').replace('{version}', state.version)
+  $('debug-mode').disabled = !softwareDocument || softwareSaving
+  $('debug-mode').checked = softwareDocument?.debugMode === true
   $('settings-title').textContent = t(settingsTitles[settingsTab])
   for (const [id, field] of Object.entries(settingsFields)) {
     renderSettingSupport($(id), field, true)
@@ -79,6 +162,9 @@ function renderSettings() {
   }
   document.querySelectorAll('#api-key-form button, #api-key-form input').forEach(node => { node.disabled = !softwareDocument?.credentialWritable || softwareSaving })
   if (credentialState) {
+    $('api-key-field').hidden = credentialState.configured && !credentialEditing
+    $('key-replace').hidden = !credentialState.configured || credentialEditing
+    $('api-key-form').querySelector('[type="submit"]').hidden = credentialState.configured && !credentialEditing
     $('api-key-form').querySelector('[type="submit"]').disabled = !credentialState.writable || softwareSaving
     $('key-remove').disabled = !credentialState.writable || !credentialState.configured || softwareSaving
   }
@@ -86,7 +172,6 @@ function renderSettings() {
     if (node.dataset.dshField) renderSettingSupport(node, node.dataset.dshField)
     else node.disabled = !softwareDocument || softwareSaving
   })
-  $('kernel-settings-hint').hidden = false
   if (softwareDocument && !dshDirty) {
     for (const input of document.querySelectorAll('[data-dsh-field]')) {
       const value = softwareDocument.dsh[input.dataset.dshField]
@@ -99,6 +184,7 @@ function renderSettings() {
   renderPluginSettings()
   renderPersonalAppearance()
   renderKernel()
+  renderPluginUpdates()
   renderStorage()
 }
 
@@ -107,21 +193,6 @@ function renderSettingSupport(input, field, shellOwned = false) {
   const targets = instances.filter(([, support]) => support.fields[field]?.namespace)
   input.disabled = !softwareDocument || softwareSaving || !shellOwned && instances.length > 0
     && !targets.some(([, support]) => support.writable)
-  const label = input.closest('label')
-  if (!label) return
-  let status = label.querySelector('[data-setting-support]')
-  if (!status) {
-    status = document.createElement('small')
-    status.dataset.settingSupport = field
-    const copy = label.querySelector('span')
-    copy.append(status)
-  }
-  status.textContent = instances.length ? instances.map(([id, support]) => {
-    const name = state.instances.find(item => item.id === id)?.name || id
-    const target = support.fields[field]
-    return `${name}: ${target?.namespace ? `${target.namespace}.${target.field}${support.writable ? '' : ` · ${t('settingsReadOnly')}`}`
-      : field === 'motionEnabled' ? t('settingsShellMotion') : t('settingsNotSupported')}`
-  }).join(' · ') : t(shellOwned ? 'settingsShellAndPending' : 'settingsPending')
   const enums = targets.map(([, support]) => support.fields[field].options).filter(Boolean)
   const options = enums.length ? enums[0].filter(value => enums.every(values => values.includes(value))) : undefined
   const choices = input.tagName === 'SELECT' ? input : input.list
@@ -158,25 +229,51 @@ function renderStorage() {
     $('storage-total').textContent = storageLoading ? t('storageLoading') : t('storageUnavailable')
     return
   }
+  const chart = document.createElement('div')
+  chart.className = 'storage-donut'
+  chart.setAttribute('aria-hidden', 'true')
+  const colors = ['var(--brand)', '#9c83df', '#54aca6', '#dbac65']
+  let start = 0
+  const segments = Object.keys(storageLabels).map((category, index) => {
+    const end = start + (storageDocument.totals.total ? storageDocument.totals[category] / storageDocument.totals.total * 100 : 0)
+    const segment = `${colors[index]} ${start}% ${end}%`
+    start = end
+    return segment
+  })
+  chart.style.background = storageDocument.totals.total ? `conic-gradient(${segments.join(',')})` : 'var(--line)'
+  const overview = document.createElement('div')
+  overview.className = 'storage-overview-copy'
   const total = document.createElement('strong')
   total.textContent = formatBytes(storageDocument.totals.total)
-  const hint = document.createElement('span')
-  hint.textContent = `${t('storageTotal')} · ${storageDocument.root}`
-  $('storage-total').append(total, hint)
+  const path = document.createElement('span')
+  path.textContent = storageDocument.dataHome
+  overview.append(total, path)
+  $('storage-total').append(chart, overview)
   for (const [category, bytes] of Object.entries(storageDocument.totals)) {
     if (category === 'total') continue
     const row = document.createElement('article')
     row.className = 'storage-row'
+    row.style.setProperty('--storage-color', colors[Object.keys(storageLabels).indexOf(category)])
     const copy = document.createElement('div')
     const name = document.createElement('strong')
     name.textContent = t(storageLabels[category])
     const size = document.createElement('small')
-    size.textContent = formatBytes(bytes)
-    copy.append(name, size)
+    const percent = storageDocument.totals.total ? bytes / storageDocument.totals.total * 100 : 0
+    size.textContent = `${formatBytes(bytes)} · ${percent.toFixed(1)}%`
+    const path = document.createElement('small')
+    path.className = 'storage-path'
+    path.textContent = storageDocument.paths?.[category] || ''
+    copy.append(name, size, path)
     const action = document.createElement('button')
     action.textContent = t('storageOpen')
     action.onclick = () => { void perform(() => api.invoke('storage', { action: 'open', input: category })) }
-    row.append(copy, action)
+    const actions = document.createElement('div')
+    actions.className = 'storage-actions'
+    const migrate = document.createElement('button')
+    migrate.textContent = t('storageMigrateCategory')
+    migrate.onclick = () => { void perform(() => api.invoke('storage', { action: 'migrate', input: category })) }
+    actions.append(action, migrate)
+    row.append(copy, actions)
     $('storage-list').append(row)
   }
   for (const instance of storageDocument.instances) {
@@ -261,6 +358,7 @@ function selectSettingsTab(tab) {
   })
   document.querySelectorAll('[data-settings-pane]').forEach(node => { node.hidden = node.dataset.settingsPane !== tab })
   $('api-key-value').value = ''
+  credentialEditing = false
   $('source-key').value = ''
   $('api-key-value').type = 'password'
   $('key-reveal').textContent = t('showSecret')
@@ -287,6 +385,7 @@ document.querySelectorAll('[data-settings-tab]').forEach(node => {
 })
 document.addEventListener('manager-rendered', renderSettings)
 document.addEventListener('manager-rendered', () => { if (state.pluginManagement) void loadKernel().catch(error => { $('kernel-status').textContent = String(error) }) })
+document.addEventListener('manager-rendered', () => { void loadPluginUpdates().catch(error => { $('plugin-update-reports').textContent = String(error) }) })
 document.addEventListener('manager-settings-open', event => {
   selectSettingsTab(event.detail.tab || settingsTab)
   void perform(loadSoftwareSettings)
@@ -302,6 +401,15 @@ for (const [id, field] of Object.entries(settingsFields)) {
     })
   }
 }
+$('debug-mode').onchange = () => {
+  const value = $('debug-mode').checked
+  void perform(async () => {
+    softwareSaving = true
+    renderSettings()
+    try { softwareDocument = await settingsCall('debugMode', { value }) }
+    finally { softwareSaving = false; await loadSoftwareSettings() }
+  })
+}
 async function loadCredentialInfo() {
   const generation = ++keyGeneration
   if (!softwareDocument) return
@@ -316,7 +424,8 @@ async function loadCredentialInfo() {
   $('key-remove').disabled = !info.writable || !info.configured
   renderSettings()
 }
-$('api-key-ref').onchange = () => { credentialState = undefined; $('api-key-value').value = ''; void perform(loadCredentialInfo) }
+$('api-key-ref').onchange = () => { credentialState = undefined; credentialEditing = false; $('api-key-value').value = ''; void perform(loadCredentialInfo) }
+$('key-replace').onclick = () => { credentialEditing = true; renderSettings(); $('api-key-value').focus() }
 $('key-refresh').onclick = () => { void perform(loadCredentialInfo) }
 $('key-reveal').onclick = () => {
   const input = $('api-key-value')
@@ -334,7 +443,7 @@ $('api-key-form').onsubmit = event => {
     if (!value) throw new Error(t('keyRequired'))
     softwareSaving = true
     renderSettings()
-    try { await settingsCall('credentialSet', { ref, value }) }
+    try { await settingsCall('credentialSet', { ref, value }); credentialEditing = false }
     finally { softwareSaving = false; await loadSoftwareSettings() }
   })
 }

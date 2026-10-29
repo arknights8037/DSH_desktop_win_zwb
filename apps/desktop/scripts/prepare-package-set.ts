@@ -32,6 +32,8 @@ const REPOSITORY_ROOT = resolve(APP_ROOT, '..', '..')
 
 const REQUIRED_DEPENDENCY_SECTIONS = ['dependencies', 'peerDependencies'] as const
 const OPTIONAL_DEPENDENCY_SECTION = 'optionalDependencies'
+// Published independently; the runtime installation resolves its pinned npm dependency.
+const EXTERNAL_SCOPED_PACKAGES = new Set(['@deepseek-ai/libreoffice-kit'])
 
 /** Packed package information needed to form the local Desktop closure. */
 export interface PackedDesktopPackage {
@@ -65,7 +67,7 @@ export function selectDesktopPackageClosure(
     for (const section of REQUIRED_DEPENDENCY_SECTIONS) {
       for (const dependency of dependencyNames(packed.manifest, section)) {
         if (available.has(dependency)) visit(dependency)
-        else if (dependency.startsWith('@deepseek-ai/')) {
+        else if (dependency.startsWith('@deepseek-ai/') && !EXTERNAL_SCOPED_PACKAGES.has(dependency)) {
           throw new Error(`desktop package set: ${name} requires unpacked internal package ${dependency}`)
         }
       }
@@ -157,7 +159,6 @@ function main(): void {
   const defaultInputs = [
     buildPaths.packedDsh,
     buildPaths.packedVendor,
-    buildPaths.packedLandlock,
   ]
   const { values } = parseArgs({
     options: { from: { type: 'string', multiple: true }, out: { type: 'string' } },

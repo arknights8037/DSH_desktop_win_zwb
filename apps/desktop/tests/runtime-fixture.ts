@@ -25,7 +25,7 @@ export function writePackage(modules: string, name: string, fields: Record<strin
 /**
  * Seal a minimal release containing Host entry files and a shared Cordis package.
  * @param root - New runtime directory.
- * @param version - Shell and dsh version.
+ * @param version - Dsh and private Host version.
  * @param nodeVersion - Bundled Node version used for native rebuild selection.
  * @returns Sealed runtime metadata.
  */

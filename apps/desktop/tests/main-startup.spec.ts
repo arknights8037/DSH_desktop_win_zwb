@@ -24,6 +24,8 @@ const harness = await vi.hoisted(async () => {
     send = vi.fn()
     setWindowOpenHandler = vi.fn()
     openDevTools = vi.fn()
+    closeDevTools = vi.fn()
+    isDevToolsOpened = vi.fn(() => false)
     executeJavaScript = vi.fn()
     insertCSS = vi.fn(async () => 'appearance-style')
     removeInsertedCSS = vi.fn(async () => {})
@@ -114,7 +116,8 @@ const harness = await vi.hoisted(async () => {
   }>()
   const app = Object.assign(new EventEmitter(), {
     isPackaged: true, getAppPath: () => fileURLToPath(new URL('..', import.meta.url)), getLocale: () => 'en', whenReady: () => Promise.resolve(),
-    requestSingleInstanceLock: () => true, quit: vi.fn(), exit: vi.fn(),
+    requestSingleInstanceLock: () => true, quit: vi.fn(), exit: vi.fn(), relaunch: vi.fn(), getVersion: () => '0.1.2',
+    getPath: () => join(harness.root, 'browser'),
   })
   const library = {
     list: vi.fn<() => readonly { name: string; version: string }[]>(() => []),
@@ -124,9 +127,10 @@ const harness = await vi.hoisted(async () => {
     settled: async () => {},
     runtime: () => ({ release: { version: '1.0.0', nodeVersion: '24.17.0' }, sharedPackages: [] }),
   }
-  return { Window, View, Local, handlers, partitions, app, library, root: '', fetch: vi.fn(), openExternal: vi.fn(),
+  return { Window, View, Local, handlers, partitions, app, library, root: '', home: '', sandbox: '', fetch: vi.fn(), openExternal: vi.fn(),
     kernelCheck: vi.fn<(install: boolean) => Promise<{ phase: 'error'; message: string } | undefined>>(), kernelInitialize: vi.fn(),
     dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn(async () => ({ response: 1 })),
+      showOpenDialog: vi.fn(async () => ({ canceled: true, filePaths: [] as string[] })),
       showSaveDialog: vi.fn(async () => ({ canceled: true, filePath: undefined as string | undefined })) } }
 })
 vi.mock('electron', () => ({
@@ -144,7 +148,7 @@ vi.mock('electron', () => ({
     return harness.partitions.get(id)
   } },
 }))
-vi.mock('../src/paths.ts', () => ({ resolveDesktopPaths: () => ({ root: harness.root }) }))
+vi.mock('@deepseek-ai/dsh-home-paths', () => ({ resolveDshHome: () => harness.home }))
 vi.mock('../src/local-instance.ts', () => ({ LocalInstance: harness.Local }))
 vi.mock('../src/remote-instance.ts', () => ({ RemoteInstance: harness.Local }))
 vi.mock('../src/kernel-manager.ts', () => ({ DesktopKernelManager: class {
@@ -170,7 +174,9 @@ async function invoke(operation: string, payload?: unknown): Promise<unknown> {
 async function create(name: string) { return await invoke('save', { config: { name, kind: 'local' } }) as InstanceConfig }
 beforeEach(async () => {
   vi.resetModules()
-  harness.root = mkdtempSync(join(tmpdir(), 'dsh-manager-main-'))
+  harness.sandbox = mkdtempSync(join(tmpdir(), 'dsh-manager-main-'))
+  harness.home = join(harness.sandbox, 'home')
+  harness.root = join(harness.home, 'desktop', 'agent-manager')
   harness.Window.all.length = harness.View.all.length = harness.Local.all.length = 0
   harness.handlers.clear(); harness.partitions.clear(); harness.app.removeAllListeners(); vi.clearAllMocks()
   harness.library.list.mockReturnValue([])
@@ -178,13 +184,13 @@ beforeEach(async () => {
   harness.app.isPackaged = true
   harness.kernelCheck.mockReset()
   harness.kernelInitialize.mockReset()
-  vi.stubGlobal('process', { ...process, resourcesPath: 'resource-root' })
+  vi.stubGlobal('process', { ...process, on: vi.fn(), resourcesPath: 'resource-root' })
   await import('../src/main.ts')
   await vi.waitFor(() => { expect(harness.Window.all[0]?.webContents.url).toBe('dsh-app://shell/manager.html') })
 })
 afterEach(() => {
   harness.app.removeAllListeners(); vi.unstubAllEnvs(); vi.unstubAllGlobals()
-  rmSync(harness.root, { recursive: true, force: true })
+  rmSync(harness.sandbox, { recursive: true, force: true })
 })
 it('opens the manager immediately without starting any backend', async () => {
   expect(harness.Local.all).toHaveLength(0)
@@ -211,7 +217,7 @@ it('checks for the latest kernel before opening an unpackaged manager and enable
   await harness.handlers.get(DESKTOP_IPC.pluginsInject)!(sender(), 'test-plugin', '1.2.3', config.id)
   expect(harness.Local.all[0]!.mutate).toHaveBeenCalledWith({ type: 'plugin-inject', name: 'test-plugin', version: '1.2.3', source: 'shell-library-profile' })
 })
-it('keeps the development window closed when checking the latest kernel fails', async () => {
+it('reports kernel preparation failure while the startup screen is visible', async () => {
   vi.resetModules()
   harness.Window.all.length = 0
   harness.app.removeAllListeners()
@@ -220,8 +226,11 @@ it('keeps the development window closed when checking the latest kernel fails', 
   vi.stubEnv('DSH_DESKTOP_KERNEL_ROOT', join(harness.root, 'kernels'))
   harness.kernelCheck.mockResolvedValueOnce({ phase: 'error', message: 'registry unavailable' })
   await import('../src/main.ts')
-  await vi.waitFor(() => { expect(harness.dialog.showErrorBox).toHaveBeenCalledWith('Harness Agent Manager', 'Development kernel update failed: registry unavailable') })
-  expect(harness.Window.all).toHaveLength(0)
+  await vi.waitFor(() => { expect(harness.dialog.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
+    type: 'error', title: 'DshManager', detail: expect.stringContaining('Development kernel update failed: registry unavailable'),
+  })) })
+  expect(harness.Window.all).toHaveLength(1)
+  expect(harness.Window.all[0]!.webContents.url).toMatch(/^data:text\/html/u)
 })
 it('restricts kernel update operations to the manager main frame and validates settings', async () => {
   expect(await invoke('kernel', { action: 'read' })).toMatchObject({ current: '1.0.0', automatic: true })
@@ -265,13 +274,13 @@ it('focuses an existing tab and retains its loaded view', async () => {
 
 it('removes a local instance home only when deletion is requested', async () => {
   const item = await create('A')
-  const home = join(harness.root, 'agent-manager', 'instances', item.id)
+  const home = join(harness.root, 'instances', item.id)
   mkdirSync(home, { recursive: true })
   writeFileSync(join(home, 'owned.txt'), 'fixture')
   await invoke('remove', { id: item.id })
   expect(existsSync(join(home, 'owned.txt'))).toBe(true)
   const retained = await create('Retained')
-  const retainedHome = join(harness.root, 'agent-manager', 'instances', retained.id)
+  const retainedHome = join(harness.root, 'instances', retained.id)
   mkdirSync(retainedHome, { recursive: true })
   writeFileSync(join(retainedHome, 'owned.txt'), 'fixture')
   await invoke('remove', { id: retained.id, deleteData: true })
@@ -290,6 +299,22 @@ it('allows instance main frames to open shell settings without manager authority
   expect(() => navigate({ sender: contents, senderFrame: {} })).toThrow('Rejected instance settings sender')
   await invoke('close', { id: a.id })
   expect(() => navigate({ sender: contents, senderFrame: contents.mainFrame })).toThrow('Rejected instance settings sender')
+})
+
+it('limits the native directory picker to owned local instance main frames', async () => {
+  const a = await create('A')
+  await invoke('open', { id: a.id })
+  const contents = harness.View.all[0]!.webContents
+  const pick = harness.handlers.get(DESKTOP_IPC.directoryPick)!
+  const event = { sender: contents, senderFrame: contents.mainFrame }
+  harness.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [harness.root] })
+  await expect(pick(event)).resolves.toBe(harness.root)
+  harness.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] })
+  await expect(pick(event)).resolves.toBeNull()
+  await expect(pick(sender())).rejects.toThrow('Rejected directory picker sender')
+  await expect(pick({ sender: contents, senderFrame: {} })).rejects.toThrow('Rejected directory picker sender')
+  await invoke('close', { id: a.id })
+  await expect(pick(event)).rejects.toThrow('Rejected directory picker sender')
 })
 
 it('reapplies shell presentation on reload and despite rejected instance settings', async () => {
@@ -457,7 +482,8 @@ it('dispatches coexisting settings fields and native motion using each namespace
   expect(values['ui-theme']).toMatchObject({ motionEnabled: false, customization: DEFAULT_PERSONAL_APPEARANCE })
   expect(values['ui-chat']).toMatchObject({ transcriptView: 'normal' })
   expect(values['agent-presets']).toMatchObject({ default: 'custom' })
-  expect(values['llm-deepseek']).toMatchObject({ protocol: 'chat-completions' })
+  expect(values['llm-deepseek']).toMatchObject({ baseURL: initial.dsh.deepseekBaseURL })
+  expect(values['llm-deepseek']).not.toHaveProperty('protocol')
   expect(values['llm-deepseek']).not.toHaveProperty('reasoningEffort')
   expect(values['agent-default-model']).toMatchObject({ provider: 'gateway', model: 'model-a', reasoningEffort: 'medium' })
   expect(await invoke('softwareSettings', { action: 'read' })).toMatchObject({ syncErrors: {},
@@ -506,6 +532,49 @@ it('delivers multiple model sources and removes offline routes without touching 
     expect(harness.Local.all[index]!.credentials.has(sourceKeyRef(first!.id))).toBe(false)
     expect(harness.Local.all[index]!.credentials.get(sourceKeyRef(second!.id))).toBe('fixture-b')
   }
+})
+
+it('clears a removed managed default on online and reconnected instances', async () => {
+  const a = await create('A'); const b = await create('B')
+  await invoke('open', { id: a.id }); await invoke('open', { id: b.id })
+  for (const local of harness.Local.all) local.settings = mixedSettingsDocument()
+  const saved = await invoke('softwareSettings', { action: 'sourceSave', input: { key: 'fixture-only', config: {
+    name: 'API', protocol: 'openai-completions', baseURL: 'https://fixture.test/v1', models: ['model'], contextWindow: 128000, maxTokens: 4096,
+  } } }) as SoftwareSettingsSnapshot
+  const source = saved.modelSources[0]!
+  await invoke('softwareSettings', { action: 'dshUpdate', input: { value: { ...saved.dsh, defaultProvider: sourceRoute(source.id), defaultModel: 'model' } } })
+  await invoke('close', { id: b.id })
+  await invoke('softwareSettings', { action: 'sourceRemove', input: { id: source.id } })
+  await invoke('open', { id: b.id })
+  for (const local of harness.Local.all) {
+    const section = local.settings.namespaces.find(item => item.ns === 'agent-default-model')!
+    expect(section.value.provider).toBeUndefined()
+    expect(section.value.model).toBeUndefined()
+  }
+  expect(await invoke('softwareSettings', { action: 'read' })).toMatchObject({ syncErrors: {} })
+})
+
+it('enables F12 for shell and instance tools and closes tools when debug mode is disabled', async () => {
+  const a = await create('A')
+  await invoke('open', { id: a.id })
+  const contents = [harness.Window.all[0]!.webContents, harness.View.all[0]!.webContents]
+  const input = { type: 'keyDown', key: 'F12', control: false, alt: false, shift: false, meta: false, isComposing: false }
+  for (const target of contents) {
+    target.openDevTools.mockClear()
+    target.emit('before-input-event', { preventDefault: vi.fn() }, input)
+    expect(target.openDevTools).not.toHaveBeenCalled()
+  }
+  await invoke('softwareSettings', { action: 'debugMode', input: { value: true } })
+  for (const target of contents) {
+    target.emit('before-input-event', { preventDefault: vi.fn() }, input)
+    expect(target.openDevTools).toHaveBeenCalledWith({ mode: 'detach' })
+    target.isDevToolsOpened.mockReturnValue(true)
+    target.emit('before-input-event', { preventDefault: vi.fn() }, input)
+    expect(target.closeDevTools).toHaveBeenCalledOnce()
+  }
+  await invoke('softwareSettings', { action: 'debugMode', input: { value: false } })
+  for (const target of contents) expect(target.closeDevTools).toHaveBeenCalledTimes(2)
+  await expect(invoke('softwareSettings', { action: 'debugMode', input: { value: 'true' } })).rejects.toThrow('Invalid software debug mode')
 })
 
 it('captures rebound shortcuts in instance content and suspends them during recording', async () => {
@@ -693,4 +762,33 @@ it('routes frameless window controls through authenticated manager IPC', async (
   const close = vi.spyOn(window, 'close')
   await invoke('window', { action: 'close' })
   expect(close).toHaveBeenCalledOnce()
+})
+
+it('uses only the chosen source key for discovery and rejects instance-frame calls', async () => {
+  const config = { name: 'API', protocol: 'openai-completions', baseURL: 'https://fixture.test/v1', models: ['model'], contextWindow: 128000, maxTokens: 4096 }
+  const saved = await invoke('softwareSettings', { action: 'sourceSave', input: { config, key: 'saved-fixture-key' } }) as SoftwareSettingsSnapshot
+  harness.fetch.mockResolvedValueOnce(Response.json({ data: [{ id: 'discovered' }] }))
+  expect(await invoke('softwareSettings', { action: 'sourceModels', input: { id: saved.modelSources[0]!.id, config, key: '' } })).toEqual(['discovered'])
+  expect(harness.fetch.mock.calls[0]![1]).toMatchObject({ headers: { authorization: 'Bearer saved-fixture-key' } })
+  const owner = sender()
+  await expect(harness.handlers.get(MANAGER_CHANNEL)!({ ...owner, senderFrame: {} }, 'softwareSettings', { action: 'sourceModels', input: { config, key: 'fixture' } })).rejects.toThrow('Rejected')
+  expect(harness.fetch).toHaveBeenCalledTimes(1)
+})
+
+it('schedules relocation and relaunches only after local Hosts stop', async () => {
+  const config = await create('Local'); await invoke('open', { id: config.id })
+  const parent = join(harness.sandbox, 'destination')
+  mkdirSync(parent)
+  harness.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [parent] })
+  await invoke('storage', { action: 'migrate' })
+  const locator = JSON.parse(readFileSync(join(harness.root, 'browser', 'data-location.json'), 'utf8')) as { pending: string }
+  expect(locator.pending).toBe(join(parent, 'DshManagerData'))
+  expect(harness.app.relaunch).not.toHaveBeenCalled()
+  const stopped = Promise.withResolvers<undefined>()
+  harness.Local.all[0]!.stop.mockImplementationOnce(() => stopped.promise)
+  harness.app.emit('before-quit', { preventDefault: vi.fn() })
+  await vi.waitFor(() => { expect(harness.Local.all[0]!.stop).toHaveBeenCalled() })
+  expect(harness.app.relaunch).not.toHaveBeenCalled()
+  stopped.resolve(undefined)
+  await vi.waitFor(() => { expect(harness.app.relaunch).toHaveBeenCalledOnce() })
 })

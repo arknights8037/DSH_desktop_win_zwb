@@ -1,6 +1,40 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write apps/desktop/README.md
-README.md: 1cf62d08e79fa9b5fcb90eec46065fd5be90745a
-README.zh.md: 441cac90ebf58944a55012eb30f74ff4e0e2ef5a
+/dshmanager:
+  en: c2b78e29ac3adcda
+  zh: 02e822f10cfac59a
+/dshmanager/summary:
+  en: a46a03b669e9c99b
+  zh: fb5e9547cb54c3f6
+/dshmanager/table-of-contents:
+  en: c2ca4c664dae201d
+  zh: ecee7030d6963b98
+/dshmanager/instances:
+  en: d9c9d68f88680459
+  zh: 60adcae5cebe460a
+/dshmanager/plugin-catalog-and-installation:
+  en: b881fca2c8df1248
+  zh: b933b3de6a336f50
+/dshmanager/kernel-updates-and-data-recovery:
+  en: 68b96fcfb6e8f868
+  zh: 9a18deba020000eb
+/dshmanager/remote-connections:
+  en: 7a945ff2e715e17b
+  zh: e2f5ea61d0fcbb74
+/dshmanager/lifecycle-and-storage:
+  en: 8a41a8857d25c3b2
+  zh: 8161b58fc33f1f28
+/dshmanager/development-and-packaging:
+  en: d517e5499b6a6e91
+  zh: 4e9dba83de371c52
+/dshmanager/implementation:
+  en: 943f89614165cd5f
+  zh: bb9b4116bb21a511
+/dshmanager/known-limitations:
+  en: 41e0aff97807a25a
+  zh: b7c88d41d6243432
+/dshmanager/dev-note:
+  en: 44ba842673408e9c
+  zh: 155873b45d476068

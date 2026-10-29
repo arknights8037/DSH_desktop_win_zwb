@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Harness</title><link rel="stylesheet" href="manager.css"><link rel="stylesheet" href="plugin-workspace.css"><link rel="stylesheet" href="motion.css"></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DshManager</title><link rel="stylesheet" href="manager.css"><link rel="stylesheet" href="plugin-workspace.css"><link rel="stylesheet" href="motion.css"><link rel="stylesheet" href="loading.css"></head>
 <body>
   <header><nav id="tabs" role="tablist"></nav><div class="instance-menu-anchor"><button id="add-tab" class="icon" aria-label="New instance" aria-haspopup="menu" aria-expanded="false">+</button><div id="instance-menu" class="instance-menu" role="menu" hidden><button id="menu-new" class="menu-item" role="menuitem" aria-haspopup="menu" aria-expanded="false"><span data-copy="newInstance"></span><span aria-hidden="true">›</span></button><div id="menu-new-sub" class="menu-sub" role="menu" hidden><button class="menu-item" data-kind="local" role="menuitem" data-copy="local"></button><button class="menu-item" data-kind="ssh" role="menuitem" data-copy="ssh"></button></div><div class="menu-separator" aria-hidden="true"></div><div id="menu-instances"></div></div></div><button id="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 3-.6 2.1-2 .9-2-.6-2 3.4 1.5 1.5v2.4L3.4 14l2 3.5 2-.6 2 .9.6 2.2h4l.6-2.2 2-.9 2 .6 2-3.5-1.5-1.4v-2.4L20.6 8l-2-3.4-2 .6-2-.9L14 3z"/><circle cx="12" cy="11.5" r="3"/></svg><span data-copy="settings"></span></button><div class="window-controls"><button id="window-minimize" class="window-control"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button><button id="window-maximize" class="window-control"><svg class="maximize-symbol" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9"/></svg><svg class="restore-symbol" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 5.5v-3h8v8h-3"/><rect x="2.5" y="5.5" width="8" height="8"/></svg></button><button id="window-close" class="window-control"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button></div></header>
   <main id="panel"><section id="first-run" aria-labelledby="first-run-title"><h2 id="first-run-title" data-copy="firstRunTitle"></h2><div class="choice-grid"><button class="choice-card" data-kind="local"><strong data-copy="localTitle"></strong><span data-copy="localDescription"></span></button><button class="choice-card" data-kind="ssh"><strong data-copy="remoteTitle"></strong><span data-copy="remoteDescription"></span></button></div></section><section id="settings-page" aria-labelledby="settings-title" hidden>
@@ -16,12 +16,12 @@
         <button id="settings-tab-plugins" data-settings-tab="plugins" role="tab" aria-controls="settings-pane-plugins"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3v5H4v5h5v8h6v-8h5V8h-5V3z"/></svg><span data-copy="plugins"></span></button>
       </nav>
       <div class="settings-content"><div class="settings-body">
-        <div id="settings-product" class="settings-product"><svg viewBox="0 0 40 40" aria-hidden="true"><rect x="3" y="5" width="34" height="30" rx="5"/><path d="m11 14 7 6-7 6m12 0h6"/></svg><div><strong>DSH</strong><span data-copy="title"></span></div></div>
+        <div id="settings-product" class="settings-product"><svg viewBox="0 0 40 40" aria-hidden="true"><rect x="3" y="5" width="34" height="30" rx="5"/><path d="m11 14 7 6-7 6m12 0h6"/></svg><div class="settings-product-copy"><strong>DSH</strong><div class="settings-product-meta"><span data-copy="title"></span><span id="app-version" class="version-tag"></span></div></div></div>
         <h2 id="settings-title"></h2>
         <p id="software-status" class="settings-hint" role="status"></p>
-        <div id="settings-pane-instances" data-settings-pane="instances" role="tabpanel" aria-labelledby="settings-tab-instances" hidden><p class="settings-hint" data-copy="manageHint"></p><div class="manager-actions"><button id="instance-add" data-copy="add"></button></div><div id="instance-list" class="instance-list"></div><p id="instances-empty" class="settings-hint" data-copy="empty" hidden></p></div>
+        <div id="settings-pane-instances" data-settings-pane="instances" role="tabpanel" aria-labelledby="settings-tab-instances" hidden><div class="manager-actions"><button id="instance-add" data-copy="add"></button></div><div id="instance-list" class="instance-list"></div><p id="instances-empty" class="settings-hint" data-copy="empty" hidden></p></div>
         <div id="settings-pane-storage" data-settings-pane="storage" role="tabpanel" aria-labelledby="settings-tab-storage" hidden>
-          <p class="settings-hint" data-copy="storageHint"></p>
+
           <div id="storage-total" class="storage-total" role="status"></div>
           <div id="storage-list" class="storage-list"></div>
           <h3 data-copy="storageInstances"></h3>
@@ -30,29 +30,36 @@
         </div>
         <div id="settings-pane-plugins" data-settings-pane="plugins" role="tabpanel" aria-labelledby="settings-tab-plugins" hidden>
           <p id="plugin-development-hint" class="settings-hint" data-copy="pluginPackagedOnly" hidden></p>
+          <div class="plugin-library-card">
+            <label class="setting-row"><span data-copy="pluginUpdateAutomatic"></span><input id="plugin-update-automatic" type="checkbox"></label>
+
+            <div id="plugin-update-reports" role="status" aria-live="polite"></div>
+          </div>
           <div id="plugin-workspace"></div>
           <div id="plugin-deployments" data-instance-deployments><h3 data-copy="pluginInstances"></h3>
           <div id="plugin-instances" class="instance-list"></div>
-          <div id="plugin-no-instances" hidden><p class="settings-hint" data-copy="pluginNoInstances"></p><button id="plugin-add-instance" data-copy="instances"></button></div></div>
+          <div id="plugin-no-instances" hidden><button id="plugin-add-instance" data-copy="instances"></button></div></div>
         </div>
         <div id="settings-pane-general" data-settings-pane="general" role="tabpanel" aria-labelledby="settings-tab-general">
-          <div class="plugin-library-card"><h3 data-copy="kernelTitle"></h3><p class="settings-hint" data-copy="kernelHint"></p><label class="setting-row"><span data-copy="kernelAutomatic"></span><input id="kernel-automatic" type="checkbox"></label><p id="kernel-status" role="status"></p><button id="kernel-check" data-copy="kernelCheck"></button><button id="kernel-install" data-copy="kernelInstall"></button></div>
+          <div class="setting-row"><span id="diagnostics-label" data-copy="openLogs"></span><button id="diagnostics-open" data-copy="storageOpen" aria-labelledby="diagnostics-label"></button></div>
+          <label class="setting-row"><span><strong data-copy="debugMode"></strong><small data-copy="debugModeHint"></small></span><input id="debug-mode" type="checkbox" role="switch"></label>
+          <div class="plugin-library-card"><h3 data-copy="kernelTitle"></h3><label class="setting-row"><span data-copy="kernelAutomatic"></span><input id="kernel-automatic" type="checkbox"></label><div id="kernel-status" role="status" aria-live="polite"></div><div class="kernel-actions"><button id="kernel-check" data-copy="kernelCheck"></button><button id="kernel-install" data-copy="kernelInstall"></button></div></div>
           <label class="setting-row"><span><strong data-copy="language"></strong></span><select id="language"><option value="" data-copy="systemTheme"></option><option value="zh" data-copy="chinese"></option><option value="en" data-copy="english"></option></select></label>
-          <label class="setting-row"><span><strong data-copy="busyEnter"></strong><small data-copy="busyEnterHint"></small></span><select id="busy-enter"><option value="queue" data-copy="queueMessage"></option><option value="steer" data-copy="steerMessage"></option></select></label>
+          <label class="setting-row"><span><strong data-copy="busyEnter"></strong></span><select id="busy-enter"><option value="queue" data-copy="queueMessage"></option><option value="steer" data-copy="steerMessage"></option></select></label>
         </div>
         <div id="settings-pane-appearance" data-settings-pane="appearance" role="tabpanel" aria-labelledby="settings-tab-appearance" hidden>
-          <label class="setting-row"><span><strong data-copy="appearance"></strong><small data-copy="appearanceHint"></small></span><select id="theme"><option value="system" data-copy="systemTheme"></option><option value="light" data-copy="lightTheme"></option><option value="dark" data-copy="darkTheme"></option></select></label>
+          <label class="setting-row"><span><strong data-copy="appearance"></strong></span><select id="theme"><option value="system" data-copy="systemTheme"></option><option value="light" data-copy="lightTheme"></option><option value="dark" data-copy="darkTheme"></option></select></label>
           <label class="setting-row"><span><strong data-copy="contentFontSize"></strong></span><select id="font-size"><option>12</option><option>13</option><option>14</option><option>15</option><option>16</option><option>17</option></select></label>
-          <label class="setting-row"><span><strong data-copy="smoothMotion"></strong><small id="motion-hint" data-copy="smoothMotionHint"></small></span><input id="motion-enabled" type="checkbox" aria-describedby="motion-hint"></label>
+          <label class="setting-row"><span><strong data-copy="smoothMotion"></strong></span><input id="motion-enabled" type="checkbox"></label>
           <form id="personal-appearance-form">
-            <h3 data-copy="wallpaperTitle"></h3><p class="settings-hint" data-copy="wallpaperHint"></p>
+            <h3 data-copy="wallpaperTitle"></h3>
             <div class="appearance-actions"><label class="file-button"><span data-copy="chooseWallpaper"></span><input id="wallpaper-file" type="file" accept="image/png,image/jpeg,image/webp"></label><button id="wallpaper-remove" type="button" data-copy="removeWallpaper"></button><span id="wallpaper-status" role="status"></span></div>
             <label class="setting-row"><span data-copy="wallpaperEnabled"></span><input id="wallpaper-enabled" type="checkbox"></label>
             <label class="setting-row"><span data-copy="wallpaperMask"></span><input id="wallpaper-mask" type="checkbox"></label>
             <label class="setting-row"><span data-copy="maskColor"></span><input id="wallpaper-mask-color" type="color"></label>
             <label class="setting-row"><span data-copy="maskOpacity"></span><span class="range-control"><input id="wallpaper-mask-opacity" type="range" min="0" max="100" step="1"><output id="wallpaper-mask-value"></output></span></label>
             <label class="setting-row"><span data-copy="surfaceOpacity"></span><span class="range-control"><input id="wallpaper-surface-opacity" type="range" min="0" max="100" step="1"><output id="wallpaper-surface-value"></output></span></label>
-            <h3 data-copy="personalColors"></h3><p class="settings-hint" data-copy="personalColorsHint"></p>
+            <h3 data-copy="personalColors"></h3>
             <label class="setting-row"><span data-copy="colorPreset"></span><select id="appearance-preset"><option value="" data-copy="choosePreset"></option><option value="ocean" data-copy="presetOcean"></option><option value="forest" data-copy="presetForest"></option><option value="plum" data-copy="presetPlum"></option></select></label>
             <div id="personal-colors" class="personal-colors"></div>
             <div class="appearance-actions"><label class="file-button"><span data-copy="importColors"></span><input id="colors-import" type="file" accept="application/json,.json"></label><button id="colors-export" type="button" data-copy="exportColors"></button><button id="appearance-defaults" type="button" data-copy="restoreDefaults"></button></div>
@@ -60,33 +67,37 @@
             <div class="appearance-actions appearance-save"><button class="primary" type="submit" data-copy="saveAndApply"></button><button id="appearance-revert" type="button" data-copy="cancel"></button><span id="appearance-save-status" role="status"></span></div>
           </form>
         </div>
-        <div id="settings-pane-shortcuts" data-settings-pane="shortcuts" role="tabpanel" aria-labelledby="settings-tab-shortcuts" hidden><p class="settings-hint" data-copy="shortcutHint"></p><div id="shortcut-list"></div><button id="shortcut-reset" data-copy="restoreDefaults"></button></div>
+        <div id="settings-pane-shortcuts" data-settings-pane="shortcuts" role="tabpanel" aria-labelledby="settings-tab-shortcuts" hidden><div id="shortcut-list"></div><button id="shortcut-reset" data-copy="restoreDefaults"></button></div>
         <div id="settings-pane-keys" data-settings-pane="keys" role="tabpanel" aria-labelledby="settings-tab-keys" hidden>
-          <p class="settings-hint" data-copy="sourceHint"></p>
+
           <p id="sources-sync-status" class="settings-hint" role="status" hidden></p>
           <div class="sources-heading"><h3 data-copy="modelSources"></h3><button id="source-add" data-copy="addSource"></button></div>
           <p id="sources-empty" class="settings-hint" data-copy="sourcesEmpty"></p>
           <div id="model-sources"></div>
           <form id="source-form" hidden>
             <h3 id="source-form-title"></h3>
+            <label class="setting-row"><span data-copy="sourceTemplate"></span><select id="source-template"><option value="custom" data-copy="sourceCustom"></option><option value="openai" data-copy="providerOpenAI"></option><option value="anthropic" data-copy="providerAnthropic"></option><option value="deepseek" data-copy="providerDeepSeek"></option><option value="gemini" data-copy="providerGemini"></option><option value="openrouter" data-copy="providerOpenRouter"></option><option value="qwen" data-copy="providerQwen"></option><option value="moonshot" data-copy="providerMoonshot"></option><option value="ollama" data-copy="providerOllama"></option></select></label>
             <label class="setting-row"><span data-copy="sourceName"></span><input id="source-name" required maxlength="100"></label>
             <label class="setting-row"><span data-copy="modelProtocol"></span><select id="source-protocol"><option value="openai-completions" data-copy="openaiCompletions"></option><option value="openai-responses" data-copy="openaiResponses"></option><option value="anthropic-messages" data-copy="anthropicMessages"></option></select></label>
-            <label class="setting-row"><span data-copy="modelBaseURL"></span><input id="source-url" type="url" required maxlength="4096" placeholder="https://api.example.com/v1"></label>
-            <label class="setting-row"><span><strong data-copy="sourceModels"></strong><small data-copy="sourceModelsHint"></small></span><textarea id="source-models" rows="3" required></textarea></label>
+            <label class="setting-row"><span data-copy="modelBaseURL"></span><input id="source-url" type="url" required maxlength="4096"></label>
+            <div class="key-actions"><button id="source-fetch" type="button" data-copy="sourceFetch"></button><span id="source-fetch-status" role="status"></span></div>
+            <label id="source-catalog-field" class="setting-row" hidden><span><strong data-copy="sourceCatalog"></strong></span><select id="source-catalog" multiple size="6"></select></label>
+            <label class="setting-row"><span><strong data-copy="sourceModels"></strong></span><textarea id="source-models" rows="3" required></textarea></label>
             <label class="setting-row"><span data-copy="sourceContextWindow"></span><input id="source-context" type="number" min="1" max="9007199254740991" step="1" value="262144" required></label>
             <label class="setting-row"><span data-copy="modelMaxTokens"></span><input id="source-max-tokens" type="number" min="1" max="9007199254740991" step="1" value="32768" required></label>
-            <label class="setting-row"><span><strong data-copy="keyValue"></strong><small id="source-key-hint"></small></span><input id="source-key" type="password" autocomplete="new-password" maxlength="8192"></label>
+            <button id="source-key-replace" type="button" data-copy="replaceKey" hidden></button>
+            <label id="source-key-field" class="setting-row"><span data-copy="keyValue"></span><input id="source-key" type="password" autocomplete="new-password" maxlength="8192"></label>
             <div class="key-actions"><button type="submit" class="primary" data-copy="saveAndApply"></button><button id="source-cancel" type="button" data-copy="cancel"></button></div>
           </form>
-          <details id="standalone-keys"><summary data-copy="standaloneKeys"></summary><p class="settings-hint" data-copy="keyHint"></p><form id="api-key-form"><label><span data-copy="keyName"></span><input id="api-key-ref" value="DEEPSEEK_API_KEY" list="credential-refs" required pattern="[A-Za-z_][A-Za-z0-9_]*" maxlength="256"><datalist id="credential-refs"></datalist></label><p id="api-key-status" role="status"></p><label><span data-copy="keyValue"></span><div class="secret-input"><input id="api-key-value" type="password" autocomplete="new-password" maxlength="8192"><button id="key-reveal" type="button" data-copy="showSecret"></button></div></label><div class="key-actions"><button type="submit" class="primary" data-copy="saveKey"></button><button id="key-remove" type="button" data-copy="removeKey"></button><button id="key-refresh" type="button" data-copy="refreshKey"></button></div></form></details>
+          <details id="standalone-keys"><summary data-copy="standaloneKeys"></summary><form id="api-key-form"><label><span data-copy="keyName"></span><input id="api-key-ref" value="DEEPSEEK_API_KEY" list="credential-refs" required pattern="[A-Za-z_][A-Za-z0-9_]*" maxlength="256"><datalist id="credential-refs"></datalist></label><p id="api-key-status" role="status"></p><button id="key-replace" type="button" data-copy="replaceKey" hidden></button><label id="api-key-field"><span data-copy="keyValue"></span><div class="secret-input"><input id="api-key-value" type="password" autocomplete="new-password" maxlength="8192"><button id="key-reveal" type="button" data-copy="showSecret"></button></div></label><div class="key-actions"><button type="submit" class="primary" data-copy="saveKey"></button><button id="key-remove" type="button" data-copy="removeKey"></button><button id="key-refresh" type="button" data-copy="refreshKey"></button></div></form></details>
         </div>
         <div id="settings-pane-advanced" data-settings-pane="advanced" role="tabpanel" aria-labelledby="settings-tab-advanced" hidden>
-          <p class="settings-hint" data-copy="dshSettingsHint"></p>
+
           <p id="dsh-sync-status" role="status" hidden></p>
           <form id="dsh-settings-form">
-            <p id="kernel-settings-hint" class="settings-hint" data-copy="kernelSettingsHint" hidden></p>
+
             <h3 data-copy="conversationSettings"></h3>
-            <label class="setting-row"><span><strong data-copy="defaultModelProvider"></strong><small data-copy="defaultModelHint"></small></span><input id="dsh-defaultProvider" data-dsh-field="defaultProvider" type="text" maxlength="256"></label>
+            <label class="setting-row"><span><strong data-copy="defaultModelProvider"></strong></span><input id="dsh-defaultProvider" data-dsh-field="defaultProvider" type="text" maxlength="256"></label>
             <label class="setting-row"><span><strong data-copy="defaultModelId"></strong></span><input id="dsh-defaultModel" data-dsh-field="defaultModel" type="text" maxlength="256"></label>
             <label class="setting-row"><span><strong data-copy="transcriptView"></strong></span><select id="dsh-transcriptView" data-dsh-field="transcriptView"><option value="compact" data-copy="compactTranscript"></option><option value="normal" data-copy="normalTranscript"></option></select></label>
             <label class="setting-row"><span><strong data-copy="modeSelectionEnabled"></strong></span><input id="dsh-modeSelectionEnabled" data-dsh-field="modeSelectionEnabled" type="checkbox"></label>
@@ -103,12 +114,12 @@
       </div></div>
     </div>
   </section></main>
-  <section id="instance-state" hidden><div class="state-symbol">◉</div><h2 id="state-title"></h2><p id="state-message"></p><button id="recover" class="primary" data-copy="recover"></button></section>
+  <section id="instance-state" hidden><div id="instance-loader" class="dsh-loader" aria-hidden="true" hidden><span></span></div><div id="instance-state-symbol" class="state-symbol" aria-hidden="true">◉</div><h2 id="state-title"></h2><p id="state-message" role="status" aria-live="polite"></p><button id="recover" class="primary" data-copy="recover"></button></section>
   <div id="tab-menu" class="tab-menu" role="menu" hidden></div>
   <div id="notice" role="alert" hidden></div>
-  <dialog id="editor"><form id="edit-form"><h2 id="edit-title"></h2><label><span data-copy="name"></span><input name="name" maxlength="100" required autofocus></label><label><span data-copy="kind"></span><select name="kind"><option value="local" data-copy="local"></option><option value="ssh" data-copy="ssh"></option></select></label><fieldset id="ssh-fields" hidden><p class="help" data-copy="prerequisites"></p><div class="columns"><label><span data-copy="host"></span><input name="host" autocomplete="off"></label><label><span data-copy="port"></span><input name="port" type="number" min="1" max="65535" value="22"></label></div><label><span data-copy="username"></span><input name="username" autocomplete="off"></label><label><span data-copy="auth"></span><select name="auth"><option value="password" data-copy="password"></option><option value="key" data-copy="key"></option></select></label><label id="key-field" hidden><span data-copy="privateKeyPath"></span><input name="privateKeyPath"></label><label><span data-copy="executable"></span><input name="executable" value="dsh"></label><label><span data-copy="home"></span><input name="home"></label></fieldset><div class="dialog-actions"><button type="button" id="edit-cancel" data-copy="cancel"></button><button type="submit" class="primary" data-copy="save"></button></div></form></dialog>
+  <dialog id="editor"><form id="edit-form"><h2 id="edit-title"></h2><label><span data-copy="name"></span><input name="name" maxlength="100" required autofocus></label><label><span data-copy="kind"></span><select name="kind"><option value="local" data-copy="local"></option><option value="ssh" data-copy="ssh"></option></select></label><fieldset id="ssh-fields" hidden><div class="columns"><label><span data-copy="host"></span><input name="host" autocomplete="off"></label><label><span data-copy="port"></span><input name="port" type="number" min="1" max="65535" value="22"></label></div><label><span data-copy="username"></span><input name="username" autocomplete="off"></label><label><span data-copy="auth"></span><select name="auth"><option value="password" data-copy="password"></option><option value="key" data-copy="key"></option></select></label><label id="key-field" hidden><span data-copy="privateKeyPath"></span><input name="privateKeyPath"></label><label><span data-copy="executable"></span><input name="executable" value="dsh"></label><label><span data-copy="home"></span><input name="home"></label></fieldset><div class="dialog-actions"><button type="button" id="edit-cancel" data-copy="cancel"></button><button type="submit" class="primary" data-copy="save"></button></div></form></dialog>
   <dialog id="remove-dialog"><form id="remove-form" method="dialog"><h2 data-copy="removeDataTitle"></h2><p id="remove-prompt" data-copy="removeDataPrompt"></p><label id="remove-data-label" class="remove-data-option"><input id="remove-data" type="checkbox"><span data-copy="removeDataOption"></span></label><p id="remove-data-warning" class="remove-data-warning" data-copy="removeDataWarning" hidden></p><div class="dialog-actions"><button type="button" id="remove-cancel" data-copy="cancel"></button><button type="submit" id="remove-confirm" class="danger" value="remove" data-copy="removeDataConfirm"></button></div></form></dialog>
-  <dialog id="credentials"><form id="credential-form"><h2 id="credential-title"></h2><p class="help" data-copy="credentialsHint"></p><label><span id="credential-label"></span><input id="secret" type="password" autocomplete="off" autofocus></label><div class="dialog-actions"><button type="button" id="credential-cancel" data-copy="cancel"></button><button type="submit" class="primary" data-copy="connect"></button></div></form></dialog>
+  <dialog id="credentials"><form id="credential-form"><h2 id="credential-title"></h2><label><span id="credential-label"></span><input id="secret" type="password" autocomplete="off" autofocus></label><div class="dialog-actions"><button type="button" id="credential-cancel" data-copy="cancel"></button><button type="submit" class="primary" data-copy="connect"></button></div></form></dialog>
   <dialog id="log-dialog"><h2 data-copy="logs"></h2><pre id="log-content"></pre><button id="log-close" data-copy="dismiss"></button></dialog>
   <script src="manager.js"></script>
   <script src="manager-sources.js"></script>

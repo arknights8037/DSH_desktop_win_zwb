@@ -9,7 +9,7 @@ function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'desktop-kernels-'))
   onTestFinished(() => { rmSync(root, { recursive: true, force: true }) })
   const dsh = join(root, 'bundled')
-  runtimeFixture(dsh, '0.1.6-alpha.1')
+  runtimeFixture(dsh, '0.2.1-rc.1')
   const bundled = { node: process.execPath, pnpm: 'unused', dsh }
   const prepare = vi.fn(async (version: string, directory: string) => { runtimeFixture(directory, version) })
   const fetcher = vi.fn<typeof fetch>(async () => Response.json({ name: '@deepseek-ai/dsh', version: '0.2.1-rc.2' }))
@@ -19,12 +19,12 @@ function fixture() {
 
 it('publishes verified updates for the next launch without replacing the active kernel', async () => {
   const { root, bundled, prepare, fetcher, manager } = fixture()
-  expect(await manager.check()).toMatchObject({ current: '0.1.6-alpha.1', available: '0.2.1-rc.2', phase: 'ready', restartRequired: true })
+  expect(await manager.check()).toMatchObject({ current: '0.2.1-rc.1', available: '0.2.1-rc.2', phase: 'ready', restartRequired: true })
   expect(manager.runtime()).toBe(bundled)
   const next = new DesktopKernelManager(root, bundled, prepare, fetcher)
   expect(next.runtime().dsh).toBe(join(root, 'releases', '0.2.1-rc.2'))
   await next.initialize()
-  expect(prepare).toHaveBeenLastCalledWith('0.2.1-rc.2', next.runtime().dsh)
+  expect(prepare).toHaveBeenLastCalledWith('0.2.1-rc.2', next.runtime().dsh, expect.any(Function))
 })
 
 it('keeps manual checks read-only and coalesces a concurrent install request', async () => {
@@ -67,11 +67,26 @@ it('rejects registry responses that name another package without preparing it', 
   expect(prepare).not.toHaveBeenCalled()
 })
 
-it('uses a newer bundled kernel when the shell installer advances past a selected release', async () => {
+it.each(['0.2.1-rc.2', '0.3.0'])('uses the installer kernel when its release is equal or newer (%s)', async (version) => {
   const { root, manager, bundled, prepare, fetcher } = fixture()
   await manager.check(true)
-  runtimeFixture(bundled.dsh, '0.3.0')
+  runtimeFixture(bundled.dsh, version)
+  prepare.mockClear()
   const updated = new DesktopKernelManager(root, bundled, prepare, fetcher)
   expect(updated.runtime()).toBe(bundled)
-  expect(updated.snapshot().current).toBe('0.3.0')
+  expect(updated.snapshot().current).toBe(version)
+  await updated.initialize()
+  expect(prepare).not.toHaveBeenCalled()
+})
+
+it('keeps the same-version development selection available for the source launcher', async () => {
+  const { root, manager, bundled, prepare, fetcher } = fixture()
+  await manager.check(true)
+  runtimeFixture(bundled.dsh, '0.2.1-rc.2')
+  prepare.mockClear()
+  const updated = new DesktopKernelManager(root, bundled, prepare, fetcher, false)
+  await updated.initialize()
+  expect(updated.runtime().dsh).toBe(join(root, 'releases', '0.2.1-rc.2'))
+  expect(prepare).toHaveBeenCalledTimes(1)
+  expect(JSON.parse(readFileSync(join(root, 'selection.json'), 'utf8')).selected).toBe('0.2.1-rc.2')
 })

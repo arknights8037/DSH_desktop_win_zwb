@@ -4,7 +4,8 @@ window.mountPluginManager = async function (root, api, prefix = '') {
   root.innerHTML = `
     <div class="plugin-overview"><div><h1 id="title"></h1></div><button id="refresh" type="button"></button></div>
     <p id="status" class="plugin-status" role="status" aria-live="polite"></p>
-    <section id="recovery" hidden><p id="recovery-description"></p><p id="startup-error" role="alert"></p><button id="retry" type="button"></button><button id="disable-all" type="button"></button></section>
+    <div id="plugin-loading" class="dsh-loading-layer" hidden><div class="dsh-loading-content" role="status" aria-live="polite"><div class="dsh-loader" aria-hidden="true"><span></span></div><p id="plugin-loading-message"></p></div></div>
+    <section id="recovery" hidden><p id="startup-error" role="alert"></p><button id="retry" type="button"></button><button id="disable-all" type="button"></button></section>
     <div class="plugin-columns">
       <div class="plugin-discovery">
         <section id="market" aria-labelledby="catalog-heading">
@@ -20,16 +21,16 @@ window.mountPluginManager = async function (root, api, prefix = '') {
           <ul id="catalog" tabindex="-1" aria-labelledby="catalog-heading"></ul>
           <div data-browse-controls><button id="catalog-more" type="button" hidden></button></div>
         </section>
-        <details id="manual-install" class="plugin-manual"><summary id="manual-install-label"></summary><form id="install-form"><label id="package-label" for="package-spec"></label><div class="install-row"><input id="package-spec" name="package-spec" autocomplete="off" placeholder="@scope/plugin@1.2.3" required><button id="install" type="submit"></button></div></form></details>
+        <details id="manual-install" class="plugin-manual"><summary id="manual-install-label"></summary><form id="install-form"><label id="package-label" for="package-spec"></label><div class="install-row"><input id="package-spec" name="package-spec" autocomplete="off" required><button id="install" type="submit"></button></div></form></details>
       </div>
       <div class="plugin-management">
         <div class="plugin-column-heading"><h2 id="installed-heading"></h2><span id="installed-count" class="plugin-count"></span></div>
-        <section id="library-target" hidden><label id="target-label" for="target-instance"></label><select id="target-instance" aria-describedby="target-hint"></select><p id="target-hint" class="plugin-hint"></p></section>
+        <section id="library-target" hidden><label id="target-label" for="target-instance"></label><select id="target-instance"></select></section>
         <section id="install-plan" aria-labelledby="plan-heading" hidden>
           <div class="plugin-review-heading"><span id="review-label" class="plugin-eyebrow"></span><h2 id="plan-heading" tabindex="-1"></h2></div>
-          <p id="plan-description"></p><dl id="plan-fields"></dl>
+          <dl id="plan-fields"></dl>
           <details id="plan-advanced" class="plugin-advanced"><summary id="plan-advanced-label"></summary><dl id="plan-advanced-fields"></dl></details>
-          <p id="plan-blockers" role="alert"></p><p id="permission-notice"></p><p id="backup-notice"></p>
+          <p id="plan-blockers" role="alert"></p>
           <div class="package-actions plugin-review-actions"><button id="confirm-install" class="plugin-primary" type="button"></button><button id="cancel-install" type="button"></button></div>
         </section>
         <section class="plugin-installed" aria-labelledby="installed-heading">
@@ -72,7 +73,6 @@ window.mountPluginManager = async function (root, api, prefix = '') {
     select('.plugin-library-search').hidden = true
   }
 
-  select('#recovery-description').textContent = messages.recoveryDescription
   select('#retry').textContent = messages.retry
   select('#disable-all').textContent = messages.disableAll
 
@@ -102,8 +102,7 @@ window.mountPluginManager = async function (root, api, prefix = '') {
   for (const [id, text] of [
     ['catalog-heading', messages.catalogTitle], ['catalog-refresh', messages.refreshCatalog], ['search-label', messages.searchPlugins],
     ['category-label', messages.category], ['search-submit', messages.search], ['catalog-more', messages.showMore],
-    ['confirm-install', messages.confirmInstall], ['cancel-install', messages.cancel], ['permission-notice', messages.permissionNotice],
-    ['backup-notice', messages.backupNotice],
+    ['confirm-install', messages.confirmInstall], ['cancel-install', messages.cancel],
     ['manual-install-label', messages.manualInstall], ['catalog-source-label', messages.catalogSourceLabel],
     ['search-clear', messages.clearFilters], ['library-search-label', messages.findLibraryPlugin],
     ['catalog-empty', messages.noCatalogMatches], ['plan-advanced-label', messages.technicalDetails], ['review-label', messages.reviewInstall],
@@ -113,7 +112,6 @@ window.mountPluginManager = async function (root, api, prefix = '') {
   for (const button of selectAll('[data-catalog-filter]')) button.textContent = messages[{ all: 'filterAll', npm: 'filterNpm', library: 'filterLibrary' }[button.dataset.catalogFilter]]
   if (library.active) {
     confirm.textContent = messages.installInLibrary
-    select('#backup-notice').textContent = messages.libraryBackupNotice
   }
 
   function eligible() {
@@ -123,10 +121,12 @@ window.mountPluginManager = async function (root, api, prefix = '') {
   function setStatus(text, tone = 'info') {
     status.textContent = text
     status.dataset.tone = tone
+    select('#plugin-loading-message').textContent = text
   }
 
   function setBusy(value, statusMessage = '') {
     busy = value
+    select('#plugin-loading').hidden = !busy
     select('.plugin-columns').setAttribute('aria-busy', String(busy))
     for (const control of selectAll('button, input, select')) {
       if (!control.closest('[data-instance-deployments], [data-browse-controls]')) control.disabled = busy
@@ -223,8 +223,6 @@ window.mountPluginManager = async function (root, api, prefix = '') {
       : library.targets.some(instance => instance.id === previous && instance.available) ? previous : ''
     targetInitialized = true
     const targetAvailable = library.targets.some(instance => instance.available)
-    select('#target-hint').textContent = targetAvailable ? '' : messages.openTargetHint
-    select('#target-hint').hidden = targetAvailable
     const backend = await api.backend.status()
     select('#recovery').hidden = backend.phase !== 'error'
     select('#startup-error').textContent = backend.phase === 'error' ? backend.message : ''
@@ -275,7 +273,6 @@ window.mountPluginManager = async function (root, api, prefix = '') {
       const plan = await api.plugins.plan(spec)
       activePlan = plan
       select('#plan-heading').textContent = `${plan.name}@${plan.version}`
-      select('#plan-description').textContent = plan.description ?? ''
       select('#plan-fields').replaceChildren()
       select('#plan-advanced-fields').replaceChildren()
       select('#plan-advanced').open = false
@@ -294,7 +291,7 @@ window.mountPluginManager = async function (root, api, prefix = '') {
         'missing-bundle': 'missingBundle', 'host-owned': 'hostOwned', 'web-server-required': 'webServerRequired',
       }[key]]).join(' ')
       planSection.hidden = false
-      setStatus(messages.reviewBeforeInstall)
+      setStatus('')
       select('#plan-heading').focus()
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error), 'error')
@@ -330,11 +327,6 @@ window.mountPluginManager = async function (root, api, prefix = '') {
         badge.textContent = messages.inLibrary
         heading.append(badge)
       }
-      const description = document.createElement('details')
-      description.className = 'plugin-card-description'
-      const summary = document.createElement('summary')
-      summary.textContent = (locale.id === 'zh-CN' ? entry.description.zh ?? entry.description['zh-CN'] : entry.description.en) ?? Object.values(entry.description)[0] ?? ''
-      description.append(summary)
       const meta = document.createElement('small')
       meta.textContent = `${entry.owner} · ${entry.categories.map(value => catalog.categories?.[value]?.[locale.id === 'zh-CN' ? 'zh' : 'en'] ?? value).join(', ')}`
       const source = document.createElement('a')
@@ -346,7 +338,7 @@ window.mountPluginManager = async function (root, api, prefix = '') {
       const packageName = document.createElement('span')
       packageName.className = 'plugin-package-name'
       packageName.textContent = entry.npm ?? messages.gitOnly
-      text.append(heading, description, meta, document.createTextNode(' · '), source, packageName)
+      text.append(heading, meta, document.createTextNode(' · '), source, packageName)
       const action = document.createElement('button')
       action.type = 'button'
       action.className = entry.npm && !inLibrary ? 'plugin-primary' : ''
