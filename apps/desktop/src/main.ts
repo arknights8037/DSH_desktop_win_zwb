@@ -9,18 +9,19 @@ import { InstanceRegistry, instanceId, parseCredentials, parseInstance, type Ins
 import { InstanceService } from './instance-service.ts'
 import { LocalInstance } from './local-instance.ts'
 import { RemoteInstance } from './remote-instance.ts'
-import { MANAGER_CHANNEL, MANAGER_CHANGED, MANAGER_SHORTCUT, INSTANCE_OPEN_SETTINGS, type ManagerSnapshot } from './manager-ipc.ts'
+import { MANAGER_CHANNEL, MANAGER_CHANGED, MANAGER_SHORTCUT, INSTANCE_OPEN_SETTINGS, INSTANCE_OPEN_PLUGINS, type ManagerSnapshot } from './manager-ipc.ts'
 import { managerMessages } from './manager-locale.ts'
 import { resolveDesktopLocale } from './locale.ts'
 import { DESKTOP_IPC } from './ipc.ts'
-import { DesktopProfileMutationError, type DesktopProjectMutation, type DesktopRuntimeExecutables } from './project-manager.ts'
+import { DesktopProfileMutationError, packageNameFromSpec, type DesktopProjectMutation, type DesktopRuntimeExecutables } from './project-manager.ts'
 import { inspectPluginInstall, queryPluginCatalog, type DesktopInstallPlanId, type DesktopPluginInstallPlan } from './plugin-market.ts'
 import { SoftwareSettings } from './software-settings.ts'
 import { DEFAULT_PERSONAL_APPEARANCE, parsePersonalAppearance, type PersonalAppearance } from './personal-appearance.ts'
 import { instanceAppearanceCss, loadingAppearanceCss } from './instance-appearance.ts'
 import { resolveInstanceSettings, type InstanceSettingsDocument, type InstanceSettingsSupport } from './settings-adapter.ts'
-import { instanceSettings } from './manager-settings.ts'
+import { instanceSettings, parseInstancePresetRoster, parsePermissionPresetOptions } from './manager-settings.ts'
 import { DEFAULT_SHORTCUTS, shortcutBinding, type ManagerShortcuts } from './manager-shortcuts.ts'
+import { electronShortcutKey, electronShortcutModifiers, kernelOpenBinding } from './kernel-shortcuts.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
 import { DesktopPluginLibrary } from './plugin-library.ts'
 import { DesktopKernelManager } from './kernel-manager.ts'
@@ -33,6 +34,7 @@ import { modelSourceId, parseModelSource } from './model-sources.ts'
 import { startupLoadingDocument } from './startup-document.ts'
 import { DesktopDiagnostics } from './diagnostics.ts'
 import type { DesktopInstallProgress } from './install-progress.ts'
+import { systemFontFamilies } from './system-fonts.ts'
 
 const SCHEME = 'dsh-app'
 const MANAGER_URL = 'dsh-app://shell/manager.html'
@@ -151,8 +153,8 @@ async function main(diagnostics: DesktopDiagnostics): Promise<void> {
   const kernelRoot = app.isPackaged ? join(root, 'kernels') : process.env.DSH_DESKTOP_KERNEL_ROOT
   const registryFetch: typeof fetch = (input, init) => net.fetch(input instanceof URL ? input.href : input, init)
   const createKernels = (): DesktopKernelManager | undefined => kernelRoot ? new DesktopKernelManager(kernelRoot, bundled,
-    (version, directory, report) => prepareDesktopKernel(version, directory, bundled, join(root, 'kernel-probe-library'), registryFetch,
-      (progress) => { report?.(progress); startupProgress(progress) }), registryFetch, app.isPackaged) : undefined
+    (version, directory, report, signal) => prepareDesktopKernel(version, directory, bundled, join(root, 'kernel-probe-library'), registryFetch,
+      (progress) => { report?.(progress); startupProgress(progress) }, signal), registryFetch, app.isPackaged) : undefined
   let kernels = createKernels()
   if (!app.isPackaged) {
     if (!kernels) throw new Error('Development kernel store is missing; use pnpm run start:desktop')
@@ -165,7 +167,24 @@ async function main(diagnostics: DesktopDiagnostics): Promise<void> {
   console.log(`desktop kernel: version=${kernels?.snapshot().current ?? 'bundled'} runtime=${runtime.dsh}`)
   diagnostics.info('kernel-selected', { version: kernels?.snapshot().current ?? 'bundled', path: runtime.dsh })
   const library = new DesktopPluginLibrary(storagePaths.plugins, runtime)
+  try {
+    library.pruneSuperseded()
+  } catch (error) {
+    diagnostics.error('plugin-library-prune', error)
+  }
   const views = new Map<InstanceId, WebContentsView>()
+  let nativePluginPanel: { id: InstanceId; packageName?: string; x: number; y: number; width: number; height: number } | undefined
+  let nativePluginEpoch = 0
+  const hideNativePlugins = (): void => {
+    nativePluginEpoch++
+    const previous = nativePluginPanel
+    nativePluginPanel = undefined
+    const view = previous && views.get(previous.id)
+    if (view && !view.webContents.isDestroyed()) {
+      void view.webContents.executeJavaScript('globalThis.__DSH_NATIVE_PLUGINS__?.hide()')
+        .catch(error => diagnostics.error('native-plugin-panel-close', error))
+    }
+  }
   const presentationStyles = new Map<InstanceId, string>()
   let previewAppearance: PersonalAppearance | undefined
   const locals = new Map<InstanceId, LocalInstance>()
@@ -175,11 +194,13 @@ async function main(diagnostics: DesktopDiagnostics): Promise<void> {
   const retryTimers = new Map<InstanceId, ReturnType<typeof setTimeout>>()
   const retryCounts = new Map<InstanceId, number>()
   const mutations = new Set<InstanceId>()
+  const mutationControllers = new Map<InstanceId, AbortController>()
   const loggedStatuses = new Map<InstanceId, string>()
   let overlay = true
   let closing = false
   let quitAllowed = false
   let quitPending = false
+  let managerDirty = false
   let relocateOnQuit = false
   let shortcuts: ManagerShortcuts = software.snapshot().shortcuts
   let shortcutCapture = false
@@ -214,6 +235,12 @@ async function main(diagnostics: DesktopDiagnostics): Promise<void> {
     const active = registry.snapshot().tabs.active
     const [width = 1440, height = 920] = window.getContentSize()
     for (const [id, view] of views) {
+      if (overlay && nativePluginPanel?.id === id) {
+        const panel = nativePluginPanel
+        view.setBounds({ x: panel.x, y: panel.y, width: Math.max(0, Math.min(panel.width, width - panel.x)), height: Math.max(0, Math.min(panel.height, height - panel.y)) })
+        view.setVisible(service.status(registry.get(id)).connection === 'connected')
+        continue
+      }
       view.setBounds({ x: 0, y: 42, width, height: Math.max(0, height - 42) })
       view.setVisible(!overlay && id === active && service.status(registry.get(id)).connection === 'connected')
     }
@@ -310,7 +337,7 @@ async function main(diagnostics: DesktopDiagnostics): Promise<void> {
     if (!view.webContents.isDestroyed()) view.webContents.close()
     views.delete(id)
   }
-  const syncSoftware = (id: InstanceId, presentationOnly = false): Promise<void> => {
+  const syncSoftware = (id: InstanceId, presentationOnly = false, includeCredentials = true): Promise<void> => {
     const previous = settingsSyncs.get(id) ?? Promise.resolve()
     const pending = previous.then(async () => {
       const preferences = software.snapshot()
@@ -333,8 +360,58 @@ async function main(diagnostics: DesktopDiagnostics): Promise<void> {
       const document = await call('read', {}) as InstanceSettingsDocument
       const resolved = resolveInstanceSettings(preferences, document, locale.id)
       if (views.get(id) !== view) return
+      const transcriptSupport = resolved.support.fields.transcriptView
+      if (transcriptSupport?.namespace) transcriptSupport.options = ['compact', 'standard', 'detailed', 'verbose']
       settingsSupport.set(id, resolved.support)
       const failures = resolved.failures
+      const defaultPresetSupport = resolved.support.fields.defaultPreset
+      if (defaultPresetSupport?.namespace) {
+        try {
+          const presets = parseInstancePresetRoster(await call('presetRoster', {}))
+          const presetIds = presets.filter(preset => !preset.broken).map(preset => preset.id)
+          defaultPresetSupport.options = presetIds
+          if (!presetIds.includes(preferences.dsh.defaultPreset)) {
+            const index = resolved.edits.findIndex(([namespace]) => namespace === 'agent-preset-registry')
+            if (index >= 0) {
+              delete resolved.edits[index]![1].selectedDefault
+              if (!Object.keys(resolved.edits[index]![1]).length) resolved.edits.splice(index, 1)
+            }
+            failures.push(`Default Agent preset is not available: ${preferences.dsh.defaultPreset}`)
+          }
+          const creator = presets.find(preset => preset.id === 'cordis')
+          if (!creator) failures.push('Creator mode is unavailable because the cordis preset is not registered')
+          else if (creator.broken) failures.push(`Creator mode failed to load: ${String(creator.broken)}`)
+        } catch (error) {
+          const index = resolved.edits.findIndex(([namespace]) => namespace === 'agent-preset-registry')
+          if (index >= 0) {
+            delete resolved.edits[index]![1].selectedDefault
+            if (!Object.keys(resolved.edits[index]![1]).length) resolved.edits.splice(index, 1)
+          }
+          failures.push(`Agent preset roster: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
+      const permissionPresetSupport = resolved.support.fields.permissionDefaultPreset
+      if (permissionPresetSupport?.namespace) {
+        try {
+          const options = parsePermissionPresetOptions(await call('permissionRoster', {}))
+          permissionPresetSupport.options = options
+          if (!options.includes(preferences.dsh.permissionDefaultPreset)) {
+            const index = resolved.edits.findIndex(([namespace]) => namespace === 'permission')
+            if (index >= 0) {
+              delete resolved.edits[index]![1].defaultPreset
+              if (!Object.keys(resolved.edits[index]![1]).length) resolved.edits.splice(index, 1)
+            }
+            failures.push(`Default permission preset is not available: ${preferences.dsh.permissionDefaultPreset}`)
+          }
+        } catch (error) {
+          const index = resolved.edits.findIndex(([namespace]) => namespace === 'permission')
+          if (index >= 0) {
+            delete resolved.edits[index]![1].defaultPreset
+            if (!Object.keys(resolved.edits[index]![1]).length) resolved.edits.splice(index, 1)
+          }
+          failures.push(`Permission preset catalog: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
       const removed = software.removedSourceIds()
       for (const section of document.namespaces) {
         const namespace = section.ns
@@ -352,8 +429,10 @@ async function main(diagnostics: DesktopDiagnostics): Promise<void> {
           failures.push(`${namespace}: ${error instanceof Error ? error.message : String(error)}`)
         }
       }
-      for (const credential of software.instanceCredentials()) {
-        await call(credential.value === undefined ? 'credentialRemove' : 'credentialSet', credential)
+      if (includeCredentials) {
+        for (const credential of software.instanceCredentials()) {
+          await call(credential.value === undefined ? 'credentialRemove' : 'credentialSet', credential)
+        }
       }
       const sources = software.instanceSources()
       if (sources.length || removed.length) {
@@ -375,8 +454,10 @@ async function main(diagnostics: DesktopDiagnostics): Promise<void> {
     settingsSyncs.set(id, pending)
     return pending
   }
-  const syncConnected = async (): Promise<void> => {
-    await Promise.all(registry.snapshot().instances.filter(config => service.status(config).connection === 'connected').map(config => syncSoftware(config.id)))
+  const syncConnected = async (includeCredentials = true): Promise<void> => {
+    await Promise.all(registry.snapshot().instances
+      .filter(config => service.status(config).connection === 'connected')
+      .map(config => syncSoftware(config.id, false, includeCredentials)))
   }
   window.webContents.on('did-finish-load', () => {
     previewAppearance = undefined
@@ -460,20 +541,28 @@ async function main(diagnostics: DesktopDiagnostics): Promise<void> {
     if (!local) throw new Error('Open this local instance first')
     return local
   }
-  const changePlugins = async (id: InstanceId, mutation: DesktopProjectMutation | 'reset'): Promise<void> => {
+  const changePlugins = async (
+    id: InstanceId, mutation: DesktopProjectMutation | 'reset', externalSignal?: AbortSignal,
+  ): Promise<void> => {
     if (mutations.has(id)) throw new Error('Instance configuration is being changed')
     mutations.add(id)
+    const controller = new AbortController()
+    mutationControllers.set(id, controller)
+    const signal = externalSignal === undefined ? controller.signal : AbortSignal.any([controller.signal, externalSignal])
     try {
       const local = localFor(id)
       destroyView(id)
       await service.stop(id)
-      try { await local.mutate(mutation) }
+      try { await local.mutate(mutation, signal) }
       catch (error) {
         if (error instanceof DesktopProfileMutationError && error.recovered) await openView(id)
         throw error
       }
       await openView(id)
-    } finally { mutations.delete(id) }
+    } finally {
+      mutations.delete(id)
+      if (mutationControllers.get(id) === controller) mutationControllers.delete(id)
+    }
   }
   const pluginOwner = (event: IpcMainInvokeEvent): InstanceId | 'library' => {
     if (closing) throw new Error('Manager is shutting down')
@@ -488,6 +577,10 @@ async function main(diagnostics: DesktopDiagnostics): Promise<void> {
   }
   const openPlugins = (id: InstanceId): void => {
     localFor(id)
+    if (service.status(registry.get(id)).connection === 'connected') {
+      window.webContents.send(MANAGER_SHORTCUT, `plugins:${id}`)
+      return
+    }
     if (!app.isPackaged && process.env.DSH_DESKTOP_DSH_DIR === undefined) {
       throw new Error('Plugin installation requires a runtime-backed desktop application')
     }
@@ -515,6 +608,26 @@ async function main(diagnostics: DesktopDiagnostics): Promise<void> {
     plugin.once('closed', () => { pluginWindows.delete(id) })
     void plugin.loadURL('dsh-app://shell/plugin-manager.html')
   }
+  ipcMain.handle(INSTANCE_OPEN_PLUGINS, (event, request: unknown) => {
+    const owner = [...views].find(([, view]) => view.webContents === event.sender)
+    if (closing || !owner || registry.get(owner[0]).kind !== 'local'
+      || event.senderFrame !== owner[1].webContents.mainFrame
+      || !owner[1].webContents.getURL().startsWith('dsh-app://app/')) {
+      throw new Error('Rejected instance plugin navigation sender')
+    }
+    const mode = typeof request === 'string' ? request : payload(request).mode
+    let packageName: string | undefined
+    if (mode === 'bundle') {
+      const value = payload(request).packageName
+      if (typeof value !== 'string' || packageNameFromSpec(value) !== value) throw new Error('Invalid plugin package')
+      packageName = value
+    } else if (mode !== undefined && mode !== 'native' && mode !== 'discover') {
+      throw new Error('Invalid plugin navigation mode')
+    }
+    if (mode === 'discover') window.webContents.send(MANAGER_SHORTCUT, `discover-plugins:${owner[0]}`)
+    else if (packageName) window.webContents.send(MANAGER_SHORTCUT, `plugins:${owner[0]}:${encodeURIComponent(packageName)}`)
+    else openPlugins(owner[0])
+  })
   protocol.handle(SCHEME, request => new URL(request.url).hostname === 'shell' ? shellAsset(request) : Promise.resolve(new Response(null, { status: 403 })))
   const managerOperation = async (event: IpcMainInvokeEvent, operation: unknown, input: unknown): Promise<unknown> => {
     if (closing || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== MANAGER_URL) throw new Error('Rejected manager IPC sender')
@@ -564,9 +677,74 @@ async function main(diagnostics: DesktopDiagnostics): Promise<void> {
       }
       return
     }
+    if (operation === 'kernelShortcuts') {
+      if (args.action !== 'open') throw new Error('Unsupported kernel shortcut operation')
+      const id = instanceId(args.id)
+      const view = views.get(id)
+      if (!view || service.status(registry.get(id)).connection !== 'connected') {
+        throw new Error('Open a connected instance before using its kernel shortcuts')
+      }
+      const platform = process.platform === 'darwin' ? 'macos' : process.platform === 'linux' ? 'linux' : 'windows'
+      const localRaw = registry.get(id).kind === 'local'
+        ? await readFile(join(app.getPath('userData'), 'keybindings.json'), 'utf8').catch(() => null)
+        : null
+      const instanceRaw: unknown = await view.webContents.executeJavaScript(
+        'globalThis.localStorage?.getItem("dsh.keybindings.v1") ?? null',
+      ).catch((error: unknown) => {
+        diagnostics.error(`instance-shortcuts:${id}`, error)
+        return null
+      })
+      const raw = typeof instanceRaw === 'string' && instanceRaw.length <= 1024 * 1024 ? instanceRaw : localRaw
+      const binding = kernelOpenBinding(raw, platform)
+      if (!binding) throw new Error('The DSH shortcuts command is unbound; open DSH Settings to restore it')
+      const first = electronShortcutKey(binding.code)
+      const second = binding.secondCode === undefined ? undefined : electronShortcutKey(binding.secondCode)
+      if (!first || binding.secondCode !== undefined && !second) throw new Error('The DSH shortcuts shortcut is not applicable on this platform')
+      const modifiers = electronShortcutModifiers(binding, platform) as Array<'control' | 'alt' | 'shift' | 'meta'>
+      view.webContents.focus()
+      const send = (type: 'keyDown' | 'keyUp', keyCode: string): void => {
+        view.webContents.sendInputEvent({ type, keyCode, modifiers })
+      }
+      send('keyDown', first)
+      if (second) send('keyDown', second)
+      await new Promise(resolve => setTimeout(resolve, 30))
+      if (second) send('keyUp', second)
+      send('keyUp', first)
+      return
+    }
     if (operation === 'overlay') {
       if (typeof args.visible !== 'boolean') throw new Error('Invalid visibility')
+      hideNativePlugins()
       overlay = args.visible; layout(); return
+    }
+    if (operation === 'plugins' && args.action === 'hide') { hideNativePlugins(); layout(); return }
+    if (operation === 'plugins' && args.action === 'embed') {
+      const id = instanceId(args.id)
+      const view = views.get(id)
+      if (registry.get(id).kind !== 'local' || service.status(registry.get(id)).connection !== 'connected' || !view
+        || !view.webContents.getURL().startsWith('dsh-app://app/')) throw new Error('Open a local instance before managing its kernel plugins')
+      const bounds = payload(args.input)
+      const packageName = args.packageName === undefined ? undefined : text(args.packageName)
+      const [width = 1440, height = 920] = window.getContentSize()
+      if (!['x', 'y', 'width', 'height'].every(key => Number.isSafeInteger(bounds[key]))
+        || Number(bounds.x) < 0 || Number(bounds.y) < 42 || Number(bounds.width) < 1 || Number(bounds.height) < 1
+        || Number(bounds.x) + Number(bounds.width) > width || Number(bounds.y) + Number(bounds.height) > height) throw new Error('Invalid plugin panel bounds')
+      if (nativePluginPanel?.id !== id || nativePluginPanel.packageName !== packageName) {
+        hideNativePlugins()
+        const epoch = nativePluginEpoch
+        await view.webContents.executeJavaScript(`if (!globalThis.__DSH_NATIVE_PLUGINS__) throw new Error("Kernel plugin panel is not ready"); globalThis.__DSH_NATIVE_PLUGINS__.show(${JSON.stringify(packageName)})`)
+        if (epoch !== nativePluginEpoch) {
+          await view.webContents.executeJavaScript('globalThis.__DSH_NATIVE_PLUGINS__?.hide()')
+          return
+        }
+      }
+      nativePluginPanel = {
+        id, ...(packageName === undefined ? {} : { packageName }),
+        x: Number(bounds.x), y: Number(bounds.y), width: Number(bounds.width), height: Number(bounds.height),
+      }
+      overlay = true
+      layout()
+      return
     }
     if (operation === 'save') {
       const id = args.id === undefined ? undefined : instanceId(args.id)
@@ -584,8 +762,10 @@ async function main(diagnostics: DesktopDiagnostics): Promise<void> {
     }
     if (operation === 'softwareSettings') {
       const input = payload(args.input)
+      let syncCredentials = false
       switch (args.action) {
         case 'read': return softwareSnapshot()
+        case 'fontRoster': return systemFontFamilies()
         case 'debugMode': {
           software.setDebugMode(input.value)
           if (!software.snapshot().debugMode) {
@@ -618,20 +798,20 @@ async function main(diagnostics: DesktopDiagnostics): Promise<void> {
           const ref = text(input.ref)
           return { [ref]: { configured: data.credentials.includes(ref), writable: data.credentialWritable, source: 'software' } }
         }
-        case 'credentialSet': software.setCredential(input.ref, input.value); break
-        case 'credentialRemove': software.removeCredential(input.ref); break
+        case 'credentialSet': software.setCredential(input.ref, input.value); syncCredentials = true; break
+        case 'credentialRemove': software.removeCredential(input.ref); syncCredentials = true; break
         case 'dshUpdate': software.updateDsh(input.value); break
         case 'personalize': software.personalize(input.value); previewAppearance = undefined; break
-        case 'sourceSave': software.saveSource(input.id, input.config, input.key); break
+        case 'sourceSave': software.saveSource(input.id, input.config, input.key); syncCredentials = true; break
         case 'sourceModels': {
           const source = parseModelSource(input.config, modelSourceId(input.id ?? randomUUID()))
           const key = typeof input.key === 'string' && input.key ? input.key : software.sourceCredential(input.id)
           return discoverSourceModels(source, key, registryFetch)
         }
-        case 'sourceRemove': software.removeSource(input.id); break
+        case 'sourceRemove': software.removeSource(input.id); syncCredentials = true; break
         default: throw new Error('Unsupported software settings operation')
       }
-      await syncConnected()
+      await syncConnected(syncCredentials)
       publish()
       return softwareSnapshot()
     }
@@ -677,6 +857,11 @@ async function main(diagnostics: DesktopDiagnostics): Promise<void> {
       }
     }
     if (operation === 'shortcutCapture') { shortcutCapture = args.visible === true; return }
+    if (operation === 'dirty') {
+      if (typeof args.dirty !== 'boolean') throw new Error('Invalid unsaved-settings state')
+      managerDirty = args.dirty
+      return
+    }
     if (operation === 'shortcuts') { if (args.action === 'reset') software.shortcuts(DEFAULT_SHORTCUTS); else if (args.bindings !== undefined) software.shortcuts(args.bindings); shortcuts = software.snapshot().shortcuts; return shortcuts }
     const id = instanceId(args.id)
     registry.get(id)
@@ -740,15 +925,17 @@ async function main(diagnostics: DesktopDiagnostics): Promise<void> {
     const config = registry.get(id)
     if (mutations.has(id)) throw new Error('Instance configuration is being changed')
     if (config.kind === 'local') {
-      return library.withSource(plugin.name, plugin.version, source => changePlugins(id, { type: 'plugin-inject', ...plugin, source }))
+      return library.withSource(plugin.name, plugin.version, (source, signal) => changePlugins(id, {
+        type: 'plugin-inject', ...plugin, source,
+      }, signal))
     }
-    return library.withSelection(plugin.name, plugin.version, async () => {
+    return library.withSelection(plugin.name, plugin.version, async signal => {
       if (service.status(config).connection !== 'connected') throw new Error('Connect to the remote instance before injecting plugins')
       mutations.add(id)
       destroyView(id)
       let failure: Error | undefined
       try {
-        try { await service.injectPlugin(config, plugin) }
+        try { await service.injectPlugin(config, plugin, signal) }
         catch (error) { failure = error instanceof Error ? error : new Error(String(error)) }
         try { await openView(id) }
         catch (error) {
@@ -794,6 +981,11 @@ async function main(diagnostics: DesktopDiagnostics): Promise<void> {
     return changePlugins(instancePluginOwner(event), { type: 'plugin-toggle', name: text(name), enabled })
   })
   ipcMain.handle(DESKTOP_IPC.pluginsDisableAll, event => changePlugins(instancePluginOwner(event), { type: 'plugins-disable-all' }))
+  ipcMain.handle(DESKTOP_IPC.pluginsCancel, event => {
+    pluginOwner(event)
+    for (const controller of mutationControllers.values()) controller.abort(new Error('Plugin operation cancelled'))
+    library.cancel()
+  })
   ipcMain.handle(DESKTOP_IPC.backendStatus, (event) => {
     if (pluginOwner(event) === 'library') return { phase: 'ready' }
     const state = service.status(registry.get(instancePluginOwner(event)))
@@ -813,13 +1005,39 @@ async function main(diagnostics: DesktopDiagnostics): Promise<void> {
     quitPending = true
     void (async () => {
       const activeLocals = registry.snapshot().instances.some(config => config.kind === 'local' && ['running', 'starting'].includes(service.status(config).process))
-      if (activeLocals && !relocateOnQuit) {
-        const response = await dialog.showMessageBox(window, { type: 'question', title: messages.quitTitle, message: messages.quitMessage, buttons: [messages.cancel, messages.quit], defaultId: 0, cancelId: 0 })
+      if ((activeLocals || managerDirty) && !relocateOnQuit) {
+        const response = await dialog.showMessageBox(window, {
+          type: 'question', title: messages.quitTitle,
+          message: managerDirty ? messages.quitUnsavedMessage : messages.quitMessage,
+          ...(managerDirty && activeLocals ? { detail: messages.quitMessage } : {}),
+          buttons: [messages.cancel, messages.quit], defaultId: 0, cancelId: 0,
+        })
         if (response.response !== 1) return
       }
       closing = true
-      await library.settled()
-      await kernels?.settled()
+      for (const controller of mutationControllers.values()) controller.abort(new Error('Application is shutting down'))
+      library.cancel()
+      kernels?.cancel()
+      const settleWithin = async (promise: Promise<unknown>, label: string): Promise<void> => {
+        let timer: ReturnType<typeof setTimeout> | undefined
+        try {
+          await Promise.race([
+            promise.catch((error: unknown) => { diagnostics.error(label, error) }),
+            new Promise<void>((resolve) => {
+              timer = setTimeout(() => {
+                diagnostics.info(`${label}-timeout`, { milliseconds: 15_000 })
+                resolve()
+              }, 15_000)
+            }),
+          ])
+        } finally {
+          if (timer !== undefined) clearTimeout(timer)
+        }
+      }
+      await Promise.all([
+        settleWithin(library.settled(), 'plugin-library-shutdown'),
+        settleWithin(kernels?.settled() ?? Promise.resolve(), 'kernel-shutdown'),
+      ])
       for (const timer of retryTimers.values()) clearTimeout(timer)
       for (const id of [...views.keys()]) destroyView(id)
       await service.close()

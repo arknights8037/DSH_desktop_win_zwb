@@ -93,7 +93,7 @@ export class DesktopPluginUpdates {
     const report: DesktopInstallReporter = progress => this.progress(id, progress)
     const signature = JSON.stringify(installed)
     if (!this.enabled || this.checked.get(id) === signature) {
-      try { await prepareLocalKernel(home, manager, this.library, [], report) }
+      try { await prepareLocalKernel(home, manager, this.library, [], report, signal) }
       catch (error) {
         this.report({ id, phase: 'error', changes: [], diagnostics: [], error: error instanceof Error ? error.message : String(error) })
         throw error
@@ -132,7 +132,7 @@ export class DesktopPluginUpdates {
         signal.throwIfAborted()
         try {
           await this.library.install(candidate.name, candidate.version,
-            event => report({ ...event, completed: index, total: candidates.length }))
+            event => report({ ...event, completed: index, total: candidates.length }), signal)
           updates.push({ name: candidate.name, version: candidate.version })
           changes.push({ name: candidate.name, from: candidate.from, to: candidate.version })
         } catch (error) {
@@ -141,7 +141,7 @@ export class DesktopPluginUpdates {
         }
       }
       signal.throwIfAborted()
-      await prepareLocalKernel(home, manager, this.library, updates, report)
+      await prepareLocalKernel(home, manager, this.library, updates, report, signal)
       this.checked.set(id, JSON.stringify(manager.listPlugins()))
       this.report({ id, phase: diagnostics.length ? 'warning' : 'ready', changes, diagnostics })
     } catch (error) {

@@ -4,7 +4,34 @@ import { modelSourceId, parseModelSource, sourceProfile, sourceRoute } from './m
 import { SOFTWARE_SETTING_TARGETS } from './settings-adapter.ts'
 
 /** Operations exposed by the manager without exposing an arbitrary RPC dispatcher. */
-export type InstanceSettingsAction = 'read' | 'update' | 'resetModel' | 'sources' | 'credentialInfo' | 'credentialSet' | 'credentialRemove'
+export type InstanceSettingsAction = 'read' | 'update' | 'resetModel' | 'sources' | 'presetRoster' | 'permissionRoster' | 'credentialInfo' | 'credentialSet' | 'credentialRemove'
+
+/** One valid preset identity and optional activation diagnostic from the instance roster. */
+export interface InstancePreset { id: string; broken?: string }
+
+/** Parse the host-owned roster at the IPC boundary. */
+export function parseInstancePresetRoster(value: unknown): InstancePreset[] {
+  const result = record(value)
+  if (!Array.isArray(result.presets)) throw new Error('Invalid agent preset roster')
+  return result.presets.map(item => {
+    const preset = record(item)
+    if (typeof preset.id !== 'string' || !preset.id || preset.broken !== undefined && typeof preset.broken !== 'string') {
+      throw new Error('Invalid agent preset roster')
+    }
+    return { id: preset.id, ...(preset.broken === undefined ? {} : { broken: preset.broken }) }
+  })
+}
+
+/** Parse the settings choices returned by the permission domain catalog. */
+export function parsePermissionPresetOptions(value: unknown): string[] {
+  const result = record(value)
+  if (!Array.isArray(result.defaultOptions)) throw new Error('Invalid permission preset catalog')
+  return result.defaultOptions.map(item => {
+    const option = record(item)
+    if (typeof option.value !== 'string' || !option.value) throw new Error('Invalid permission preset catalog')
+    return option.value
+  })
+}
 
 /** Editable product fields; the instance remains responsible for schema validation and persistence. */
 const fields = new Map<string, Set<string>>()
@@ -61,6 +88,8 @@ export async function instanceSettings(
       ] }
       break
     }
+    case 'presetRoster': endpoint = 'agentPresets/list'; values = {}; break
+    case 'permissionRoster': endpoint = 'permissionPresets/catalog'; values = {}; break
     case 'update': {
       const ns = args.namespace
       const edits = args.edits === undefined ? { [String(args.field)]: args.value } : record(args.edits)

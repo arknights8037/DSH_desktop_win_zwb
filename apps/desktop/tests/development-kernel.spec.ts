@@ -45,9 +45,10 @@ it('refuses missing selections and mismatched runtime metadata', () => {
 
 it('refuses a selected kernel older than the repository runtime release', () => {
   const { home, root, selection, runtime } = fixture()
-  runtimeFixture(join(root, 'releases', '0.2.0'), '0.2.0')
-  writeFileSync(selection, JSON.stringify({ version: 1, selected: '0.2.0', previous: null, automatic: false }))
-  expect(() => resolveDevelopmentKernel(home, runtime)).toThrow('must be at least 0.2.1-rc.2')
+  const required = (JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8')) as { version: string }).version
+  runtimeFixture(join(root, 'releases', '0.0.0'), '0.0.0')
+  writeFileSync(selection, JSON.stringify({ version: 1, selected: '0.0.0', previous: null, automatic: false }))
+  expect(() => resolveDevelopmentKernel(home, runtime)).toThrow(`must be at least ${required}`)
 })
 
 it('refuses mismatched or missing prepared tools', () => {

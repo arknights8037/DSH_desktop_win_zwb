@@ -1,5 +1,11 @@
 @import url('plugin-workspace.css');
-:root { color-scheme: light dark; font-family: system-ui, sans-serif; background: Canvas; color: CanvasText; --muted: GrayText; --line: ButtonBorder; --panel: Canvas; --brand: LinkText; --danger: MarkText; --mono: monospace; }
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; background: Canvas; color: CanvasText; --muted: GrayText; --line: ButtonBorder; --panel: Canvas; --brand: LinkText; --danger: MarkText; --mono: monospace; --scrollbar-thumb: rgb(123 128 138 / 32%); --scrollbar-thumb-hover: rgb(105 111 122 / 52%); }
+* { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-button, *::-webkit-scrollbar-button:single-button, *::-webkit-scrollbar-button:double-button { display: none; width: 0; height: 0; }
+*::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); background-clip: padding-box; border: 2px solid transparent; border-radius: 999px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); background-clip: padding-box; }
 body { margin: 0; }
 main { max-width: 1200px; margin: 0 auto; padding: 32px; }
 .plugin-workspace .plugin-overview h1 { display: block; margin-top: 0; }

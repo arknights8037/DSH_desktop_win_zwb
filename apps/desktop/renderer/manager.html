@@ -6,14 +6,17 @@
   <main id="panel"><section id="first-run" aria-labelledby="first-run-title"><h2 id="first-run-title" data-copy="firstRunTitle"></h2><div class="choice-grid"><button class="choice-card" data-kind="local"><strong data-copy="localTitle"></strong><span data-copy="localDescription"></span></button><button class="choice-card" data-kind="ssh"><strong data-copy="remoteTitle"></strong><span data-copy="remoteDescription"></span></button></div></section><section id="settings-page" aria-labelledby="settings-title" hidden>
     <div class="settings-layout">
       <nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-labelledby="settings">
+        <div class="settings-nav-group" role="presentation" data-copy="desktopSettingsGroup"></div>
         <button id="settings-tab-general" data-settings-tab="general" role="tab" aria-controls="settings-pane-general"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg><span data-copy="applicationSettingsNav"></span></button>
-        <button id="settings-tab-instances" data-settings-tab="instances" role="tab" aria-controls="settings-pane-instances"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/></svg><span data-copy="manageTitle"></span></button>
         <button id="settings-tab-appearance" data-settings-tab="appearance" role="tab" aria-controls="settings-pane-appearance"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg><span data-copy="appearance"></span></button>
-        <button id="settings-tab-storage" data-settings-tab="storage" role="tab" aria-controls="settings-pane-storage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="8" cy="7" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="11" cy="17" r="1"/></svg><span data-copy="storageTitle"></span></button>
         <button id="settings-tab-shortcuts" data-settings-tab="shortcuts" role="tab" aria-controls="settings-pane-shortcuts"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h1m4 0h1m4 0h1M6 12h1m4 0h1m4 0h1M7 16h10"/></svg><span data-copy="keyboardShortcuts"></span></button>
+        <div class="settings-nav-group" role="presentation" data-copy="agentSettingsGroup"></div>
         <button id="settings-tab-keys" data-settings-tab="keys" role="tab" aria-controls="settings-pane-keys"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="5"/><path d="m12 12 9 9m-4-4 3-3m-6 0 3-3"/></svg><span data-copy="modelCredentials"></span></button>
         <button id="settings-tab-advanced" data-settings-tab="advanced" role="tab" aria-controls="settings-pane-advanced"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg><span data-copy="instanceSettings"></span></button>
+        <div class="settings-nav-group" role="presentation" data-copy="workspaceSettingsGroup"></div>
+        <button id="settings-tab-instances" data-settings-tab="instances" role="tab" aria-controls="settings-pane-instances"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/></svg><span data-copy="manageTitle"></span></button>
         <button id="settings-tab-plugins" data-settings-tab="plugins" role="tab" aria-controls="settings-pane-plugins"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3v5H4v5h5v8h6v-8h5V8h-5V3z"/></svg><span data-copy="plugins"></span></button>
+        <button id="settings-tab-storage" data-settings-tab="storage" role="tab" aria-controls="settings-pane-storage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="8" cy="7" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="11" cy="17" r="1"/></svg><span data-copy="storageTitle"></span></button>
       </nav>
       <div class="settings-content"><div class="settings-body">
         <div id="settings-product" class="settings-product"><svg viewBox="0 0 40 40" aria-hidden="true"><rect x="3" y="5" width="34" height="30" rx="5"/><path d="m11 14 7 6-7 6m12 0h6"/></svg><div class="settings-product-copy"><strong>DSH</strong><div class="settings-product-meta"><span data-copy="title"></span><span id="app-version" class="version-tag"></span></div></div></div>
@@ -29,27 +32,30 @@
           <p id="storage-empty" class="settings-hint" data-copy="storageEmpty" hidden></p>
         </div>
         <div id="settings-pane-plugins" data-settings-pane="plugins" role="tabpanel" aria-labelledby="settings-tab-plugins" hidden>
+            <div class="plugin-context"><div><label for="native-plugin-instance" data-copy="pluginCurrentInstance"></label><select id="native-plugin-instance"></select></div><span id="plugin-instance-state" class="plugin-context-state"></span><button id="native-plugin-open" data-copy="pluginStartInstance"></button></div>
+            <div class="plugin-mode-switch" role="tablist" aria-label="Plugins"><button id="plugin-mode-native" role="tab" aria-selected="true" aria-controls="native-plugin-settings" data-copy="pluginNativeTab"></button><button id="plugin-mode-library" role="tab" aria-selected="false" aria-controls="plugin-workspace" data-copy="pluginLibraryTab"></button><button id="plugin-mode-advanced" role="tab" aria-selected="false" aria-controls="plugin-library-options" data-copy="pluginAdvancedTab"></button></div>
+            <section id="native-plugin-settings" role="tabpanel" aria-labelledby="plugin-mode-native">
+              <p id="native-plugin-status" role="status"></p>
+              <div id="native-plugin-empty" class="plugin-empty-state" hidden><strong data-copy="pluginConnectTitle"></strong><p id="native-plugin-empty-copy"></p><button id="plugin-empty-open" data-copy="pluginStartInstance"></button><button id="plugin-empty-discover" data-copy="pluginLibraryTab"></button></div>
+              <div id="native-plugin-surface" hidden></div>
+            </section>
           <p id="plugin-development-hint" class="settings-hint" data-copy="pluginPackagedOnly" hidden></p>
-          <div class="plugin-library-card">
+            <div id="plugin-library-options" class="plugin-library-card" role="tabpanel" aria-labelledby="plugin-mode-advanced" hidden>
             <label class="setting-row"><span data-copy="pluginUpdateAutomatic"></span><input id="plugin-update-automatic" type="checkbox"></label>
 
             <div id="plugin-update-reports" role="status" aria-live="polite"></div>
           </div>
-          <div id="plugin-workspace"></div>
-          <div id="plugin-deployments" data-instance-deployments><h3 data-copy="pluginInstances"></h3>
-          <div id="plugin-instances" class="instance-list"></div>
-          <div id="plugin-no-instances" hidden><button id="plugin-add-instance" data-copy="instances"></button></div></div>
+            <div id="plugin-workspace" hidden></div>
         </div>
         <div id="settings-pane-general" data-settings-pane="general" role="tabpanel" aria-labelledby="settings-tab-general">
-          <div class="setting-row"><span id="diagnostics-label" data-copy="openLogs"></span><button id="diagnostics-open" data-copy="storageOpen" aria-labelledby="diagnostics-label"></button></div>
-          <label class="setting-row"><span><strong data-copy="debugMode"></strong><small data-copy="debugModeHint"></small></span><input id="debug-mode" type="checkbox" role="switch"></label>
-          <div class="plugin-library-card"><h3 data-copy="kernelTitle"></h3><label class="setting-row"><span data-copy="kernelAutomatic"></span><input id="kernel-automatic" type="checkbox"></label><div id="kernel-status" role="status" aria-live="polite"></div><div class="kernel-actions"><button id="kernel-check" data-copy="kernelCheck"></button><button id="kernel-install" data-copy="kernelInstall"></button></div></div>
           <label class="setting-row"><span><strong data-copy="language"></strong></span><select id="language"><option value="" data-copy="systemTheme"></option><option value="zh" data-copy="chinese"></option><option value="en" data-copy="english"></option></select></label>
-          <label class="setting-row"><span><strong data-copy="busyEnter"></strong></span><select id="busy-enter"><option value="queue" data-copy="queueMessage"></option><option value="steer" data-copy="steerMessage"></option></select></label>
+          <div class="plugin-library-card"><h3 data-copy="kernelTitle"></h3><label class="setting-row"><span data-copy="kernelAutomatic"></span><input id="kernel-automatic" type="checkbox"></label><div id="kernel-status" role="status" aria-live="polite"></div><div class="kernel-actions"><button id="kernel-check" data-copy="kernelCheck"></button><button id="kernel-install" data-copy="kernelInstall"></button></div></div>
+          <label class="setting-row"><span><strong data-copy="debugMode"></strong><small data-copy="debugModeHint"></small></span><input id="debug-mode" type="checkbox" role="switch" disabled></label>
+          <div class="setting-row"><span id="diagnostics-label" data-copy="openLogs"></span><button id="diagnostics-open" data-copy="storageOpen" aria-labelledby="diagnostics-label"></button></div>
         </div>
         <div id="settings-pane-appearance" data-settings-pane="appearance" role="tabpanel" aria-labelledby="settings-tab-appearance" hidden>
           <label class="setting-row"><span><strong data-copy="appearance"></strong></span><select id="theme"><option value="system" data-copy="systemTheme"></option><option value="light" data-copy="lightTheme"></option><option value="dark" data-copy="darkTheme"></option></select></label>
-          <label class="setting-row"><span><strong data-copy="contentFontSize"></strong></span><select id="font-size"><option>12</option><option>13</option><option>14</option><option>15</option><option>16</option><option>17</option></select></label>
+          <label class="setting-row"><span><strong data-copy="contentFontSize"></strong></span><select id="font-size"><option>10</option><option>11</option><option>12</option><option>13</option><option>14</option><option>15</option><option>16</option><option>17</option><option>18</option><option>19</option><option>20</option><option>21</option><option>22</option></select></label>
           <label class="setting-row"><span><strong data-copy="smoothMotion"></strong></span><input id="motion-enabled" type="checkbox"></label>
           <form id="personal-appearance-form">
             <h3 data-copy="wallpaperTitle"></h3>
@@ -64,32 +70,97 @@
             <div id="personal-colors" class="personal-colors"></div>
             <div class="appearance-actions"><label class="file-button"><span data-copy="importColors"></span><input id="colors-import" type="file" accept="application/json,.json"></label><button id="colors-export" type="button" data-copy="exportColors"></button><button id="appearance-defaults" type="button" data-copy="restoreDefaults"></button></div>
             <div class="appearance-preview" aria-hidden="true"><div class="preview-tabs"></div><div class="preview-sidebar"></div><div class="preview-chat"><strong data-copy="appearancePreview"></strong><p data-copy="previewText"></p><div class="preview-input" data-copy="previewInput"></div></div></div>
-            <div class="appearance-actions appearance-save"><button class="primary" type="submit" data-copy="saveAndApply"></button><button id="appearance-revert" type="button" data-copy="cancel"></button><span id="appearance-save-status" role="status"></span></div>
+            <div class="settings-save-actions"><span id="appearance-save-status" role="status"></span><button id="appearance-revert" type="button" data-copy="cancel"></button><button class="primary save-action" type="submit" data-copy="saveAndApply"></button></div>
           </form>
         </div>
-        <div id="settings-pane-shortcuts" data-settings-pane="shortcuts" role="tabpanel" aria-labelledby="settings-tab-shortcuts" hidden><div id="shortcut-list"></div><button id="shortcut-reset" data-copy="restoreDefaults"></button></div>
+        <div id="settings-pane-shortcuts" data-settings-pane="shortcuts" role="tabpanel" aria-labelledby="settings-tab-shortcuts" hidden>
+          <section class="shortcut-scope-card">
+            <div class="shortcut-scope-heading">
+              <div><h3 data-copy="kernelShortcutsTitle"></h3><p data-copy="kernelShortcutsHint"></p></div>
+              <span class="scope-badge" data-copy="kernelShortcutScope"></span>
+            </div>
+            <div class="kernel-shortcut-groups">
+              <div><strong data-copy="kernelShortcutAgent"></strong><span data-copy="kernelShortcutAgentItems"></span></div>
+              <div><strong data-copy="kernelShortcutInput"></strong><span data-copy="kernelShortcutInputItems"></span></div>
+              <div><strong data-copy="kernelShortcutPanels"></strong><span data-copy="kernelShortcutPanelItems"></span></div>
+              <div><strong data-copy="kernelShortcutMenus"></strong><span data-copy="kernelShortcutMenuItems"></span></div>
+            </div>
+            <div class="shortcut-scope-footer"><span id="kernel-shortcuts-context"></span><button id="kernel-shortcuts-open" data-copy="openKernelShortcuts"></button></div>
+          </section>
+          <section class="shortcut-scope-card">
+            <div class="shortcut-scope-heading">
+              <div><h3 data-copy="shellShortcutsTitle"></h3><p data-copy="shellShortcutsHint"></p></div>
+              <span class="scope-badge" data-copy="shellShortcutScope"></span>
+            </div>
+            <div id="shortcut-list" class="shell-shortcut-list"></div>
+            <div class="shortcut-scope-footer"><span data-copy="shellShortcutsFooter"></span><button id="shortcut-reset" data-copy="restoreDefaults"></button></div>
+          </section>
+        </div>
         <div id="settings-pane-keys" data-settings-pane="keys" role="tabpanel" aria-labelledby="settings-tab-keys" hidden>
+          <section class="kernel-settings-card">
+            <div class="kernel-card-heading">
+              <h3 data-copy="deepseekAndCredentials"></h3>
+              <span id="api-key-status" class="credential-status" role="status"></span>
+            </div>
+            <div id="api-key-form" class="credential-controls">
+              <div class="deepseek-default-fields" hidden aria-hidden="true">
+                <input id="dsh-defaultProvider" data-dsh-field="defaultProvider" form="dsh-settings-form" type="text" maxlength="256">
+                <input id="dsh-defaultModel" data-dsh-field="defaultModel" form="dsh-settings-form" type="text" maxlength="256">
+                <input id="dsh-reasoningEffort" data-dsh-field="reasoningEffort" form="dsh-settings-form" list="reasoning-efforts" required maxlength="256"><datalist id="reasoning-efforts"><option value="off"></option><option value="low"></option><option value="high"></option><option value="max"></option></datalist>
+                <select id="dsh-deepseekProtocol" data-dsh-field="deepseekProtocol" form="dsh-settings-form"><option value="messages"></option><option value="chat-completions"></option></select>
+                <input id="dsh-deepseekBaseURL" data-dsh-field="deepseekBaseURL" form="dsh-settings-form" type="url" required maxlength="4096">
+                <input id="dsh-deepseekMaxTokens" data-dsh-field="deepseekMaxTokens" form="dsh-settings-form" type="number" required min="1" max="9007199254740991" step="1">
+                <input id="dsh-deepseekKeyRef" data-dsh-field="deepseekKeyRef" form="dsh-settings-form" type="text" required maxlength="256" pattern="[A-Za-z_][A-Za-z0-9_]*">
+              </div>
+              <input id="api-key-ref" type="hidden" value="DEEPSEEK_API_KEY">
+              <div id="api-key-field" class="credential-secret-row">
+                <label class="field-block"><span data-copy="keyValue"></span><div class="secret-input"><input id="api-key-value" type="password" autocomplete="new-password" maxlength="8192"><button id="key-reveal" type="button" data-copy="showSecret"></button></div></label>
+              </div>
+              <div class="key-actions"><button id="key-replace" type="button" data-copy="replaceKey" hidden></button><button id="key-remove" type="button" data-copy="removeKey" hidden></button></div>
+            </div>
+          </section>
 
-          <p id="sources-sync-status" class="settings-hint" role="status" hidden></p>
-          <div class="sources-heading"><h3 data-copy="modelSources"></h3><button id="source-add" data-copy="addSource"></button></div>
-          <p id="sources-empty" class="settings-hint" data-copy="sourcesEmpty"></p>
-          <div id="model-sources"></div>
-          <form id="source-form" hidden>
-            <h3 id="source-form-title"></h3>
-            <label class="setting-row"><span data-copy="sourceTemplate"></span><select id="source-template"><option value="custom" data-copy="sourceCustom"></option><option value="openai" data-copy="providerOpenAI"></option><option value="anthropic" data-copy="providerAnthropic"></option><option value="deepseek" data-copy="providerDeepSeek"></option><option value="gemini" data-copy="providerGemini"></option><option value="openrouter" data-copy="providerOpenRouter"></option><option value="qwen" data-copy="providerQwen"></option><option value="moonshot" data-copy="providerMoonshot"></option><option value="ollama" data-copy="providerOllama"></option></select></label>
-            <label class="setting-row"><span data-copy="sourceName"></span><input id="source-name" required maxlength="100"></label>
-            <label class="setting-row"><span data-copy="modelProtocol"></span><select id="source-protocol"><option value="openai-completions" data-copy="openaiCompletions"></option><option value="openai-responses" data-copy="openaiResponses"></option><option value="anthropic-messages" data-copy="anthropicMessages"></option></select></label>
-            <label class="setting-row"><span data-copy="modelBaseURL"></span><input id="source-url" type="url" required maxlength="4096"></label>
-            <div class="key-actions"><button id="source-fetch" type="button" data-copy="sourceFetch"></button><span id="source-fetch-status" role="status"></span></div>
-            <label id="source-catalog-field" class="setting-row" hidden><span><strong data-copy="sourceCatalog"></strong></span><select id="source-catalog" multiple size="6"></select></label>
-            <label class="setting-row"><span><strong data-copy="sourceModels"></strong></span><textarea id="source-models" rows="3" required></textarea></label>
-            <label class="setting-row"><span data-copy="sourceContextWindow"></span><input id="source-context" type="number" min="1" max="9007199254740991" step="1" value="262144" required></label>
-            <label class="setting-row"><span data-copy="modelMaxTokens"></span><input id="source-max-tokens" type="number" min="1" max="9007199254740991" step="1" value="32768" required></label>
-            <button id="source-key-replace" type="button" data-copy="replaceKey" hidden></button>
-            <label id="source-key-field" class="setting-row"><span data-copy="keyValue"></span><input id="source-key" type="password" autocomplete="new-password" maxlength="8192"></label>
-            <div class="key-actions"><button type="submit" class="primary" data-copy="saveAndApply"></button><button id="source-cancel" type="button" data-copy="cancel"></button></div>
-          </form>
-          <details id="standalone-keys"><summary data-copy="standaloneKeys"></summary><form id="api-key-form"><label><span data-copy="keyName"></span><input id="api-key-ref" value="DEEPSEEK_API_KEY" list="credential-refs" required pattern="[A-Za-z_][A-Za-z0-9_]*" maxlength="256"><datalist id="credential-refs"></datalist></label><p id="api-key-status" role="status"></p><button id="key-replace" type="button" data-copy="replaceKey" hidden></button><label id="api-key-field"><span data-copy="keyValue"></span><div class="secret-input"><input id="api-key-value" type="password" autocomplete="new-password" maxlength="8192"><button id="key-reveal" type="button" data-copy="showSecret"></button></div></label><div class="key-actions"><button type="submit" class="primary" data-copy="saveKey"></button><button id="key-remove" type="button" data-copy="removeKey"></button><button id="key-refresh" type="button" data-copy="refreshKey"></button></div></form></details>
+          <section class="kernel-settings-card provider-settings-card">
+            <div class="kernel-card-heading">
+              <h3 data-copy="thirdPartyProviders"></h3>
+              <button id="source-add" type="button" data-copy="addProvider" disabled></button>
+            </div>
+            <div id="sources-empty" class="provider-empty-state">
+              <strong data-copy="providersEmptyTitle"></strong>
+            </div>
+            <div id="model-sources" class="provider-list"></div>
+            <form id="source-form" class="provider-editor" hidden>
+              <div class="provider-editor-heading">
+                <h3 id="source-form-title"></h3>
+                <button id="source-cancel" type="button" data-copy="cancel"></button>
+              </div>
+              <div class="provider-fields">
+                <label class="field-block"><span data-copy="sourceName"></span><input id="source-name" required maxlength="100"></label>
+                <label class="field-block"><span data-copy="modelProtocol"></span><select id="source-protocol"><option value="openai-completions" data-copy="openaiCompletions"></option><option value="openai-responses" data-copy="openaiResponses"></option><option value="anthropic-messages" data-copy="anthropicMessages"></option></select></label>
+                <label class="field-block provider-field-wide"><span data-copy="modelBaseURL"></span><input id="source-url" type="url" required maxlength="4096" placeholder="https://api.example.com/v1"></label>
+                <div class="field-block provider-field-wide">
+                  <div class="field-label-row"><span data-copy="sourceModels"></span><button id="source-fetch" type="button" data-copy="sourceFetch" disabled></button><span id="source-fetch-status" role="status"></span></div>
+                  <textarea id="source-models" rows="2" required placeholder="model-a&#10;model-b"></textarea>
+                </div>
+                <div class="provider-credential-field">
+                  <div class="provider-key-status"><span id="source-key-status"></span><button id="source-key-replace" type="button" data-copy="replaceKey" hidden></button></div>
+                  <label id="source-key-field" class="field-block"><span data-copy="keyValue"></span><input id="source-key" type="password" autocomplete="new-password" maxlength="8192"></label>
+                </div>
+              </div>
+              <details class="source-advanced">
+                <summary data-copy="sourceAdvanced"></summary>
+                <div class="field-grid">
+                  <label class="field-block"><span data-copy="sourceContextWindow"></span><input id="source-context" type="number" min="1" max="9007199254740991" step="1" value="262144" required></label>
+                  <label class="field-block"><span data-copy="modelMaxTokens"></span><input id="source-max-tokens" type="number" min="1" max="9007199254740991" step="1" value="32768" required></label>
+                </div>
+              </details>
+              <div class="settings-save-actions provider-editor-actions"><button type="submit" class="primary save-action" data-copy="saveProvider"></button></div>
+            </form>
+          </section>
+          <div class="settings-save-actions">
+            <span class="kernel-save-status" data-dsh-save-status role="status"></span>
+            <button id="model-settings-save" type="submit" form="dsh-settings-form" class="primary save-action" data-copy="saveAndApply"></button>
+          </div>
         </div>
         <div id="settings-pane-advanced" data-settings-pane="advanced" role="tabpanel" aria-labelledby="settings-tab-advanced" hidden>
 
@@ -97,33 +168,36 @@
           <form id="dsh-settings-form">
 
             <h3 data-copy="conversationSettings"></h3>
-            <label class="setting-row"><span><strong data-copy="defaultModelProvider"></strong></span><input id="dsh-defaultProvider" data-dsh-field="defaultProvider" type="text" maxlength="256"></label>
-            <label class="setting-row"><span><strong data-copy="defaultModelId"></strong></span><input id="dsh-defaultModel" data-dsh-field="defaultModel" type="text" maxlength="256"></label>
-            <label class="setting-row"><span><strong data-copy="transcriptView"></strong></span><select id="dsh-transcriptView" data-dsh-field="transcriptView"><option value="compact" data-copy="compactTranscript"></option><option value="normal" data-copy="normalTranscript"></option></select></label>
-            <label class="setting-row"><span><strong data-copy="modeSelectionEnabled"></strong></span><input id="dsh-modeSelectionEnabled" data-dsh-field="modeSelectionEnabled" type="checkbox"></label>
-            <label class="setting-row"><span><strong data-copy="defaultPreset"></strong></span><input id="dsh-defaultPreset" data-dsh-field="defaultPreset" type="text" required maxlength="256"></label>
-            <h3 data-copy="deepseekSettings"></h3>
-            <label class="setting-row"><span><strong data-copy="modelProtocol"></strong></span><select id="dsh-deepseekProtocol" data-dsh-field="deepseekProtocol"><option value="messages" data-copy="messagesProtocol"></option><option value="chat-completions" data-copy="completionsProtocol"></option></select></label>
-            <label class="setting-row"><span><strong data-copy="modelBaseURL"></strong></span><input id="dsh-deepseekBaseURL" data-dsh-field="deepseekBaseURL" type="url" required maxlength="4096"></label>
-            <label class="setting-row"><span><strong data-copy="modelKeyRef"></strong></span><input id="dsh-deepseekKeyRef" data-dsh-field="deepseekKeyRef" type="text" required maxlength="256" pattern="[A-Za-z_][A-Za-z0-9_]*"></label>
-            <label class="setting-row"><span><strong data-copy="modelMaxTokens"></strong></span><input id="dsh-deepseekMaxTokens" data-dsh-field="deepseekMaxTokens" type="number" required min="1" max="9007199254740991" step="1"></label>
-            <label class="setting-row"><span><strong data-copy="reasoningEffort"></strong></span><input id="dsh-reasoningEffort" data-dsh-field="reasoningEffort" list="reasoning-efforts" required maxlength="256"><datalist id="reasoning-efforts"><option value="off" data-copy="effortOff"></option><option value="low" data-copy="effortLow"></option><option value="high" data-copy="effortHigh"></option><option value="max" data-copy="effortMax"></option></datalist></label>
-            <div class="dsh-save"><button type="submit" class="primary" data-copy="saveAndApply"></button><span id="dsh-save-status" role="status"></span></div>
+            <label class="setting-row"><span><strong data-copy="busyEnter"></strong></span><select id="busy-enter"><option value="queue" data-copy="queueMessage"></option><option value="steer" data-copy="steerMessage"></option></select></label>
+            <label class="setting-row"><span><strong data-copy="transcriptView"></strong></span><select id="dsh-transcriptView" data-dsh-field="transcriptView"><option value="compact" data-copy="compactTranscript"></option><option value="standard" data-copy="standardTranscript"></option><option value="detailed" data-copy="detailedTranscript"></option><option value="verbose" data-copy="verboseTranscript"></option></select></label>
+            <label class="setting-row"><span><strong data-copy="collapseTiming"></strong></span><select id="dsh-collapseTiming" data-dsh-field="collapseTiming"><option value="completion" data-copy="collapseOnCompletion"></option><option value="next-input" data-copy="collapseOnNextInput"></option></select></label>
+            <label class="setting-row"><span><strong data-copy="performanceUsage"></strong></span><select id="dsh-performanceUsage" data-dsh-field="performanceUsage"><option value="compact" data-copy="performanceCompact"></option><option value="detailed" data-copy="performanceDetailed"></option></select></label>
+            <label class="setting-row"><span><strong data-copy="linkOpening"></strong></span><select id="dsh-linkOpening" data-dsh-field="linkOpening"><option value="sidebar" data-copy="linksSidebar"></option><option value="new-tab" data-copy="linksNewTab"></option></select></label>
+            <label class="setting-row"><span><strong data-copy="developerToolsEnabled"></strong></span><input id="dsh-developerToolsEnabled" data-dsh-field="developerToolsEnabled" type="checkbox"></label>
+            <label class="setting-row"><span><strong data-copy="permissionDefaultPreset"></strong></span><select id="dsh-permissionDefaultPreset" data-dsh-field="permissionDefaultPreset"><option value="workspace-write">workspace-write</option><option value="danger-full-access">danger-full-access</option></select></label>
+            <label class="setting-row"><span><strong data-copy="defaultPreset"></strong></span><input id="dsh-defaultPreset" data-dsh-field="defaultPreset" list="agent-preset-choices" type="text" required maxlength="256"><datalist id="agent-preset-choices"><option value="standard"></option><option value="cordis"></option><option value="ptc"></option><option value="minimal"></option></datalist></label>
+            <h3 data-copy="fontAdvancedSettings"></h3>
+            <label class="setting-row"><span><strong data-copy="codeFontSize"></strong></span><input id="dsh-codeFontSize" data-dsh-field="codeFontSize" type="number" min="10" max="16" step="1" required></label>
+            <label class="setting-row"><span><strong data-copy="terminalFontSize"></strong></span><input id="dsh-terminalFontSize" data-dsh-field="terminalFontSize" type="number" min="10" max="20" step="1" required></label>
+            <label class="setting-row"><span><strong data-copy="textFontFamily"></strong></span><select id="dsh-textFontFamily" data-dsh-field="textFontFamily"><option value="" data-copy="systemDefaultFont"></option></select></label>
+            <label class="setting-row"><span><strong data-copy="codeFontFamily"></strong></span><select id="dsh-codeFontFamily" data-dsh-field="codeFontFamily"><option value="" data-copy="systemDefaultFont"></option></select></label>
+            <label class="setting-row"><span><strong data-copy="terminalFontFamily"></strong></span><select id="dsh-terminalFontFamily" data-dsh-field="terminalFontFamily"><option value="" data-copy="systemDefaultFont"></option></select></label>
+            <div class="settings-save-actions dsh-save"><span data-dsh-save-status role="status"></span><button type="submit" class="primary save-action" data-copy="saveAndApply"></button></div>
           </form>
         </div>
       </div></div>
     </div>
   </section></main>
-  <section id="instance-state" hidden><div id="instance-loader" class="dsh-loader" aria-hidden="true" hidden><span></span></div><div id="instance-state-symbol" class="state-symbol" aria-hidden="true">◉</div><h2 id="state-title"></h2><p id="state-message" role="status" aria-live="polite"></p><button id="recover" class="primary" data-copy="recover"></button></section>
+  <section id="instance-state" hidden><div id="instance-loader" class="dsh-loader" aria-hidden="true" hidden><span></span></div><div id="instance-state-symbol" class="state-symbol" aria-hidden="true">◉</div><h2 id="state-title"></h2><p id="state-message" role="status" aria-live="polite"></p><button id="recover" class="primary" data-copy="recover"></button><button id="instance-state-stop" data-copy="stop" hidden></button></section>
   <div id="tab-menu" class="tab-menu" role="menu" hidden></div>
   <div id="notice" role="alert" hidden></div>
-  <dialog id="editor"><form id="edit-form"><h2 id="edit-title"></h2><label><span data-copy="name"></span><input name="name" maxlength="100" required autofocus></label><label><span data-copy="kind"></span><select name="kind"><option value="local" data-copy="local"></option><option value="ssh" data-copy="ssh"></option></select></label><fieldset id="ssh-fields" hidden><div class="columns"><label><span data-copy="host"></span><input name="host" autocomplete="off"></label><label><span data-copy="port"></span><input name="port" type="number" min="1" max="65535" value="22"></label></div><label><span data-copy="username"></span><input name="username" autocomplete="off"></label><label><span data-copy="auth"></span><select name="auth"><option value="password" data-copy="password"></option><option value="key" data-copy="key"></option></select></label><label id="key-field" hidden><span data-copy="privateKeyPath"></span><input name="privateKeyPath"></label><label><span data-copy="executable"></span><input name="executable" value="dsh"></label><label><span data-copy="home"></span><input name="home"></label></fieldset><div class="dialog-actions"><button type="button" id="edit-cancel" data-copy="cancel"></button><button type="submit" class="primary" data-copy="save"></button></div></form></dialog>
+  <dialog id="editor"><form id="edit-form"><h2 id="edit-title"></h2><label><span data-copy="name"></span><input name="name" maxlength="100" required autofocus></label><label><span data-copy="kind"></span><select name="kind"><option value="local" data-copy="local"></option><option value="ssh" data-copy="ssh"></option></select></label><fieldset id="ssh-fields" hidden><div class="columns"><label><span data-copy="host"></span><input name="host" autocomplete="off"></label><label><span data-copy="port"></span><input name="port" type="number" min="1" max="65535" value="22"></label></div><label><span data-copy="username"></span><input name="username" autocomplete="off"></label><label><span data-copy="auth"></span><select name="auth"><option value="password" data-copy="password"></option><option value="key" data-copy="key"></option></select></label><label id="key-field" hidden><span data-copy="privateKeyPath"></span><input name="privateKeyPath"></label><label><span data-copy="executable"></span><input name="executable" value="dsh"></label><label><span data-copy="home"></span><input name="home"></label></fieldset><div class="dialog-actions"><button type="button" id="edit-cancel" data-copy="cancel"></button><button type="submit" class="primary save-action" data-copy="save"></button></div></form></dialog>
   <dialog id="remove-dialog"><form id="remove-form" method="dialog"><h2 data-copy="removeDataTitle"></h2><p id="remove-prompt" data-copy="removeDataPrompt"></p><label id="remove-data-label" class="remove-data-option"><input id="remove-data" type="checkbox"><span data-copy="removeDataOption"></span></label><p id="remove-data-warning" class="remove-data-warning" data-copy="removeDataWarning" hidden></p><div class="dialog-actions"><button type="button" id="remove-cancel" data-copy="cancel"></button><button type="submit" id="remove-confirm" class="danger" value="remove" data-copy="removeDataConfirm"></button></div></form></dialog>
   <dialog id="credentials"><form id="credential-form"><h2 id="credential-title"></h2><label><span id="credential-label"></span><input id="secret" type="password" autocomplete="off" autofocus></label><div class="dialog-actions"><button type="button" id="credential-cancel" data-copy="cancel"></button><button type="submit" class="primary" data-copy="connect"></button></div></form></dialog>
   <dialog id="log-dialog"><h2 data-copy="logs"></h2><pre id="log-content"></pre><button id="log-close" data-copy="dismiss"></button></dialog>
   <script src="manager.js"></script>
-  <script src="manager-sources.js"></script>
   <script src="manager-appearance.js"></script>
   <script src="plugin-manager.js"></script>
+  <script src="manager-sources.js"></script>
   <script src="manager-settings.js"></script>
 </body></html>

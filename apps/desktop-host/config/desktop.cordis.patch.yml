@@ -24,15 +24,16 @@
 - id: directory-picker
   disabled: true
 
-# The shell owns package transactions; managed profiles only load their plugins.
+# Native management supplies official bundles, component controls and config pages.
 - id: plugin-manager
-  disabled: true
+  disabled: false
 
 - id: tool-plugin-manager
   disabled: true
 
 - id: ui-plugin-manager
-  disabled: true
+  disabled: false
+
 
 - id: workspace
   disabled: true

@@ -1,8 +1,10 @@
 /* Software preferences are authoritative and applied through the DSH Host APIs. */
 let softwareDocument
+let systemFonts = []
 let softwareSaving = false
 let credentialState
 let credentialEditing = false
+let credentialDraftDirty = false
 let settingsTab = 'general'
 let dshDirty = false
 let shortcutBindings
@@ -134,6 +136,10 @@ const shortcutLabels = {
   settings: 'shortcutSettings', instances: 'shortcutInstances', add: 'shortcutAdd',
   close: 'shortcutClose', next: 'shortcutNext', previous: 'shortcutPrevious',
 }
+const shortcutGroups = [
+  { title: 'shellNavigationShortcuts', actions: ['settings', 'instances', 'previous', 'next'] },
+  { title: 'shellTabShortcuts', actions: ['add', 'close'] },
+]
 async function settingsCall(action, input = {}) {
   return api.invoke('softwareSettings', { action, input })
 }
@@ -143,10 +149,8 @@ function renderSettings() {
   const errors = Object.entries(softwareDocument?.syncErrors || {})
   $('dsh-sync-status').textContent = errors.map(([id, message]) => `${state.instances.find(item => item.id === id)?.name || id}: ${message}`).join('\n')
   $('dsh-sync-status').hidden = !errors.length
-  $('sources-sync-status').textContent = $('dsh-sync-status').textContent
-  $('sources-sync-status').hidden = !errors.length
   $('software-status').textContent = errors.length ? t('settingsPartial') : ''
-  $('software-status').hidden = settingsTab !== 'general' || !errors.length
+  $('software-status').hidden = !errors.length
   $('settings-product').hidden = settingsTab !== 'general'
   $('app-version').hidden = settingsTab !== 'general'
   $('app-version').textContent = t('appVersion').replace('{version}', state.version)
@@ -164,11 +168,19 @@ function renderSettings() {
   if (credentialState) {
     $('api-key-field').hidden = credentialState.configured && !credentialEditing
     $('key-replace').hidden = !credentialState.configured || credentialEditing
-    $('api-key-form').querySelector('[type="submit"]').hidden = credentialState.configured && !credentialEditing
-    $('api-key-form').querySelector('[type="submit"]').disabled = !credentialState.writable || softwareSaving
+    $('key-remove').hidden = !credentialState.configured
     $('key-remove').disabled = !credentialState.writable || !credentialState.configured || softwareSaving
+    $('api-key-status').dataset.configured = String(credentialState.configured)
+    $('api-key-status').dataset.writable = String(credentialState.writable)
+  } else {
+    $('api-key-field').hidden = false
+    $('key-replace').hidden = true
+    $('key-remove').hidden = true
+    $('key-remove').disabled = true
+    delete $('api-key-status').dataset.configured
+    delete $('api-key-status').dataset.writable
   }
-  document.querySelectorAll('#dsh-settings-form input, #dsh-settings-form select, #dsh-settings-form button').forEach(node => {
+  document.querySelectorAll('[data-dsh-field], #dsh-settings-form button').forEach(node => {
     if (node.dataset.dshField) renderSettingSupport(node, node.dataset.dshField)
     else node.disabled = !softwareDocument || softwareSaving
   })
@@ -176,10 +188,28 @@ function renderSettings() {
     for (const input of document.querySelectorAll('[data-dsh-field]')) {
       const value = softwareDocument.dsh[input.dataset.dshField]
       if (input.type === 'checkbox') input.checked = value
-      else input.value = String(value)
+      else {
+        if (['textFontFamily', 'codeFontFamily', 'terminalFontFamily'].includes(input.dataset.dshField)) {
+          const saved = String(value)
+          for (const option of [...input.options].slice(1)) option.remove()
+          for (const family of systemFonts) {
+            const option = document.createElement('option')
+            option.value = option.textContent = family
+            input.append(option)
+          }
+          if (saved && !systemFonts.includes(saved)) {
+            const option = document.createElement('option')
+            option.value = option.textContent = saved
+            input.append(option)
+          }
+        }
+        input.value = String(value)
+      }
     }
+    $('api-key-ref').value = String(softwareDocument.dsh.deepseekKeyRef)
   }
   if (shortcutBindings) renderShortcuts()
+  renderKernelShortcutScope()
   renderSources()
   renderPluginSettings()
   renderPersonalAppearance()
@@ -299,55 +329,141 @@ async function loadStorage() {
   finally { storageLoading = false; renderStorage() }
 }
 function renderPluginSettings() {
+  const nativeSelect = $('native-plugin-instance')
+  const selected = nativeSelect.value
+  const locals = state.instances
+  const nativeOptions = locals.map(instance => `${instance.id}:${instance.name}`).join('|')
+  if (nativeSelect.dataset.options !== nativeOptions) {
+    nativeSelect.replaceChildren(...locals.map(instance => {
+      const option = document.createElement('option')
+      option.value = instance.id; option.textContent = instance.name; return option
+    }))
+    nativeSelect.value = locals.some(instance => instance.id === selected) ? selected
+      : locals.some(instance => instance.id === state.tabs.active) ? state.tabs.active : locals[0]?.id || ''
+    nativeSelect.dataset.options = nativeOptions
+  }
+  const instance = state.instances.find(instance => instance.id === nativeSelect.value)
+  const connection = state.statuses[nativeSelect.value]?.connection
+  $('plugin-instance-state').textContent = instance ? t(connection || 'disconnected') : ''
+  $('plugin-instance-state').dataset.connected = String(connection === 'connected')
+  $('native-plugin-open').hidden = connection === 'connected'
+  $('native-plugin-open').disabled = !instance || connection === 'connecting'
+  $('plugin-empty-open').hidden = !instance || connection === 'connected'
+  $('plugin-empty-open').disabled = connection === 'connecting'
+  $('native-plugin-empty-copy').textContent = !instance ? t('pluginNoInstance')
+    : instance.kind !== 'local' ? t('pluginRemoteSettings') : t('nativePluginUnavailable')
+  if (pluginPanel) pluginPanel.setTarget(nativeSelect.value)
+  if (nativePluginMode) scheduleNativePanel()
   $('plugin-development-hint').hidden = state.pluginManagement
-  $('plugin-no-instances').hidden = state.instances.length !== 0
-  $('plugin-instances').replaceChildren(...state.instances.map(instance => {
-    const row = document.createElement('article')
-    row.className = 'instance-row'
-    const summary = document.createElement('div')
-    summary.className = 'instance-summary'
-    const name = document.createElement('strong')
-    name.textContent = instance.name
-    const hint = document.createElement('span')
-    hint.className = 'plugin-instance-hint'
-    hint.textContent = `${t(instance.kind)} · ${t(state.statuses[instance.id].connection)}`
-    summary.append(name, hint)
-    const actions = document.createElement('div')
-    actions.className = 'instance-actions'
-    actions.append(button('open', () => open(instance)))
-    if (instance.kind === 'local') {
-      const manage = button('instancePlugins', () => api.invoke('plugins', { id: instance.id }))
-      manage.disabled = !state.pluginManagement || !['connected', 'error'].includes(state.statuses[instance.id].connection)
-      actions.append(manage)
-    }
-    row.append(summary, actions)
-    return row
-  }))
 }
 let pluginPanel
 let pluginPanelLoading
+let nativePluginMode = true
+let pluginMode = 'native'
+let nativePanelTimer
+let nativePanelTask = Promise.resolve()
+let nativePluginTarget
+function scheduleNativePanel() {
+  clearTimeout(nativePanelTimer)
+  nativePanelTimer = setTimeout(() => {
+    nativePanelTask = nativePanelTask.then(async () => {
+      const id = $('native-plugin-instance').value
+      const visible = nativePluginMode && settingsTab === 'plugins' && settingsOpen && managerVisible
+      const connected = state.statuses[id]?.connection === 'connected' && state.instances.some(instance => instance.id === id && instance.kind === 'local')
+      $('native-plugin-empty').hidden = !!connected
+      $('native-plugin-surface').hidden = !connected
+      const bounds = $('native-plugin-surface').getBoundingClientRect()
+      const x = Math.ceil(bounds.x + 1), y = Math.ceil(bounds.y + 1)
+      const width = Math.floor(Math.min(bounds.width - 2, window.innerWidth - x))
+      const height = Math.floor(Math.min(bounds.height - 2, window.innerHeight - y - 8))
+      if (!visible || !connected || y < 42 || width < 1 || height < 1) {
+        await api.invoke('plugins', { action: 'hide' })
+        $('native-plugin-status').textContent = ''
+        return
+      }
+      try {
+        await api.invoke('plugins', {
+          id, action: 'embed', input: { x, y, width, height },
+          ...(nativePluginTarget ? { packageName: nativePluginTarget } : {}),
+        })
+        $('native-plugin-status').textContent = ''
+      } catch (error) {
+        await api.invoke('plugins', { action: 'hide' })
+        $('native-plugin-status').textContent = String(error.message || error)
+      }
+    }).catch(error => { $('native-plugin-status').textContent = String(error.message || error) })
+  }, 30)
+}
+function setPluginMode(mode) {
+  pluginMode = mode
+  nativePluginMode = mode === 'native'
+  for (const name of ['native', 'library', 'advanced']) {
+    $('plugin-mode-' + name).setAttribute('aria-selected', String(mode === name))
+    $('plugin-mode-' + name).tabIndex = mode === name ? 0 : -1
+  }
+  $('plugin-workspace').hidden = mode === 'native'
+  $('plugin-library-options').hidden = mode !== 'advanced'
+  $('native-plugin-settings').hidden = mode !== 'native'
+  pluginPanel?.show(mode === 'advanced' ? 'library' : 'discover')
+  document.querySelector('.settings-content').scrollTop = 0
+  scheduleNativePanel()
+}
+async function showNativePlugins(id, packageName) {
+  await showSettings('plugins')
+  $('native-plugin-instance').value = id
+  nativePluginTarget = packageName
+  renderPluginSettings()
+  setPluginMode('native')
+}
+$('plugin-mode-library').onclick = () => setPluginMode('library')
+$('plugin-mode-native').onclick = () => setPluginMode('native')
+$('plugin-mode-advanced').onclick = () => setPluginMode('advanced')
+document.querySelector('.plugin-mode-switch').onkeydown = event => {
+  const tabs = [...document.querySelectorAll('.plugin-mode-switch [role=tab]')]
+  const index = tabs.indexOf(event.target)
+  const next = event.key === 'ArrowRight' ? tabs[(index + 1) % tabs.length] : event.key === 'ArrowLeft' ? tabs[(index + tabs.length - 1) % tabs.length] : undefined
+  if (next) { event.preventDefault(); next.click(); next.focus() }
+}
+$('native-plugin-instance').onchange = () => {
+  nativePluginTarget = undefined
+  renderPluginSettings()
+  scheduleNativePanel()
+}
+$('native-plugin-open').onclick = () => { void perform(async () => {
+  const id = $('native-plugin-instance').value
+  const instance = state.instances.find(instance => instance.id === id)
+  if (instance) { await open(instance); await showNativePlugins(id) }
+}) }
+$('plugin-empty-open').onclick = () => $('native-plugin-open').click()
+$('plugin-empty-discover').onclick = () => setPluginMode('library')
+window.addEventListener('resize', scheduleNativePanel)
+document.querySelector('.settings-content').addEventListener('scroll', scheduleNativePanel)
+document.addEventListener('manager-rendered', () => { if (nativePluginMode) scheduleNativePanel() })
+if (typeof ResizeObserver !== 'undefined') new ResizeObserver(scheduleNativePanel).observe($('native-plugin-surface'))
 async function loadPluginPanel() {
   if (!state.pluginManagement) return
   if (pluginPanelLoading) return pluginPanelLoading
   pluginPanelLoading = (async () => {
     if (pluginPanel) return pluginPanel.refresh()
-    pluginPanel = await window.mountPluginManager($('plugin-workspace'), api.pluginLibrary, 'library-')
-    $('plugin-workspace').querySelector('.plugin-management').append($('plugin-deployments'))
+    pluginPanel = await window.mountPluginManager($('plugin-workspace'), api.pluginLibrary, 'library-', {
+      target: () => $('native-plugin-instance').value,
+      installed: async id => { await refresh(); await showNativePlugins(id) },
+    })
+    pluginPanel.show(pluginMode === 'advanced' ? 'library' : 'discover')
   })().finally(() => { pluginPanelLoading = undefined })
   return pluginPanelLoading
 }
-$('plugin-add-instance').onclick = () => { void perform(showManager) }
 async function loadSoftwareSettings() {
   softwareDocument = await settingsCall('read')
+  systemFonts = await settingsCall('fontRoster').catch(() => [])
   await loadKernel()
   setShellTheme(softwareDocument.appearance.theme)
   setShellPersonalAppearance(personalDirty ? personalDraft : softwareDocument.personalization)
-  const refs = new Set(['DEEPSEEK_API_KEY', ...softwareDocument.credentials])
-  $('credential-refs').replaceChildren(...[...refs].map(ref => { const option = document.createElement('option'); option.value = ref; return option }))
   renderSettings()
   if (settingsTab === 'keys') await loadCredentialInfo()
 }
 function selectSettingsTab(tab) {
+  if (nativePluginMode) scheduleNativePanel()
   if (settingsTab !== tab) document.querySelector('.settings-content').scrollTop = 0
   settingsTab = tab
   document.querySelector('.settings-body').classList.toggle('settings-body-plugins', tab === 'plugins')
@@ -357,11 +473,6 @@ function selectSettingsTab(tab) {
     node.tabIndex = selected ? 0 : -1
   })
   document.querySelectorAll('[data-settings-pane]').forEach(node => { node.hidden = node.dataset.settingsPane !== tab })
-  $('api-key-value').value = ''
-  credentialEditing = false
-  $('source-key').value = ''
-  $('api-key-value').type = 'password'
-  $('key-reveal').textContent = t('showSecret')
   renderSettings()
   if (tab === 'keys') void perform(loadCredentialInfo)
   if (tab === 'plugins') void perform(loadPluginPanel)
@@ -420,32 +531,22 @@ async function loadCredentialInfo() {
   const info = infos[ref]
   credentialState = info
   $('api-key-status').textContent = `${t(info.configured ? 'keyConfigured' : 'keyMissing')} · ${t(info.writable ? 'keyWritable' : 'keyReadOnly')}`
-  $('api-key-form').querySelector('[type="submit"]').disabled = !info.writable
   $('key-remove').disabled = !info.writable || !info.configured
   renderSettings()
 }
-$('api-key-ref').onchange = () => { credentialState = undefined; credentialEditing = false; $('api-key-value').value = ''; void perform(loadCredentialInfo) }
+$('dsh-deepseekKeyRef').onchange = () => {
+  $('api-key-ref').value = $('dsh-deepseekKeyRef').value.trim()
+  credentialState = undefined
+  credentialEditing = false
+  $('api-key-value').value = ''
+  if ($('api-key-ref').value) void perform(loadCredentialInfo)
+  else { $('api-key-status').textContent = t('credentialChecking'); renderSettings() }
+}
 $('key-replace').onclick = () => { credentialEditing = true; renderSettings(); $('api-key-value').focus() }
-$('key-refresh').onclick = () => { void perform(loadCredentialInfo) }
 $('key-reveal').onclick = () => {
   const input = $('api-key-value')
   input.type = input.type === 'password' ? 'text' : 'password'
   $('key-reveal').textContent = t(input.type === 'password' ? 'showSecret' : 'hideSecret')
-}
-$('api-key-form').onsubmit = event => {
-  event.preventDefault()
-  const ref = $('api-key-ref').value
-  const value = $('api-key-value').value
-  $('api-key-value').value = ''
-  $('api-key-value').type = 'password'
-  $('key-reveal').textContent = t('showSecret')
-  void perform(async () => {
-    if (!value) throw new Error(t('keyRequired'))
-    softwareSaving = true
-    renderSettings()
-    try { await settingsCall('credentialSet', { ref, value }); credentialEditing = false }
-    finally { softwareSaving = false; await loadSoftwareSettings() }
-  })
 }
 $('key-remove').onclick = () => {
   if (!window.confirm(t('keyRemoveConfirm'))) return
@@ -453,71 +554,147 @@ $('key-remove').onclick = () => {
   void perform(async () => {
     softwareSaving = true
     renderSettings()
-    try { await settingsCall('credentialRemove', { ref }) }
+    try {
+      await settingsCall('credentialRemove', { ref })
+      credentialDraftDirty = false
+      $('api-key-value').value = ''
+      reportDirty()
+    }
     finally { softwareSaving = false; await loadSoftwareSettings() }
   })
 }
-$('dsh-settings-form').oninput = () => { dshDirty = true; $('dsh-save-status').textContent = t('unsavedSettings') }
+$('api-key-value').oninput = () => {
+  credentialDraftDirty = $('api-key-value').value.length > 0
+  renderSettings()
+  reportDirty()
+}
+function setDshSaveStatus(message) {
+  document.querySelectorAll('[data-dsh-save-status]').forEach(node => { node.textContent = message })
+}
+document.querySelectorAll('[data-dsh-field]').forEach(input => {
+  input.addEventListener('input', () => { dshDirty = true; setDshSaveStatus(t('unsavedSettings')); reportDirty() })
+})
 $('dsh-settings-form').onsubmit = event => {
   event.preventDefault()
-  const value = Object.fromEntries([...document.querySelectorAll('[data-dsh-field]')].map(input => [
+  const keyRef = $('dsh-deepseekKeyRef').value.trim()
+  const keyValue = $('api-key-value').value
+  const value = { ...softwareDocument.dsh, ...Object.fromEntries([...document.querySelectorAll('[data-dsh-field]')].map(input => [
     input.dataset.dshField, input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value.trim(),
-  ]))
+  ])) }
   void perform(async () => {
     softwareSaving = true
     renderSettings()
     try {
+      if (keyValue) await settingsCall('credentialSet', { ref: keyRef, value: keyValue })
+      credentialEditing = false
+      credentialDraftDirty = false
+      $('api-key-value').value = ''
+      $('api-key-value').type = 'password'
+      $('key-reveal').textContent = t('showSecret')
       softwareDocument = await settingsCall('dshUpdate', { value })
       dshDirty = false
-      $('dsh-save-status').textContent = t('dshSaved')
+      setDshSaveStatus(t(Object.keys(softwareDocument.syncErrors || {}).length ? 'dshSavedPartial' : 'dshSaved'))
+      reportDirty()
     } finally { softwareSaving = false; await loadSoftwareSettings() }
   })
 }
+
+function hasUnsavedSettings() {
+  return dshDirty || credentialDraftDirty || (typeof personalDirty !== 'undefined' && personalDirty)
+    || !$('source-form').hidden
+}
+
+async function discardUnsavedSettings() {
+  dshDirty = false
+  credentialDraftDirty = false
+  credentialEditing = false
+  $('api-key-value').value = ''
+  $('api-key-value').type = 'password'
+  $('key-reveal').textContent = t('showSecret')
+  if (typeof cancelPersonalPreview === 'function') cancelPersonalPreview()
+  if (typeof discardPersonalDraft === 'function') await discardPersonalDraft()
+  if (!$('source-form').hidden) closeSourceForm()
+  if (softwareDocument) {
+    for (const input of document.querySelectorAll('[data-dsh-field]')) {
+      const value = softwareDocument.dsh[input.dataset.dshField]
+      if (input.type === 'checkbox') input.checked = value
+      else input.value = String(value)
+    }
+  }
+  setDshSaveStatus('')
+  reportDirty()
+}
 function renderShortcuts() {
-  const signature = JSON.stringify(Object.values(shortcutLabels).map(key => t(key)))
+  const signature = JSON.stringify([Object.values(shortcutLabels).map(key => t(key)),
+    Object.values(shortcutGroups).map(group => t(group.title)), state.tabs.active])
   if ($('shortcut-list').dataset.signature === signature && $('shortcut-list').childElementCount) return
   $('shortcut-list').replaceChildren()
   $('shortcut-list').dataset.signature = signature
-  for (const [action, key] of Object.entries(shortcutLabels)) {
-    const row = document.createElement('label')
-    row.className = 'shortcut-row'
-    const label = document.createElement('span')
-    label.textContent = t(key)
-    const input = document.createElement('input')
-    input.readOnly = true
-    input.value = shortcutBindings[action]
-    input.placeholder = t('shortcutDisabled')
-    input.setAttribute('aria-label', t(key))
-    input.onkeydown = event => {
-      event.preventDefault()
-      event.stopPropagation()
-      if (event.isComposing || event.key === 'Escape' || ['Control', 'Shift', 'Alt', 'Meta'].includes(event.key)) return
-      let binding = ''
-      if (event.key !== 'Backspace' && event.key !== 'Delete') {
-        if (!event.ctrlKey && !event.altKey && !event.metaKey) return
-        const key = event.key.length === 1 ? event.key.toUpperCase() : event.key
-        binding = [event.ctrlKey ? 'Ctrl' : '', event.altKey ? 'Alt' : '', event.shiftKey ? 'Shift' : '', event.metaKey ? 'Meta' : '', key].filter(Boolean).join('+')
+  for (const group of shortcutGroups) {
+    const section = document.createElement('section')
+    section.className = 'shortcut-group'
+    const heading = document.createElement('h4')
+    heading.textContent = t(group.title)
+    section.append(heading)
+    for (const action of group.actions) {
+      const key = shortcutLabels[action]
+      const row = document.createElement('label')
+      row.className = 'shortcut-row'
+      const label = document.createElement('span')
+      label.textContent = t(key)
+      const input = document.createElement('input')
+      input.readOnly = true
+      input.value = shortcutBindings[action]
+      input.placeholder = t('shortcutDisabled')
+      input.setAttribute('aria-label', t(key))
+      input.onkeydown = event => {
+        event.preventDefault()
+        event.stopPropagation()
+        if (event.isComposing || event.key === 'Escape' || ['Control', 'Shift', 'Alt', 'Meta'].includes(event.key)) return
+        let binding = ''
+        if (event.key !== 'Backspace' && event.key !== 'Delete') {
+          if (!event.ctrlKey && !event.altKey && !event.metaKey) return
+          const key = event.key.length === 1 ? event.key.toUpperCase() : event.key
+          binding = [event.ctrlKey ? 'Ctrl' : '', event.altKey ? 'Alt' : '', event.shiftKey ? 'Shift' : '', event.metaKey ? 'Meta' : '', key].filter(Boolean).join('+')
+        }
+        if (binding && Object.entries(shortcutBindings).some(([other, value]) => other !== action && value === binding)) {
+          void perform(() => { throw new Error(t('shortcutConflict')) })
+          return
+        }
+        void perform(async () => {
+          shortcutBindings = await api.invoke('shortcuts', { bindings: { ...shortcutBindings, [action]: binding } })
+          input.value = shortcutBindings[action]
+        })
       }
-      if (binding && Object.entries(shortcutBindings).some(([other, value]) => other !== action && value === binding)) {
-        void perform(() => { throw new Error(t('shortcutConflict')) })
-        return
-      }
-      void perform(async () => {
-        shortcutBindings = await api.invoke('shortcuts', { bindings: { ...shortcutBindings, [action]: binding } })
-        input.value = shortcutBindings[action]
-      })
+      input.onfocus = () => { input.select(); void api.invoke('shortcutCapture', { visible: true }) }
+      input.onblur = () => { void api.invoke('shortcutCapture', { visible: false }) }
+      row.append(label, input)
+      section.append(row)
     }
-    input.onfocus = () => { input.select(); void api.invoke('shortcutCapture', { visible: true }) }
-    input.onblur = () => { void api.invoke('shortcutCapture', { visible: false }) }
-    row.append(label, input)
-    $('shortcut-list').append(row)
+    $('shortcut-list').append(section)
   }
+}
+function renderKernelShortcutScope() {
+  const config = active()
+  const connected = config && state.statuses[config.id]?.connection === 'connected'
+  $('kernel-shortcuts-context').textContent = config
+    ? t(connected ? 'kernelShortcutsContext' : 'kernelShortcutsDisconnected').replace('{instance}', config.name)
+    : t('kernelShortcutsNoInstance')
+  $('kernel-shortcuts-open').disabled = !connected
 }
 $('shortcut-reset').onclick = () => {
   void perform(async () => {
     shortcutBindings = await api.invoke('shortcuts', { action: 'reset' })
     $('shortcut-list').replaceChildren()
     renderShortcuts()
+  })
+}
+$('kernel-shortcuts-open').onclick = () => {
+  const config = active()
+  if (!config) return
+  void perform(async () => {
+    await open(config)
+    await api.invoke('kernelShortcuts', { id: config.id, action: 'open' })
   })
 }
 async function initializeShortcuts() {
@@ -531,6 +708,11 @@ api.onShortcut(action => {
   if (document.querySelector('dialog[open]') || document.activeElement?.classList.contains('tab-rename')) return
   void perform(async () => {
     if (action === 'settings') await showSettings()
+    else if (action.startsWith('plugins:')) {
+      const [id, encodedPackage] = action.slice('plugins:'.length).split(':', 2)
+      if (id) await showNativePlugins(id, encodedPackage ? decodeURIComponent(encodedPackage) : undefined)
+    }
+    else if (action.startsWith('discover-plugins:')) { await showNativePlugins(action.slice('discover-plugins:'.length)); setPluginMode('library') }
     else if (action === 'instances') await showManager()
     else if (action === 'add') await toggleInstanceMenu()
     else if (action === 'close' && managerVisible && shellPage === 'settings') await closeSettings()

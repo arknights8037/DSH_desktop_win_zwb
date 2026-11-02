@@ -185,12 +185,14 @@ export class RemoteInstance implements InstanceRuntime {
     return fetch(new Request(request, { headers, redirect: 'manual' }))
   }
 
-  private async pluginApi(operation: 'prepare' | 'apply', payload: object): Promise<Record<string, unknown>> {
+  private async pluginApi(operation: 'prepare' | 'apply', payload: object, signal?: AbortSignal): Promise<Record<string, unknown>> {
     if (!this.webUrl) throw new Error('Connect to the remote instance before injecting plugins')
+    signal?.throwIfAborted()
     const rpcId = randomUUID()
     const response = await this.fetch(new Request(new URL(`/api/profile-plugins/${operation}`, this.webUrl), {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ type: 'client-request', rpcId, method: operation, payload }),
+      signal: signal === undefined ? AbortSignal.timeout(120_000) : AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
     }))
     const mediaType = response.headers.get('content-type') ?? ''
     if (response.status === 401 || response.status === 403) {
@@ -219,14 +221,17 @@ export class RemoteInstance implements InstanceRuntime {
    * @param credentials - Session-only SSH authentication.
    * @returns Completion after the new remote Host reaches readiness; no local tunnel remains.
    */
-  async injectPlugin(plugin: { name: string; version: string }, credentials: InstanceCredentials): Promise<void> {
-    const prepared = await this.pluginApi('prepare', plugin)
+  async injectPlugin(plugin: { name: string; version: string }, credentials: InstanceCredentials, signal?: AbortSignal): Promise<void> {
+    const prepared = await this.pluginApi('prepare', plugin, signal)
+    signal?.throwIfAborted()
     if (typeof prepared.preparation !== 'string') throw new Error('Invalid remote plugin preparation')
-    const applied = await this.pluginApi('apply', { preparation: prepared.preparation })
+    const applied = await this.pluginApi('apply', { preparation: prepared.preparation }, signal)
+    signal?.throwIfAborted()
     if (applied.restartRequired !== true) throw new Error('Remote plugin deployment did not acknowledge restart')
     try {
+      signal?.throwIfAborted()
       await this.stop(credentials)
-      await this.connect(new AbortController().signal, credentials)
+      await this.connect(signal ?? new AbortController().signal, credentials)
     } catch (error) {
       try {
         await this.stop(credentials)

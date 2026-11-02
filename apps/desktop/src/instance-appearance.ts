@@ -97,5 +97,12 @@ dialog, [role="dialog"], [role="menu"], [data-trigger-menu] {
 body:has([data-shortcut-modal="settings"]) > [role="dialog"] :is([class*="desc"], [class*="Desc"], [class*="hint"], [class*="Hint"], [class*="intro"], [class*="Intro"], [class*="subtitle"], [class*="Subtitle"], [class*="helper"], [class*="Helper"], [class*="note"], [class*="Note"], [class*="guide"], [class*="Guide"]):not([role="alert"]):not([role="status"]):not([aria-live]) { display: none !important; }
 [data-shortcut-modal="settings"] :is(input, textarea)[placeholder]::placeholder,
 body:has([data-shortcut-modal="settings"]) > [role="dialog"] :is(input, textarea)[placeholder]::placeholder { color: transparent !important; }`
-  return `${canvas}body{--dsh-personal-wallpaper:none!important;${palette(false)}}body[data-ds-dark-theme]{${palette(true)}}${regions}${settingsCopy}`
+  const scrollbars = `
+*{scrollbar-width:thin!important;scrollbar-color:color-mix(in srgb,var(--dsw-alias-label-tertiary,#8b8f98) 42%,transparent) transparent!important;}
+*::-webkit-scrollbar{width:8px!important;height:8px!important;}
+*::-webkit-scrollbar-button,*::-webkit-scrollbar-button:single-button,*::-webkit-scrollbar-button:double-button{display:none!important;width:0!important;height:0!important;}
+*::-webkit-scrollbar-track,*::-webkit-scrollbar-corner{background:transparent!important;}
+*::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--dsw-alias-label-tertiary,#8b8f98) 42%,transparent)!important;background-clip:padding-box!important;border:2px solid transparent!important;border-radius:999px!important;}
+*::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--dsw-alias-label-tertiary,#8b8f98) 62%,transparent)!important;background-clip:padding-box!important;}`
+  return `${canvas}${scrollbars}body{--dsh-personal-wallpaper:none!important;${palette(false)}}body[data-ds-dark-theme]{${palette(true)}}${regions}${settingsCopy}`
 }

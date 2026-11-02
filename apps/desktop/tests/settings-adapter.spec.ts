@@ -23,11 +23,14 @@ it('maps coexisting namespaces by field and keeps model reasoning separate from 
   const edits = Object.fromEntries(result.edits)
   expect(result.failures).toEqual([])
   expect(edits['ui-theme']).toMatchObject({ preference: 'light', fontSize: 16, customization: value.personalization })
-  expect(edits['ui-chat']).toEqual({ transcriptView: 'compact' })
-  expect(edits['agent-presets']).toEqual({ default: 'standard', modeSelectionEnabled: true })
+  // The legacy `normal` value is the compatibility projection of the current `detailed` default.
+  expect(edits['ui-chat']).toBeUndefined()
+  expect(edits['agent-preset-registry']).toEqual({ selectedDefault: 'standard' })
+  expect(edits['agent-presets']).toBeUndefined()
   expect(edits['agent-default-model']).toEqual({ provider: 'custom-provider', model: 'custom-model', reasoningEffort: 'medium' })
   expect(edits['llm-deepseek']).toMatchObject({ baseURL: value.dsh.deepseekBaseURL })
   expect(result.support.fields.deepseekProtocol).toEqual({ namespace: null, field: null })
+  expect(result.support.fields.defaultPreset).toMatchObject({ namespace: 'agent-preset-registry', field: 'selectedDefault' })
   expect(edits['llm-deepseek']).not.toHaveProperty('reasoningEffort')
   expect(result.support.fields.reasoningEffort).toMatchObject({ namespace: 'agent-default-model', field: 'reasoningEffort' })
 })
@@ -53,6 +56,36 @@ it('uses published options and limits, and refuses invalid values before sending
   expect(result.support.fields.deepseekBaseURL!.namespace).toBeNull()
   expect(result.failures).toEqual([expect.stringContaining('llm-deepseek.maxTokens')])
   expect(Object.fromEntries(result.edits)['llm-deepseek']).toEqual({ protocol: 'messages' })
+})
+
+it('projects every kernel General setting, including the permission catalog-backed default', () => {
+  const value = preferences()
+  const document = mixedSettingsDocument()
+  const theme = document.namespaces.find(section => section.ns === 'ui-theme')!
+  theme.schema = Schema.object({ preference: Schema.union(['system', 'light', 'dark']),
+    fontSize: Schema.number().min(10).max(22).step(1), codeFontSize: Schema.number().min(10).max(16).step(1),
+    terminalFontSize: Schema.number().min(10).max(20).step(1), textFontFamily: Schema.string(),
+    codeFontFamily: Schema.string(), terminalFontFamily: Schema.string(), customization: Schema.any() }).toJSON()
+  theme.value = { preference: 'dark', fontSize: 12, codeFontSize: 12, terminalFontSize: 14,
+    textFontFamily: '', codeFontFamily: '', terminalFontFamily: '', customization: {} }
+  const chat = document.namespaces.find(section => section.ns === 'ui-chat')!
+  chat.schema = Schema.object({ transcriptView: Schema.union(['compact', 'standard', 'detailed', 'verbose']),
+    collapseTiming: Schema.union(['completion', 'next-input']), performanceUsage: Schema.union(['compact', 'detailed']),
+    linkOpening: Schema.union(['sidebar', 'new-tab']) }).toJSON()
+  chat.value = { transcriptView: 'compact', collapseTiming: 'next-input', performanceUsage: 'compact', linkOpening: 'new-tab' }
+  document.namespaces.push(
+    { ns: 'ui-settings', schema: Schema.object({ enabled: Schema.boolean() }).toJSON(), value: { enabled: false }, revision: 1 },
+    { ns: 'permission', schema: Schema.object({ defaultPreset: Schema.string() }).toJSON(), value: { defaultPreset: 'danger-full-access' }, revision: 1 },
+  )
+  const result = resolveInstanceSettings(value, document, 'zh')
+  const edits = Object.fromEntries(result.edits)
+  expect(result.failures).toEqual([])
+  expect(edits['ui-theme']).toMatchObject({ preference: 'light', fontSize: 16, codeFontSize: 11, terminalFontSize: 13 })
+  expect(edits['ui-chat']).toEqual({ transcriptView: 'detailed', collapseTiming: 'completion', performanceUsage: 'detailed', linkOpening: 'sidebar' })
+  expect(edits['ui-settings']).toEqual({ enabled: true })
+  expect(edits.permission).toEqual({ defaultPreset: 'workspace-write' })
+  expect(result.support.fields.codeFontSize).toMatchObject({ namespace: 'ui-theme', field: 'codeFontSize', min: 10, max: 16 })
+  expect(result.support.fields.permissionDefaultPreset).toMatchObject({ namespace: 'permission', field: 'defaultPreset' })
 })
 
 it('preserves read-only instances and emits no writes for already applied software choices', () => {

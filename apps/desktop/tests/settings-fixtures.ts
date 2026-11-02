@@ -17,7 +17,9 @@ export function legacySettingsDocument(): InstanceSettingsDocument {
     ['ui-conversation', Schema.object({ busyEnter: Schema.union(['queue', 'steer']) }), { busyEnter: 'steer' }, 3],
     ['llm-pi-ai', Schema.object({ providers: Schema.dict(Schema.object({})) }), { providers: { unrelated: { api: 'openai-completions' } } }, 0],
     ['ui-chat', Schema.object({ transcriptView: Schema.union(['normal', 'compact']) }), { transcriptView: 'normal' }, 1],
-    ['agent-presets', Schema.object({ default: Schema.string(), modeSelectionEnabled: Schema.boolean() }), { default: 'instance-preset', modeSelectionEnabled: false }, 1],
+    ['agent-presets', Schema.object({ default: Schema.string(), modeSelectionEnabled: Schema.boolean() }), { default: 'legacy-preset', modeSelectionEnabled: false }, 1],
+    ['agent-preset-registry', Schema.object({ default: Schema.string(), selectedDefault: Schema.string() }),
+      { default: 'standard', selectedDefault: 'instance-preset' }, 1],
     ['llm-deepseek', volatileForm(DeepSeekSchema)!, { baseURL: 'https://instance.test', unrelated: true }, 1],
   ]
   return { writable: true, namespaces: rows.map(([ns, schema, value, revision]) => ({ ns, schema: schema.toJSON(), value, revision })) }

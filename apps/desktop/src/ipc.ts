@@ -19,6 +19,7 @@ export const DESKTOP_IPC = {
   pluginsRemove: 'dsh-desktop:plugins-remove',
   pluginsToggle: 'dsh-desktop:plugins-toggle',
   pluginsDisableAll: 'dsh-desktop:plugins-disable-all',
+  pluginsCancel: 'dsh-desktop:plugins-cancel',
   backendStatus: 'dsh-desktop:backend-status',
   backendRetry: 'dsh-desktop:backend-retry',
   applicationRestart: 'dsh-desktop:application-restart',
@@ -50,6 +51,7 @@ export interface DshDesktopApi {
     remove(name: string, version?: string): Promise<void>
     toggle(name: string, enabled: boolean): Promise<void>
     disableAll(): Promise<void>
+    cancel(): Promise<void>
   }
   readonly backend: {
     status(): Promise<DesktopBackendState>

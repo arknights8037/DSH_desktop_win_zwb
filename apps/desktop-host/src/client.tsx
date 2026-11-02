@@ -12,9 +12,10 @@ import { Button, IconFolderCloseRegular, Modal } from '@deepseek-ai/dsh-client-u
 import css from './workspace-editor.module.css'
 import { DESKTOP_WORKSPACE_PATH } from './workspace-wire.ts'
 import { installWorkspaceMenu } from './workspace-menu.ts'
+import { installNativePluginPanel } from './native-plugin-panel.ts'
 
 /** Services required before the shell editor can register its controls. */
-export const inject = ['workspaces', 'locale', 'slots']
+export const inject = ['workspaces', 'locale', 'slots', 'layout', 'pluginNavigation']
 
 interface EditorActions {
   settle: () => void
@@ -131,6 +132,7 @@ function EditorForm({ workspace, save, remove, settle, pick, canPick, t }: Edito
 
 /** Register shell-owned editing controls in the injected Desktop profile. */
 export function apply(ctx: Context): void {
+  installNativePluginPanel(ctx)
   const workspaces = ctx.get('workspaces') as IWorkspaces
   const request = createSnapshotStore<WorkspaceView | null>(null)
   const picker = (globalThis as typeof globalThis & { __DSH_DIRECTORY_PICKER__?: { pick: () => Promise<string | null> } }).__DSH_DIRECTORY_PICKER__

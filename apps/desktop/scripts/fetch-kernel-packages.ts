@@ -1,9 +1,14 @@
 /** Download the npm package closure for the kernel release selected by Desktop. */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { createHash } from 'node:crypto'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { basename, dirname, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
+import { satisfies } from 'semver'
+import { DESKTOP_PACKAGES_DIR, DESKTOP_PACKAGE_SET_FILE, parseDesktopCorePackageSet,
+  type DesktopCorePackageRecord } from '../src/core-package-set.ts'
+import { resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
 const REPOSITORY_ROOT = resolve(APP_ROOT, '..', '..')
@@ -31,6 +36,25 @@ function manifestFromTarball(tarball: string): Record<string, unknown> {
   return manifest as Record<string, unknown>
 }
 
+/** Reuse a previously prepared package only when its identity and recorded bytes still match. */
+export function cachedKernelPackage(
+  root: string, records: readonly DesktopCorePackageRecord[], name: string, range: string,
+): { tarball: string; manifest: Record<string, unknown> } | undefined {
+  const record = records.find(entry => entry.name === name && satisfies(entry.version, range))
+  if (record === undefined) return undefined
+  const tarball = join(root, DESKTOP_PACKAGES_DIR, record.file)
+  try {
+    const body = readFileSync(tarball)
+    if (body.length !== record.bytes
+      || `sha512-${createHash('sha512').update(body).digest('base64')}` !== record.integrity) return undefined
+    const manifest = manifestFromTarball(tarball)
+    if (manifest.name !== name || manifest.version !== record.version) return undefined
+    return { tarball, manifest }
+  } catch {
+    return undefined
+  }
+}
+
 function dependencies(manifest: Readonly<Record<string, unknown>>): string[] {
   const names = new Set<string>()
   for (const section of ['dependencies', 'peerDependencies']) {
@@ -51,13 +75,22 @@ function main(): void {
   if (args[0] === '--') args.shift()
   const { values } = parseArgs({
     args,
-    options: { out: { type: 'string' }, host: { type: 'string' } },
+    options: { out: { type: 'string' }, host: { type: 'string' }, refresh: { type: 'boolean', default: false } },
     allowPositionals: false,
   })
   if (typeof KERNEL_RELEASE.version !== 'string' || KERNEL_RELEASE.version.length === 0) {
     throw new Error('desktop kernel release: config/kernel-release.json must specify an exact version')
   }
   const output = resolve(REPOSITORY_ROOT, values.out ?? '.desktop-build/targets/win-x64/packed/dsh')
+  const cacheRoot = resolveDesktopTargetBuildPaths().packageSet
+  let cachedRecords: readonly DesktopCorePackageRecord[] = []
+  if (!values.refresh && existsSync(join(cacheRoot, DESKTOP_PACKAGE_SET_FILE))) {
+    try {
+      cachedRecords = parseDesktopCorePackageSet(JSON.parse(readFileSync(join(cacheRoot, DESKTOP_PACKAGE_SET_FILE), 'utf8'))).packages
+    } catch {
+      console.warn('desktop kernel packages: previous package set is invalid; fetching dependencies instead')
+    }
+  }
   rmSync(output, { recursive: true, force: true })
   mkdirSync(output, { recursive: true })
   const queue = [`${DSH_PACKAGE}@${KERNEL_RELEASE.version}`]
@@ -74,14 +107,24 @@ function main(): void {
     }
   }
   const seen = new Set<string>()
+  let reused = 0
   while (queue.length > 0) {
     const spec = queue.shift()!
     const packageName = spec.slice(0, spec.lastIndexOf('@'))
     if (seen.has(packageName)) continue
-    const result = JSON.parse(runNpm(['pack', spec, '--json', '--pack-destination', output])) as { filename?: unknown }[]
-    const filename = result[0]?.filename
-    if (typeof filename !== 'string') throw new Error(`npm pack returned no tarball for ${spec}`)
-    const manifest = manifestFromTarball(join(output, filename))
+    const range = spec.slice(spec.lastIndexOf('@') + 1)
+    const cached = cachedKernelPackage(cacheRoot, cachedRecords, packageName, range)
+    let manifest: Record<string, unknown>
+    if (cached !== undefined) {
+      copyFileSync(cached.tarball, join(output, basename(cached.tarball)))
+      manifest = cached.manifest
+      reused += 1
+    } else {
+      const result = JSON.parse(runNpm(['pack', spec, ...(values.refresh ? [] : ['--prefer-offline']), '--json', '--pack-destination', output])) as { filename?: unknown }[]
+      const filename = result[0]?.filename
+      if (typeof filename !== 'string') throw new Error(`npm pack returned no tarball for ${spec}`)
+      manifest = manifestFromTarball(join(output, filename))
+    }
     if (manifest.name !== packageName || typeof manifest.version !== 'string') {
       throw new Error(`npm returned an unexpected package for ${spec}`)
     }
@@ -95,7 +138,7 @@ function main(): void {
       queue.push(`${dependency}@${exact}`)
     }
   }
-  console.log(`desktop kernel packages: downloaded ${seen.size} npm packages for dsh@${KERNEL_RELEASE.version} and Desktop Host`)
+  console.log(`desktop kernel packages: reused ${reused}, downloaded ${seen.size - reused} npm packages for dsh@${KERNEL_RELEASE.version} and Desktop Host`)
 }
 
 if (import.meta.main) main()

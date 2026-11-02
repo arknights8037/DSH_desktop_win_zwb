@@ -1,10 +1,10 @@
 /** Prepare an official npm kernel beside the bundled fallback and verify its real Desktop transport. */
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { cp, mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { delimiter, dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { DESKTOP_HOST_PACKAGE } from './core-package-set.ts'
+import { DESKTOP_HOST_PACKAGE, DESKTOP_HOST_RUNTIME_FILES } from './core-package-set.ts'
 import { DESKTOP_HOST_PROTOCOL_VERSION } from './host-protocol.ts'
 import { DesktopHostProcess } from './host-process.ts'
 import { DesktopProjectManager, type DesktopRuntimeExecutables } from './project-manager.ts'
@@ -16,7 +16,24 @@ import { DESKTOP_DEFAULT_PLUGINS } from './default-plugins.ts'
 import { instanceSettings } from './manager-settings.ts'
 import type { DesktopInstallReporter } from './install-progress.ts'
 
-async function pnpm(runtime: DesktopRuntimeExecutables, cwd: string, args: readonly string[]): Promise<void> {
+const KERNEL_PACKAGE_TIMEOUT_MS = 5 * 60_000
+const TERMINATION_GRACE_MS = 5_000
+
+function terminateProcessTree(child: ChildProcess): void {
+  if (process.platform === 'win32' && child.pid !== undefined) {
+    const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
+    killer.once('error', () => { child.kill('SIGKILL') })
+    return
+  }
+  child.kill('SIGTERM')
+  const force = setTimeout(() => { child.kill('SIGKILL') }, TERMINATION_GRACE_MS)
+  force.unref()
+}
+
+async function pnpm(
+  runtime: DesktopRuntimeExecutables, cwd: string, args: readonly string[], signal?: AbortSignal,
+): Promise<void> {
+  signal?.throwIfAborted()
   await new Promise<void>((resolve, reject) => {
     const child = spawn(runtime.node, [runtime.pnpm, '--dir', cwd, '--config.userconfig=' + join(cwd, 'npmrc'),
       '--config.registry=https://registry.npmjs.org/', '--config.enable-global-virtual-store=false',
@@ -36,12 +53,37 @@ async function pnpm(runtime: DesktopRuntimeExecutables, cwd: string, args: reado
     let diagnostic = ''
     child.stderr.on('data', (data: Buffer) => { diagnostic = (diagnostic + data.toString()).slice(-8192) })
     child.stdout.on('data', (data: Buffer) => { diagnostic = (diagnostic + data.toString()).slice(-8192) })
-    const timeout = setTimeout(() => { child.kill() }, 300_000)
-    child.once('error', (error) => { clearTimeout(timeout); reject(error) })
-    child.once('close', (code, signal) => {
+    let failure: Error | undefined
+    let forceTimer: ReturnType<typeof setTimeout> | undefined
+    let settled = false
+    const complete = (error?: Error): void => {
+      if (settled) return
+      settled = true
       clearTimeout(timeout)
-      if (code === 0) resolve()
-      else reject(new Error(`Kernel package preparation failed (${String(code ?? signal)}): ${diagnostic}`))
+      if (forceTimer !== undefined) clearTimeout(forceTimer)
+      signal?.removeEventListener('abort', abort)
+      if (error) reject(error)
+      else resolve()
+    }
+    const stop = (error: Error): void => {
+      failure ??= error
+      terminateProcessTree(child)
+      forceTimer ??= setTimeout(() => { child.kill('SIGKILL') }, TERMINATION_GRACE_MS)
+      forceTimer.unref()
+    }
+    const timeout = setTimeout(() => {
+      stop(new Error(`Kernel package preparation timed out after ${String(KERNEL_PACKAGE_TIMEOUT_MS / 60_000)} minutes`))
+    }, KERNEL_PACKAGE_TIMEOUT_MS)
+    const abort = (): void => {
+      stop(signal?.reason instanceof Error ? signal.reason : new Error('Kernel package preparation cancelled'))
+    }
+    signal?.addEventListener('abort', abort, { once: true })
+    if (signal?.aborted) abort()
+    child.once('error', (error) => { stop(error) })
+    child.once('close', (code, signal) => {
+      if (failure !== undefined) complete(failure)
+      else if (code === 0) complete()
+      else complete(new Error(`Kernel package preparation failed (${String(code ?? signal)}): ${diagnostic}`))
     })
   })
 }
@@ -59,14 +101,20 @@ async function pnpm(runtime: DesktopRuntimeExecutables, cwd: string, args: reado
 export async function prepareDesktopKernel(
   version: string, directory: string, bundled: DesktopRuntimeExecutables, libraryRoot: string, fetcher: typeof fetch = fetch,
   progress: DesktopInstallReporter = () => {},
+  externalSignal?: AbortSignal,
 ): Promise<void> {
+  externalSignal?.throwIfAborted()
   progress({ stage: 'validating', package: `DSH ${version}` })
   if (existsSync(join(directory, 'desktop-runtime.json'))) {
     const descriptor = await verifyDesktopRuntime(directory, version)
-    const previousBridge = await readFile(join(directory, 'node_modules', DESKTOP_HOST_PACKAGE, 'lib/index.js'))
-    const bridge = await readFile(join(bundled.dsh, 'node_modules', DESKTOP_HOST_PACKAGE, 'lib/index.js'))
+    const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8')) as { dependencies?: Record<string, string> }
+    const bridgeMatches = await Promise.all(DESKTOP_HOST_RUNTIME_FILES.map(async file => {
+      const previous = await readFile(join(directory, 'node_modules', DESKTOP_HOST_PACKAGE, file))
+      const current = await readFile(join(bundled.dsh, 'node_modules', DESKTOP_HOST_PACKAGE, file))
+      return previous.equals(current)
+    }))
     const release = readDesktopRuntime(bundled.dsh).release
-    if (previousBridge.equals(bridge) && descriptor.release.nodeVersion === release.nodeVersion
+    if (manifest.dependencies?.[DESKTOP_HOST_PACKAGE] === version && bridgeMatches.every(Boolean) && descriptor.release.nodeVersion === release.nodeVersion
       && descriptor.release.pnpmVersion === release.pnpmVersion) return
   }
   await mkdir(dirname(directory), { recursive: true })
@@ -97,8 +145,10 @@ export async function prepareDesktopKernel(
     await writeFile(join(installation, 'npmrc'), '')
     await writeFile(join(installation, 'pnpm-workspace.yaml'), 'nodeLinker: hoisted\nautoInstallPeers: true\nstrictDepBuilds: true\nallowBuilds:\n  node-pty: true\n  koffi: true\n  fs-ext: true\n  node-addon-require-builtin: true\n')
     progress({ stage: 'installing', package: `DSH ${version}` })
-    await pnpm(bundled, installation, ['install', '--prod', '--ignore-scripts', '--registry=https://registry.npmjs.org/'])
-    await pnpm(bundled, installation, ['rebuild', '--pending'])
+    await pnpm(bundled, installation, ['install', '--prod', '--ignore-scripts', '--registry=https://registry.npmjs.org/'], externalSignal)
+    externalSignal?.throwIfAborted()
+    await pnpm(bundled, installation, ['rebuild', '--pending'], externalSignal)
+    externalSignal?.throwIfAborted()
     progress({ stage: 'copying', package: `DSH ${version}` })
     await cp(join(installation, 'node_modules'), join(stage, 'node_modules'), {
       recursive: true, dereference: true, filter: source => !source.split(/[\\/]/u).includes('.bin'),
@@ -110,7 +160,9 @@ export async function prepareDesktopKernel(
       hostDependencies[name] = installed.version
     }
     await writeFile(join(stage, 'node_modules', DESKTOP_HOST_PACKAGE, 'package.json'), `${JSON.stringify({ ...hostManifest, dependencies: hostDependencies, name: DESKTOP_HOST_PACKAGE, version, type: 'module', main: 'lib/index.js' })}\n`)
-    await writeFile(join(stage, 'package.json'), `${JSON.stringify({ name: 'dsh-managed-kernel', version, private: true, type: 'module', dependencies })}\n`)
+    // The private Host is copied locally, not fetched from npm. It must still be
+    // declared in the installation anchor so DSH includes it in runtime resolution.
+    await writeFile(join(stage, 'package.json'), `${JSON.stringify({ name: 'dsh-managed-kernel', version, private: true, type: 'module', dependencies: { ...dependencies, [DESKTOP_HOST_PACKAGE]: version } })}\n`)
     const shared = (await readdir(join(stage, 'node_modules', '@deepseek-ai'))).map(name => `@deepseek-ai/${name}`)
     for (const name of ['react', 'react-dom']) if (existsSync(join(stage, 'node_modules', name, 'package.json'))) shared.push(name)
     const bundledRelease = readDesktopRuntime(bundled.dsh).release
@@ -118,16 +170,27 @@ export async function prepareDesktopKernel(
     const runtime: DesktopRuntimeExecutables = { ...bundled, dsh: stage, profileResolution: 'runtime' }
     const library = new DesktopPluginLibrary(libraryRoot, runtime)
     const manager = new DesktopProjectManager(resolveDesktopPaths(home), runtime, progress)
-    await manager.applyRelease()
+    await manager.applyRelease(new Map(), [], externalSignal)
     for (const plugin of DESKTOP_DEFAULT_PLUGINS) {
       library.select(plugin.name, plugin.version)
-      await library.withSource(plugin.name, plugin.version, source => manager.mutate({ type: 'plugin-inject', ...plugin, source }, {
+      await library.withSource(plugin.name, plugin.version, (source, signal) => manager.mutate({ type: 'plugin-inject', ...plugin, source }, {
         beforeChange: async () => {}, afterChange: async () => {},
-      }), progress)
+      }, signal), progress, externalSignal)
+      externalSignal?.throwIfAborted()
     }
-    host = new DesktopHostProcess(runtime.node, stage, manager.paths.profile, undefined, { ...process.env, DSH_HOME: home }, () => {})
+    const launchedHost = new DesktopHostProcess(runtime.node, stage, manager.paths.profile, undefined, { ...process.env, DSH_HOME: home }, () => {})
+    host = launchedHost
     progress({ stage: 'starting', package: `DSH ${version}` })
-    const ready = await host.start()
+    const ready = externalSignal === undefined ? await launchedHost.start() : await new Promise<Awaited<ReturnType<typeof launchedHost.start>>>(
+      (resolve, reject) => {
+        const abort = (): void => {
+          reject(externalSignal.reason instanceof Error ? externalSignal.reason : new Error('Kernel preparation cancelled'))
+        }
+        externalSignal.addEventListener('abort', abort, { once: true })
+        void launchedHost.start().then(resolve, reject).finally(() => { externalSignal.removeEventListener('abort', abort) })
+      },
+    )
+    externalSignal?.throwIfAborted()
     if (ready.dshVersion !== version) throw new Error('Kernel probe reported a different DSH version')
     const response = await host.fetch(new Request('dsh-app://app/index.html'))
     if (!response.ok || !(await response.text()).includes('<html')) throw new Error('Kernel probe could not load its Web client')
@@ -147,7 +210,7 @@ export async function prepareDesktopKernel(
           || !('clientId' in frame) || typeof frame.clientId !== 'string') throw new Error('Kernel event stream omitted its readiness frame')
       } finally { streamLifetime.abort(); await reader.cancel().catch(() => undefined) }
     } finally { streamLifetime.abort() }
-    const runningHost = host
+    const runningHost = launchedHost
     const settings = await instanceSettings(request => runningHost.fetch(request), 'dsh-app://app/', 'read', {}) as {
       namespaces: Array<{ ns: string; revision: number; value: Record<string, unknown> }>
     }

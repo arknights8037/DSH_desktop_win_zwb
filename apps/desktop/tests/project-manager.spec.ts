@@ -175,7 +175,7 @@ it('keeps versioned shell installations separate from independent instance copie
   expect(realpathSync(copied)).not.toBe(realpathSync(original))
   expect(readFileSync(copied, 'utf8')).toBe('version one')
   await library.install('plugin', '2.0.0')
-  library.remove('plugin', '1.0.0')
+  expect(existsSync(source)).toBe(false)
   expect(readFileSync(copied, 'utf8')).toBe('version one')
   expect(manager.listPlugins()).toEqual([{ name: 'plugin', version: '1.0.0', enabled: true }])
   expect(library.list()).toEqual([{ name: 'plugin', version: '2.0.0' }])
@@ -190,13 +190,33 @@ it('keeps versioned shell installations separate from independent instance copie
   expect(library.list()).toHaveLength(1)
 })
 
+it('prunes legacy versions numerically and cleans temporary historical sources after failure', async () => {
+  const { root, manager } = setup()
+  const library = new DesktopPluginLibrary(join(root, 'shell-library'), manager.runtime)
+  await library.install('plugin', '10.0.0')
+  writeFileSync(join(library.root, 'selections.json'), JSON.stringify([
+    { name: 'plugin', version: '2.0.0' }, { name: 'plugin', version: '10.0.0' },
+  ]))
+  library.pruneSuperseded()
+  expect(library.list()).toEqual([{ name: 'plugin', version: '10.0.0' }])
+  let temporary = ''
+  await expect(library.withSources([{ name: 'plugin', version: '2.0.0' }], async sources => {
+    temporary = sources.get('plugin')!
+    expect(existsSync(temporary)).toBe(true)
+    throw new Error('deployment failed')
+  }, undefined, true)).rejects.toThrow('deployment failed')
+  expect(existsSync(temporary)).toBe(false)
+  expect(library.list()).toEqual([{ name: 'plugin', version: '10.0.0' }])
+  library.select('other-plugin', '1.0.0')
+})
+
 it('restores the previous injected copy and configuration when its replacement cannot start', async () => {
   const { root, manager } = setup()
   const library = new DesktopPluginLibrary(join(root, 'shell-library'), manager.runtime)
   await manager.applyRelease()
   await library.install('plugin', '1.0.0')
-  await library.install('plugin', '2.0.0')
   await manager.mutate({ type: 'plugin-inject', name: 'plugin', version: '1.0.0', source: library.source('plugin', '1.0.0') }, hooks())
+  await library.install('plugin', '2.0.0')
   let attempts = 0
   await expect(manager.mutate({ type: 'plugin-inject', name: 'plugin', version: '2.0.0', source: library.source('plugin', '2.0.0') }, hooks({
     afterChange: async () => { if (++attempts === 1) throw new Error('new plugin startup failed') },
@@ -721,4 +741,20 @@ describe('desktop external plugin profile', () => {
     }
     expect(existsSync(manager.paths.lock)).toBe(false)
   })
+
+  it('cancels a running package manager child and releases the transaction lock', async () => {
+    const { root, manager } = setup()
+    await manager.applyRelease()
+    const ready = join(root, 'cancel-ready')
+    const blocker = join(root, 'cancel-blocker.mjs')
+    writeFileSync(blocker, `import {writeFileSync} from 'node:fs'; writeFileSync(${JSON.stringify(ready)}, String(process.pid)); setInterval(() => {}, 1000)`)
+    const worker = new DesktopProjectManager(manager.paths, { ...manager.runtime, pnpm: blocker })
+    await worker.applyRelease()
+    const controller = new AbortController()
+    const pending = worker.mutate({ type: 'plugin-add', spec: 'plugin@1.0.0' }, hooks(), controller.signal)
+    await expect.poll(() => existsSync(ready), { timeout: 10_000 }).toBe(true)
+    controller.abort(new Error('cancelled by caller'))
+    await expect(pending).rejects.toThrow(/cancelled by caller/u)
+    expect(existsSync(manager.paths.lock)).toBe(false)
+  }, 15_000)
 })

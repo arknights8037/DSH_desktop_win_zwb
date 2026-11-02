@@ -7,7 +7,7 @@ export interface InstanceRuntime {
   disconnect(): Promise<void>
   stop(credentials: InstanceCredentials): Promise<void>
   fetch?(request: Request): Promise<Response>
-  injectPlugin?(plugin: { name: string; version: string }, credentials: InstanceCredentials): Promise<void>
+  injectPlugin?(plugin: { name: string; version: string }, credentials: InstanceCredentials, signal?: AbortSignal): Promise<void>
 }
 interface Entry {
   config: InstanceConfig
@@ -129,11 +129,12 @@ export class InstanceService {
    * @param plugin - Version already installed in the shell library.
    * @returns Completion after injection; callers reconnect the instance view.
    */
-  async injectPlugin(config: InstanceConfig, plugin: { name: string; version: string }): Promise<void> {
+  async injectPlugin(config: InstanceConfig, plugin: { name: string; version: string }, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted()
     const entry = this.entry(config)
     if (!entry.runtime.injectPlugin) throw new Error('Instance does not support remote plugin injection')
     if (this.closing || entry.stopping || entry.status.connection !== 'connected') throw new Error('Connect to the instance before injecting plugins')
-    const pending = entry.runtime.injectPlugin(plugin, entry.credentials)
+    const pending = entry.runtime.injectPlugin(plugin, entry.credentials, signal)
     entry.stopping = pending
     try { await pending }
     catch (error) {

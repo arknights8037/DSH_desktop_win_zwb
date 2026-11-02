@@ -19,7 +19,9 @@ export interface KernelStatus {
 }
 interface Selection { version: 1; selected: string | null; previous: string | null; automatic: boolean }
 /** Installation publishes a verified, self-contained directory only after a disposable Host succeeds. */
-export type PrepareKernel = (version: string, directory: string, progress?: DesktopInstallReporter) => Promise<void>
+export type PrepareKernel = (
+  version: string, directory: string, progress?: DesktopInstallReporter, signal?: AbortSignal,
+) => Promise<void>
 
 /**
  * Download and prepare kernels without changing any running instance.
@@ -34,6 +36,7 @@ export class DesktopKernelManager {
   private readonly started: string | null
   private state: KernelStatus
   private pending: Promise<KernelStatus> | undefined
+  private controller: AbortController | undefined
   private installRequested = false
   constructor(
     private readonly root: string, private readonly bundled: DesktopRuntimeExecutables,
@@ -80,6 +83,9 @@ export class DesktopKernelManager {
   snapshot(): KernelStatus { return { ...this.state } }
   /** @returns Completion of package preparation, for quiescent application shutdown. */
   settled(): Promise<unknown> { return this.pending ?? Promise.resolve() }
+
+  /** Cancel registry checks and package preparation before application shutdown. */
+  cancel(): void { this.controller?.abort(new Error('Kernel update cancelled')) }
   /**
    * Persist whether launch-time checks also prepare a newer npm latest release.
    * @param enabled - Whether future checks may prepare updates without an explicit install request.
@@ -100,9 +106,13 @@ export class DesktopKernelManager {
     if (this.pending) return this.pending
     const { message: _message, ...state } = this.state
     this.state = { ...state, phase: 'checking' }
+    const controller = new AbortController()
+    this.controller = controller
     const pending = (async () => {
       try {
-        const response = await this.fetcher('https://registry.npmjs.org/@deepseek-ai%2Fdsh/latest', { signal: AbortSignal.timeout(30_000) })
+        const response = await this.fetcher('https://registry.npmjs.org/@deepseek-ai%2Fdsh/latest', {
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]),
+        })
         if (!response.ok) throw new Error(`DSH registry returned HTTP ${response.status}`)
         const value: unknown = await response.json()
         if (typeof value !== 'object' || value === null || !('name' in value) || value.name !== '@deepseek-ai/dsh'
@@ -113,7 +123,8 @@ export class DesktopKernelManager {
         this.state = { ...this.state, phase: 'idle', available: version }
         if (!this.installRequested && !this.selection.automatic) return this.snapshot()
         this.state = { ...this.state, phase: 'installing' }
-        await this.prepare(version, this.directory(version), (progress) => { this.state = { ...this.state, progress } })
+        await this.prepare(version, this.directory(version), (progress) => { this.state = { ...this.state, progress } }, controller.signal)
+        controller.signal.throwIfAborted()
         const descriptor = readDesktopRuntime(this.directory(version))
         if (descriptor.release.version !== version) throw new Error('Prepared DSH runtime has a different version')
         this.commit({ ...this.selection, selected: version, previous: this.selection.selected })
@@ -122,7 +133,13 @@ export class DesktopKernelManager {
         this.state = { ...this.state, phase: 'error', message: error instanceof Error ? error.message : String(error) }
       }
       return this.snapshot()
-    })().finally(() => { if (this.pending === pending) { this.pending = undefined; this.installRequested = false } })
+    })().finally(() => {
+      if (this.pending === pending) {
+        this.pending = undefined
+        this.installRequested = false
+      }
+      if (this.controller === controller) this.controller = undefined
+    })
     this.pending = pending
     return pending
   }

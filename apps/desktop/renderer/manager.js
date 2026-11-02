@@ -15,6 +15,7 @@ $('theme').value = document.documentElement.dataset.theme
 let refreshing = false
 let refreshAgain = false
 let noticeTimer
+let dirtyReported = false
 const t = key => state.messages[key]
 function installationText(progress) {
   const count = progress.total > 0 ? t('installProgressCount').replace('{completed}', progress.completed || 0).replace('{total}', progress.total) : ''
@@ -27,14 +28,17 @@ function button(key, callback, className = '') {
   node.onclick = () => { void perform(callback) }
   return node
 }
+function showNotice(error, duration = 12000) {
+  $('notice').textContent = String(error?.message || error)
+  $('notice').hidden = false
+  clearTimeout(noticeTimer)
+  noticeTimer = setTimeout(() => { $('notice').hidden = true }, duration)
+}
 async function perform(callback) {
   try { await callback() }
   catch (error) {
     await api.invoke('overlay', { visible: true })
-    $('notice').textContent = String(error.message || error)
-    $('notice').hidden = false
-    clearTimeout(noticeTimer)
-    noticeTimer = setTimeout(() => { $('notice').hidden = true }, 12000)
+    showNotice(error)
   } finally { await refresh() }
 }
 async function refresh() {
@@ -60,6 +64,10 @@ async function showManager() {
   await showSettings('instances')
 }
 async function closeSettings() {
+  if (typeof hasUnsavedSettings === 'function' && hasUnsavedSettings()) {
+    if (!window.confirm(t('discardSettingsConfirm'))) return
+    await discardUnsavedSettings()
+  }
   settingsOpen = false
   shellPage = 'welcome'
   managerVisible = !active()
@@ -78,7 +86,7 @@ async function closeInstance(id) {
     render()
   }
 }
-async function open(config, operation = 'open') {
+async function invokeInstanceOperation(config, operation) {
   if (config.kind === 'ssh' && state.statuses[config.id].connection !== 'connected') {
     credentialTarget = config
     credentialOperation = operation
@@ -90,8 +98,23 @@ async function open(config, operation = 'open') {
     $('credentials').showModal()
     return
   }
-  managerVisible = false
+  if (operation === 'open') managerVisible = false
   await api.invoke(operation, { id: config.id })
+}
+async function open(config, operation = 'open') {
+  await invokeInstanceOperation(config, operation)
+}
+async function changeInstanceState(config, operation, confirmation) {
+  if (confirmation && !window.confirm(t(confirmation))) return
+  await invokeInstanceOperation(config, operation)
+}
+function reportDirty() {
+  const dirty = typeof hasUnsavedSettings === 'function' && hasUnsavedSettings()
+  if (dirty === dirtyReported) return
+  dirtyReported = dirty
+  void api.invoke('dirty', { dirty }).catch(error => {
+    showNotice(error)
+  })
 }
 function beginRename(config) {
   renaming = config.id
@@ -120,6 +143,11 @@ async function showTabMenu(event, config) {
     await refresh()
     await open(config)
   })
+  action('restart', () => changeInstanceState(config, 'restart', 'restartConfirm'))
+  const status = state.statuses[config.id]
+  if (status.process === 'running' || status.process === 'starting' || status.connection === 'connected' || config.kind === 'ssh') {
+    action('stop', () => changeInstanceState(config, 'stop', 'stopConfirm'))
+  }
   action('logs', async () => {
     const logs = await api.invoke('logs', { id: config.id })
     $('log-content').textContent = logs.length ? logs.join('\n') : t('noLogs')
@@ -155,16 +183,21 @@ function renderInstanceManager() {
     details.textContent = instance.kind === 'ssh' ? `${t('ssh')} · ${instance.username}@${instance.host}:${instance.port}` : t('local')
     const stateText = document.createElement('span')
     stateText.className = 'instance-status'
-    stateText.textContent = t(status.connection)
+    stateText.textContent = `${t(status.process)} · ${t(status.connection)}`
     summary.append(nameLine, details, stateText)
     const actions = document.createElement('div')
     actions.className = 'instance-actions'
     const connect = button('open', () => open(instance), 'primary')
     connect.classList.add('instance-connect')
     const editButton = button('edit', () => edit(instance))
+    const canStop = status.process === 'running' || status.process === 'starting'
+      || status.connection === 'connected' || instance.kind === 'ssh'
+    const stopButton = canStop
+      ? button('stop', () => changeInstanceState(instance, 'stop', 'stopConfirm'), 'instance-stop')
+      : undefined
     const removeButton = button('remove', () => removeInstance(instance))
     removeButton.classList.add('instance-remove')
-    actions.append(connect, editButton, removeButton)
+    actions.append(connect, editButton, ...(stopButton ? [stopButton] : []), removeButton)
     row.append(summary, actions)
     list.append(row)
   }
@@ -310,6 +343,7 @@ function render() {
     $('instance-loader').hidden = !busy
     $('instance-state-symbol').hidden = busy
     $('recover').hidden = busy
+    $('instance-state-stop').hidden = !busy
     $('state-title').textContent = `${config.name} — ${t(status.connection)}`
     $('state-message').textContent = status.message || t(status.process)
     const progress = state.installationProgress?.[config.id]
@@ -357,7 +391,7 @@ $('credential-form').onsubmit = event => {
   const credentials = { [config.auth === 'password' ? 'password' : 'passphrase']: $('secret').value }
   $('secret').value = ''
   $('credentials').close()
-  managerVisible = false
+  if (credentialOperation === 'open') managerVisible = false
   void perform(async () => {
     await api.invoke(credentialOperation, { id: config.id, credentials })
 
@@ -388,7 +422,7 @@ async function showSettings(tab) {
 $('settings').onclick = () => { void perform(() => showSettings()) }
 for (const action of ['minimize', 'maximize', 'close']) {
   $(`window-${action}`).onclick = () => {
-    void api.invoke('window', { action }).catch(error => { $('notice').textContent = String(error.message || error); $('notice').hidden = false })
+    void api.invoke('window', { action }).catch(showNotice)
   }
 }
 $('instance-add').onclick = () => { void perform(toggleInstanceMenu) }
@@ -463,6 +497,10 @@ document.querySelectorAll('.choice-card').forEach(card => {
   }
 })
 $('recover').onclick = () => { if (active()) void perform(() => open(active())) }
+$('instance-state-stop').onclick = () => {
+  const config = active()
+  if (config) void perform(() => changeInstanceState(config, 'stop', 'stopConfirm'))
+}
 api.subscribe(() => { void refresh() })
 void refresh().then(() => {
   const config = active()

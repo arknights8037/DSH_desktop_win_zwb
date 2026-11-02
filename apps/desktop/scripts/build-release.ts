@@ -32,7 +32,7 @@ function copyPackage(source: string, destination: string): void {
 
 function npmInstall(packageRoot: string): void {
   if (!existsSync(NPM_CLI)) throw new Error(`desktop release build: npm CLI not found beside Node at ${NPM_CLI}`)
-  runNode([NPM_CLI, 'install', '--ignore-scripts', '--no-audit', '--no-fund', '--no-package-lock'], packageRoot)
+  runNode([NPM_CLI, 'install', '--prefer-offline', '--ignore-scripts', '--no-audit', '--no-fund', '--no-package-lock'], packageRoot)
 }
 
 function pinKernelDependencies(packageRoot: string): void {

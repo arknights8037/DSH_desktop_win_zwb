@@ -53,9 +53,9 @@ export class LocalInstance implements InstanceRuntime {
     return this.backend.host?.fetch(request) ?? Promise.resolve(new Response(null, { status: 503 }))
   }
   /** Profile transactions stop and restart only this backend. */
-  async mutate(mutation: DesktopProjectMutation | 'reset'): Promise<void> {
+  async mutate(mutation: DesktopProjectMutation | 'reset', signal?: AbortSignal): Promise<void> {
     const hooks = { beforeChange: () => this.backend.stop(), afterChange: async () => { await this.backend.start(async () => {}) } }
-    if (mutation === 'reset') await this.manager.resetConfiguration(hooks)
-    else await this.manager.mutate(mutation, hooks)
+    if (mutation === 'reset') await this.manager.resetConfiguration(hooks, signal)
+    else await this.manager.mutate(mutation, hooks, signal)
   }
 }

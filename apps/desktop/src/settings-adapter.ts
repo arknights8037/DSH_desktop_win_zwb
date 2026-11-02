@@ -27,10 +27,17 @@ export interface InstanceSettingsSupport {
 /** Software control ids and their ordered instance targets; also the manager's edit allowlist. */
 export const SOFTWARE_SETTING_TARGETS = {
   theme: [['ui-theme', 'preference']], fontSize: [['ui-theme', 'fontSize']],
+  codeFontSize: [['ui-theme', 'codeFontSize']], terminalFontSize: [['ui-theme', 'terminalFontSize']],
+  textFontFamily: [['ui-theme', 'textFontFamily']], codeFontFamily: [['ui-theme', 'codeFontFamily']],
+  terminalFontFamily: [['ui-theme', 'terminalFontFamily']],
   language: [['locale', 'preference']], busyEnter: [['ui-conversation', 'busyEnter']],
   motionEnabled: [['ui-theme', 'motionEnabled']], customization: [['ui-theme', 'customization']],
-  transcriptView: [['ui-chat', 'transcriptView']], modeSelectionEnabled: [['agent-presets', 'modeSelectionEnabled']],
-  defaultPreset: [['agent-presets', 'default']], deepseekProtocol: [['llm-deepseek', 'protocol']],
+  transcriptView: [['ui-chat', 'transcriptView']], collapseTiming: [['ui-chat', 'collapseTiming']],
+  performanceUsage: [['ui-chat', 'performanceUsage']], linkOpening: [['ui-chat', 'linkOpening']],
+  developerToolsEnabled: [['ui-settings', 'enabled']], permissionDefaultPreset: [['permission', 'defaultPreset']],
+  // Current DSH releases retain the selected default on the preset registry.
+  // Older Desktop builds targeted the removed agent-presets namespace.
+  defaultPreset: [['agent-preset-registry', 'selectedDefault']], deepseekProtocol: [['llm-deepseek', 'protocol']],
   deepseekBaseURL: [['llm-deepseek', 'baseURL']], deepseekKeyRef: [['llm-deepseek', 'apiKeyEnv']],
   deepseekMaxTokens: [['llm-deepseek', 'maxTokens']],
   reasoningEffort: [['agent-default-model', 'reasoningEffort'], ['llm-deepseek', 'reasoningEffort']],
@@ -69,7 +76,10 @@ export function resolveInstanceSettings(preferences: SoftwareSettingsSnapshot, d
       ...schema.meta.min === undefined ? {} : { min: schema.meta.min },
       ...schema.meta.max === undefined ? {} : { max: schema.meta.max },
       ...schema.meta.step === undefined ? {} : { step: schema.meta.step } }
-    const value = values[id as keyof typeof SOFTWARE_SETTING_TARGETS]
+    let value = values[id as keyof typeof SOFTWARE_SETTING_TARGETS]
+    if (id === 'transcriptView' && typeof value === 'string' && ['standard', 'detailed', 'verbose'].includes(value)
+      && schema.type === 'union' && schema.list?.some(item => item.type === 'const' && item.value === 'normal')
+      && !schema.list.some(item => item.type === 'const' && item.value === value)) value = 'normal'
     if ((id === 'defaultProvider' || id === 'defaultModel') && value === '') continue
     try {
       const accepted: unknown = schema(value)

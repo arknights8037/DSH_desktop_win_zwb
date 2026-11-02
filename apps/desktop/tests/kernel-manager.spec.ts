@@ -42,6 +42,21 @@ it('keeps manual checks read-only and coalesces a concurrent install request', a
   expect(prepare).toHaveBeenCalledTimes(1)
 })
 
+it('cancels a pending kernel preparation during application shutdown', async () => {
+  const { manager, prepare } = fixture()
+  const started = Promise.withResolvers<void>()
+  prepare.mockImplementationOnce((_version, _directory, _progress, signal) => new Promise((_resolve, reject) => {
+    started.resolve()
+    signal?.addEventListener('abort', () => {
+      reject(signal.reason instanceof Error ? signal.reason : new Error('cancelled'))
+    }, { once: true })
+  }))
+  const pending = manager.check(true)
+  await started.promise
+  manager.cancel()
+  expect(await pending).toMatchObject({ phase: 'error', message: 'Kernel update cancelled' })
+})
+
 it('retains the previous selection after download failure or a mismatched runtime', async () => {
   const { manager, prepare, root } = fixture()
   manager.automatic(false)

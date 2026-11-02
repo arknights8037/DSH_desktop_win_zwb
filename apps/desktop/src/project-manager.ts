@@ -2,7 +2,7 @@
 
 import { valid } from 'semver'
 import { cp } from 'node:fs/promises'
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import {
   existsSync,
   fsyncSync,
@@ -121,9 +121,22 @@ const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._~-]*\/[a-z0-9][a-z0-9._~-]*|
 const VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z.+_-]*$/u
 const MAX_PNPM_DIAGNOSTIC_BYTES = 64 * 1024
 const DESKTOP_REGISTRY = 'https://registry.npmjs.org/'
+const PACKAGE_OPERATION_TIMEOUT_MS = 10 * 60_000
+const PROCESS_TERMINATION_GRACE_MS = 5_000
 
 function errorOf(reason: unknown, fallback: string): Error {
   return reason instanceof Error ? reason : new Error(fallback)
+}
+
+function terminateProcessTree(child: ChildProcess): void {
+  if (process.platform === 'win32' && child.pid !== undefined) {
+    const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
+    killer.once('error', () => { child.kill('SIGKILL') })
+    return
+  }
+  child.kill('SIGTERM')
+  const force = setTimeout(() => { child.kill('SIGKILL') }, PROCESS_TERMINATION_GRACE_MS)
+  force.unref()
 }
 
 function writeJson(path: string, value: unknown): void {
@@ -319,9 +332,11 @@ export class DesktopProjectManager {
    * @param hooks - Stop the Host before resetting files; restart after preparation succeeds.
    * @returns Completion of reset; the held lock and shared product data are preserved.
    */
-  async resetConfiguration(hooks: DesktopProjectHooks): Promise<void> {
+  async resetConfiguration(hooks: DesktopProjectHooks, signal?: AbortSignal): Promise<void> {
     await this.withLock(async () => {
+      signal?.throwIfAborted()
       await hooks.beforeChange()
+      signal?.throwIfAborted()
       this.descriptor = this.readRuntime()
       for (const entry of readdirSync(this.paths.profile, { withFileTypes: true })) {
         const path = join(this.paths.profile, entry.name)
@@ -331,6 +346,7 @@ export class DesktopProjectManager {
       }
       createPluginProfile(this.paths.profile)
       this.prepareProfile(this.paths.profile)
+      signal?.throwIfAborted()
       await hooks.afterChange()
     })
   }
@@ -411,8 +427,10 @@ export class DesktopProjectManager {
    */
   async applyRelease(
     sources: ReadonlyMap<string, string> = new Map(), updates: readonly DesktopPluginReplacement[] = [],
+    signal?: AbortSignal,
   ): Promise<boolean> {
     return this.withLock(async () => {
+      signal?.throwIfAborted()
       const target = this.readRuntime()
       this.descriptor = target
       const previous = readDesktopProfileState(this.paths.profile)
@@ -427,7 +445,10 @@ export class DesktopProjectManager {
       if (previous === undefined) createPluginProfile(this.paths.profile)
       if (updates.length > 0) await this.snapshotProfile()
       try {
-        for (const update of updates) await this.applyMutation(this.paths.profile, { type: 'plugin-inject', ...update })
+        for (const update of updates) {
+          signal?.throwIfAborted()
+          await this.applyMutation(this.paths.profile, { type: 'plugin-inject', ...update }, signal)
+        }
         if (previous !== undefined && previous.runtimeId !== desktopRuntimeId(target)) {
           const manifest = projectManifest(this.paths.profile)
           for (const name of Object.keys(manifest.dsh.profile.injectedPlugins ?? {})) {
@@ -436,10 +457,11 @@ export class DesktopProjectManager {
             if (source === undefined) throw new Error(`desktop project: re-inject ${name} from the shell library for this application runtime`)
             const version = manifest.dependencies[name]
             if (version === undefined) throw new Error(`desktop project: missing injected plugin version: ${name}`)
-            await this.applyMutation(this.paths.profile, { type: 'plugin-inject', name, version, source })
+            await this.applyMutation(this.paths.profile, { type: 'plugin-inject', name, version, source }, signal)
           }
         }
-        await this.reconcileProfile(this.paths.profile, previous)
+        await this.reconcileProfile(this.paths.profile, previous, false, signal)
+        signal?.throwIfAborted()
         return true
       } catch (error) {
         if (updates.length === 0) throw error
@@ -460,8 +482,9 @@ export class DesktopProjectManager {
    * @param hooks - Quiescent Host stop and awaited startup operations.
    * @returns Completion after startup; rejects with both failures if recovery also fails.
    */
-  async mutate(mutation: DesktopProjectMutation, hooks: DesktopProjectHooks): Promise<void> {
+  async mutate(mutation: DesktopProjectMutation, hooks: DesktopProjectHooks, signal?: AbortSignal): Promise<void> {
     await this.withLock(async () => {
+      signal?.throwIfAborted()
       this.currentRuntime()
       if (!existsSync(this.paths.profile)) throw new Error('desktop project: active profile is not installed')
       await hooks.beforeChange()
@@ -487,7 +510,7 @@ export class DesktopProjectManager {
           && !(mutation.type === 'plugin-remove' && Object.hasOwn(injected, mutation.name))
         if (packagesChanged && this.runtime.profileResolution !== 'runtime') unlinkDesktopHostPackages(this.paths.profile)
         try {
-          await this.applyMutation(this.paths.profile, mutation)
+          await this.applyMutation(this.paths.profile, mutation, signal)
         } finally {
           if (packagesChanged) {
             const runtime = this.currentRuntime()
@@ -495,7 +518,8 @@ export class DesktopProjectManager {
             else linkDesktopHostPackages(this.paths.profile, this.runtime.dsh, runtime)
           }
         }
-        await this.reconcileProfile(this.paths.profile, previous, packagesChanged)
+        await this.reconcileProfile(this.paths.profile, previous, packagesChanged, signal)
+        signal?.throwIfAborted()
         startupAttempted = true
         await hooks.afterChange()
       } catch (error) {
@@ -552,7 +576,10 @@ export class DesktopProjectManager {
     }
   }
 
-  private async reconcileProfile(projectDir: string, previous: DesktopProfileState | undefined, packagesChanged = false): Promise<void> {
+  private async reconcileProfile(
+    projectDir: string, previous: DesktopProfileState | undefined, packagesChanged = false, signal?: AbortSignal,
+  ): Promise<void> {
+    signal?.throwIfAborted()
     const target = this.currentRuntime()
     const injected = projectManifest(projectDir).dsh.profile.injectedPlugins ?? {}
     const rebuild = (!packagesChanged && existsSync(this.pendingPackages))
@@ -562,20 +589,27 @@ export class DesktopProjectManager {
       writeFileSync(this.pendingPackages, '')
       if (this.runtime.profileResolution !== 'runtime') unlinkDesktopHostPackages(projectDir)
       removeOwnedDirectory(join(projectDir, 'node_modules'))
-      await this.runPnpm(projectDir, ['install', '--frozen-lockfile', '--ignore-scripts'])
+      await this.runPnpm(projectDir, ['install', '--frozen-lockfile', '--ignore-scripts'], signal)
     }
-    if (rebuild || packagesChanged) await this.finishPackageOperation(projectDir)
+    if (rebuild || packagesChanged) await this.finishPackageOperation(projectDir, signal)
     else this.prepareProfile(projectDir)
   }
 
-  private async finishPackageOperation(projectDir: string): Promise<void> {
+  private async finishPackageOperation(projectDir: string, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted()
     this.prepareProfile(projectDir)
-    await this.runPnpm(projectDir, ['rebuild', '--pending'])
+    await this.runPnpm(projectDir, ['rebuild', '--pending'], signal)
+    signal?.throwIfAborted()
     this.prepareProfile(projectDir)
     unlinkSync(this.pendingPackages)
   }
 
-  private async applyMutation(projectDir: string, mutation: Exclude<DesktopProjectMutation, { type: 'plugins-disable-all' }>): Promise<void> {
+  private async applyMutation(
+    projectDir: string,
+    mutation: Exclude<DesktopProjectMutation, { type: 'plugins-disable-all' }>,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    signal?.throwIfAborted()
     switch (mutation.type) {
       case 'plugin-inject': {
         this.progress({ stage: 'copying', package: `${mutation.name}@${mutation.version}` })
@@ -623,8 +657,9 @@ export class DesktopProjectManager {
         if (this.currentRuntime().sharedPackages.some(entry => entry.name === requestedName)) {
           throw new Error(`desktop project: cannot install host-owned package ${requestedName}`)
         }
-        await this.runPnpm(projectDir, ['add', mutation.spec, '--save-exact', '--ignore-scripts'])
-        if (this.runtime.profileResolution === 'runtime') await this.runPnpm(projectDir, ['install', '--ignore-scripts'])
+        await this.runPnpm(projectDir, ['add', mutation.spec, '--save-exact', '--ignore-scripts'], signal)
+        signal?.throwIfAborted()
+        if (this.runtime.profileResolution === 'runtime') await this.runPnpm(projectDir, ['install', '--ignore-scripts'], signal)
         const installed = { ...inspectPlugin(projectDir, requestedName), enabled: true }
         const current = pluginRecords(projectDir).filter(plugin => plugin.name !== installed.name)
         writeProfilePlugins(
@@ -648,7 +683,7 @@ export class DesktopProjectManager {
           writeProfilePlugins(projectDir, remaining)
           return
         }
-        await this.runPnpm(projectDir, ['remove', mutation.name, '--config.ignore-scripts=true'])
+        await this.runPnpm(projectDir, ['remove', mutation.name, '--config.ignore-scripts=true'], signal)
         writeProfilePlugins(projectDir, remaining)
         return
       }
@@ -658,8 +693,9 @@ export class DesktopProjectManager {
         if (!Object.hasOwn(projectManifest(projectDir).dependencies, mutation.name)) {
           throw new Error(`desktop project: plugin ${JSON.stringify(mutation.name)} is not installed`)
         }
-        await this.runPnpm(projectDir, ['add', `${mutation.name}@${mutation.version}`, '--save-exact', '--ignore-scripts'])
-        if (this.runtime.profileResolution === 'runtime') await this.runPnpm(projectDir, ['install', '--ignore-scripts'])
+        await this.runPnpm(projectDir, ['add', `${mutation.name}@${mutation.version}`, '--save-exact', '--ignore-scripts'], signal)
+        signal?.throwIfAborted()
+        if (this.runtime.profileResolution === 'runtime') await this.runPnpm(projectDir, ['install', '--ignore-scripts'], signal)
         {
           const installed = inspectPlugin(projectDir, mutation.name)
           writeProfilePlugins(
@@ -682,16 +718,17 @@ export class DesktopProjectManager {
     }
   }
 
-  private async runPnpm(projectDir: string, args: readonly string[]): Promise<void> {
+  private async runPnpm(projectDir: string, args: readonly string[], signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted()
     const before = projectManifest(projectDir)
     const injected = before.dsh.profile.injectedPlugins ?? {}
     const versions = Object.fromEntries(Object.keys(injected).map(name => [name, before.dependencies[name]]))
-    if (Object.keys(injected).length === 0) return this.runPnpmProcess(projectDir, args)
+    if (Object.keys(injected).length === 0) return this.runPnpmProcess(projectDir, args, signal)
     // pnpm owns the legacy dependency graph; copied plugins retain their separate lockfiles and bytes.
     writeJson(join(projectDir, 'package.json'), { ...before,
       dependencies: Object.fromEntries(Object.entries(before.dependencies).filter(([name]) => !Object.hasOwn(injected, name))),
     })
-    try { await this.runPnpmProcess(projectDir, args) }
+    try { await this.runPnpmProcess(projectDir, args, signal) }
     finally {
       const after = projectManifest(projectDir)
       writeJson(join(projectDir, 'package.json'), { ...after, dependencies: { ...after.dependencies, ...versions } })
@@ -707,7 +744,8 @@ export class DesktopProjectManager {
     }
   }
 
-  private async runPnpmProcess(projectDir: string, args: readonly string[]): Promise<void> {
+  private async runPnpmProcess(projectDir: string, args: readonly string[], signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted()
     this.progress({ stage: 'installing' })
     const [command, ...commandArgs] = args
     if (command === undefined) throw new Error('desktop project: pnpm command is required')
@@ -756,6 +794,19 @@ export class DesktopProjectManager {
       let failure: Error | undefined
       let diagnostics = ''
       let completed = false
+      let forceTimer: ReturnType<typeof setTimeout> | undefined
+      const operationTimeout = setTimeout(() => {
+        failure ??= new Error(`desktop project: package operation timed out after ${String(PACKAGE_OPERATION_TIMEOUT_MS / 60_000)} minutes`)
+        terminateProcessTree(child)
+        forceTimer = setTimeout(() => { child.kill('SIGKILL') }, PROCESS_TERMINATION_GRACE_MS)
+        forceTimer.unref()
+      }, PACKAGE_OPERATION_TIMEOUT_MS)
+      const abort = (): void => {
+        failure ??= errorOf(signal?.reason, 'desktop project: package operation cancelled')
+        terminateProcessTree(child)
+      }
+      signal?.addEventListener('abort', abort, { once: true })
+      if (signal?.aborted) abort()
       const appendDiagnostics = (chunk: string): void => {
         diagnostics = (diagnostics + chunk).slice(-MAX_PNPM_DIAGNOSTIC_BYTES)
       }
@@ -766,6 +817,9 @@ export class DesktopProjectManager {
       const complete = (settleChild: () => void): void => {
         if (completed) return
         completed = true
+        clearTimeout(operationTimeout)
+        if (forceTimer !== undefined) clearTimeout(forceTimer)
+        signal?.removeEventListener('abort', abort)
         try {
           this.writeLockOwner(process.pid)
         } catch (error) {

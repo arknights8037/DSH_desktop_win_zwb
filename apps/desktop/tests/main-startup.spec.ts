@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { MANAGER_CHANNEL, MANAGER_SHORTCUT, INSTANCE_OPEN_SETTINGS, type ManagerSnapshot } from '../src/manager-ipc.ts'
+import { MANAGER_CHANNEL, MANAGER_SHORTCUT, INSTANCE_OPEN_SETTINGS, INSTANCE_OPEN_PLUGINS, type ManagerSnapshot } from '../src/manager-ipc.ts'
 import type { SoftwareSettingsSnapshot } from '../src/software-settings.ts'
 import { sourceRoute, sourceKeyRef } from '../src/model-sources.ts'
 import type { InstanceConfig } from '../src/instances.ts'
@@ -26,10 +26,11 @@ const harness = await vi.hoisted(async () => {
     openDevTools = vi.fn()
     closeDevTools = vi.fn()
     isDevToolsOpened = vi.fn(() => false)
-    executeJavaScript = vi.fn()
+    executeJavaScript = vi.fn(async () => undefined)
     insertCSS = vi.fn(async () => 'appearance-style')
     removeInsertedCSS = vi.fn(async () => {})
     focus = vi.fn()
+    sendInputEvent = vi.fn()
     async loadURL(url: string) { this.url = url; this.mainFrame.url = url }
     getURL() { return this.url }
     isDestroyed() { return this.destroyed }
@@ -74,9 +75,11 @@ const harness = await vi.hoisted(async () => {
     mutate = vi.fn(async () => {})
     injectPlugin = vi.fn(async () => {})
     settings = legacySettingsDocument()
+    presetRoster = { presets: ['standard', 'cordis', 'ptc', 'minimal', 'custom'].map(id => ({ id })) }
     credentials = new Map<string, string>()
     fetch = vi.fn(async (request: Request) => {
-      if (!new URL(request.url).pathname.startsWith('/api/settings/') && !new URL(request.url).pathname.startsWith('/api/credentials/')) return new Response(this.home)
+      if (!new URL(request.url).pathname.startsWith('/api/settings/') && !new URL(request.url).pathname.startsWith('/api/credentials/')
+        && new URL(request.url).pathname !== '/api/agentPresets/list') return new Response(this.home)
       const body = await request.json() as {
         rpcId: string
         method: string
@@ -91,6 +94,7 @@ const harness = await vi.hoisted(async () => {
       const args = body.payload.args
       let value: unknown = {}
       if (body.method === 'settings/describe') value = this.settings
+      if (body.method === 'agentPresets/list') value = this.presetRoster
       if (body.method === 'settings/mutate') {
         const section = this.settings.namespaces.find(item => item.ns === args.ns)!
         expect(args.expectedRevision).toBe(section.revision)
@@ -121,10 +125,12 @@ const harness = await vi.hoisted(async () => {
   })
   const library = {
     list: vi.fn<() => readonly { name: string; version: string }[]>(() => []),
-    install: vi.fn(async () => {}), select: vi.fn(), source: vi.fn(() => 'shell-library-profile'), remove: vi.fn(), root: 'shell-library',
+    install: vi.fn(async () => {}), select: vi.fn(), pruneSuperseded: vi.fn(), source: vi.fn(() => 'shell-library-profile'), remove: vi.fn(), root: 'shell-library',
     withSource: async (_name: string, _version: string, operation: (source: string) => Promise<void>) => operation('shell-library-profile'),
-    withSelection: async (_name: string, _version: string, operation: () => Promise<void>) => operation(),
+    withSelection: async (_name: string, _version: string, operation: (signal: AbortSignal) => Promise<void>) =>
+      operation(new AbortController().signal),
     settled: async () => {},
+    cancel: vi.fn(),
     runtime: () => ({ release: { version: '1.0.0', nodeVersion: '24.17.0' }, sharedPackages: [] }),
   }
   return { Window, View, Local, handlers, partitions, app, library, root: '', home: '', sandbox: '', fetch: vi.fn(), openExternal: vi.fn(),
@@ -160,6 +166,7 @@ vi.mock('../src/kernel-manager.ts', () => ({ DesktopKernelManager: class {
   automatic = (enabled: boolean) => { this.enabled = enabled; return this.snapshot() }
   check = async (install = false) => (await harness.kernelCheck(install)) ?? this.snapshot()
   settled = async () => {}
+  cancel = vi.fn()
 } }))
 vi.mock('../src/plugin-library.ts', () => ({
   DesktopPluginLibrary: vi.fn(function () { return harness.library }),
@@ -215,7 +222,10 @@ it('checks for the latest kernel before opening an unpackaged manager and enable
   const config = await create('Development')
   await invoke('open', { id: config.id })
   await harness.handlers.get(DESKTOP_IPC.pluginsInject)!(sender(), 'test-plugin', '1.2.3', config.id)
-  expect(harness.Local.all[0]!.mutate).toHaveBeenCalledWith({ type: 'plugin-inject', name: 'test-plugin', version: '1.2.3', source: 'shell-library-profile' })
+  expect(harness.Local.all[0]!.mutate).toHaveBeenCalledWith(
+    { type: 'plugin-inject', name: 'test-plugin', version: '1.2.3', source: 'shell-library-profile' },
+    expect.any(AbortSignal),
+  )
 })
 it('reports kernel preparation failure while the startup screen is visible', async () => {
   vi.resetModules()
@@ -301,6 +311,50 @@ it('allows instance main frames to open shell settings without manager authority
   expect(() => navigate({ sender: contents, senderFrame: contents.mainFrame })).toThrow('Rejected instance settings sender')
 })
 
+it('routes local plugin navigation to the owning instance and rejects other frames', async () => {
+  const a = await create('A')
+  await invoke('open', { id: a.id })
+  const contents = harness.View.all[0]!.webContents
+  const navigate = harness.handlers.get(INSTANCE_OPEN_PLUGINS)!
+  const event = { sender: contents, senderFrame: contents.mainFrame }
+  navigate(event)
+  expect(harness.Window.all[0]!.webContents.send).toHaveBeenCalledWith(MANAGER_SHORTCUT, `plugins:${a.id}`)
+  navigate(event, 'discover')
+  expect(harness.Window.all[0]!.webContents.send).toHaveBeenCalledWith(MANAGER_SHORTCUT, `discover-plugins:${a.id}`)
+  navigate(event, { mode: 'bundle', packageName: '@scope/plugin' })
+  expect(harness.Window.all[0]!.webContents.send).toHaveBeenCalledWith(
+    MANAGER_SHORTCUT, `plugins:${a.id}:${encodeURIComponent('@scope/plugin')}`,
+  )
+  expect(harness.Window.all).toHaveLength(1)
+  expect(() => navigate(sender())).toThrow('Rejected instance plugin navigation sender')
+  expect(() => navigate({ sender: contents, senderFrame: {} })).toThrow('Rejected instance plugin navigation sender')
+  const url = contents.url
+  contents.url = 'https://remote.example/'
+  expect(() => navigate(event)).toThrow('Rejected instance plugin navigation sender')
+  contents.url = url
+  await invoke('close', { id: a.id })
+  expect(() => navigate(event)).toThrow('Rejected instance plugin navigation sender')
+})
+
+it('clips the native plugin page to the settings surface and hides it when leaving settings', async () => {
+  const a = await create('A')
+  await invoke('open', { id: a.id })
+  const view = harness.View.all[0]!
+  await invoke('plugins', { id: a.id, action: 'embed', input: { x: 250, y: 260, width: 900, height: 500 } })
+  expect(view.setBounds).toHaveBeenLastCalledWith({ x: 250, y: 260, width: 900, height: 500 })
+  expect(view.setVisible).toHaveBeenLastCalledWith(true)
+  await invoke('plugins', {
+    id: a.id, action: 'embed', packageName: '@scope/plugin', input: { x: 250, y: 260, width: 900, height: 500 },
+  })
+  expect(view.webContents.executeJavaScript).toHaveBeenLastCalledWith(
+    'if (!globalThis.__DSH_NATIVE_PLUGINS__) throw new Error("Kernel plugin panel is not ready"); globalThis.__DSH_NATIVE_PLUGINS__.show("@scope/plugin")',
+  )
+  await expect(invoke('plugins', { id: a.id, action: 'embed', input: { x: 0, y: 0, width: 1200, height: 800 } })).rejects.toThrow('Invalid plugin panel bounds')
+  await invoke('overlay', { visible: true })
+  expect(view.setVisible).toHaveBeenLastCalledWith(false)
+  expect(view.webContents.executeJavaScript).toHaveBeenLastCalledWith('globalThis.__DSH_NATIVE_PLUGINS__?.hide()')
+})
+
 it('limits the native directory picker to owned local instance main frames', async () => {
   const a = await create('A')
   await invoke('open', { id: a.id })
@@ -345,8 +399,8 @@ it('injects motion by default and toggles existing and reloaded views without un
     expect(view.webContents.removeInsertedCSS).toHaveBeenCalled()
   }
   for (const local of harness.Local.all) {
-    expect(local.fetch).toHaveBeenCalledOnce()
-    expect(new URL(local.fetch.mock.calls[0]![0].url).pathname).toBe('/api/settings/describe')
+    expect(local.fetch.mock.calls.some(([request]) => new URL(request.url).pathname === '/api/settings/describe')).toBe(true)
+    expect(local.fetch.mock.calls.some(([request]) => new URL(request.url).pathname.startsWith('/api/credentials/'))).toBe(false)
   }
   const view = harness.View.all[0]!
   const count = view.webContents.insertCSS.mock.calls.length
@@ -443,11 +497,17 @@ it('delivers software keys and offline removals without returning secrets to the
   await invoke('open', { id: b.id })
   expect(harness.Local.all[1]!.credentials.has('MODEL_KEY')).toBe(false)
 })
+it('returns credential metadata directly instead of replacing it with the software snapshot', async () => {
+  await invoke('softwareSettings', { action: 'credentialSet', input: { ref: 'MODEL_KEY', value: 'fixture-key' } })
+  const info = await invoke('softwareSettings', { action: 'credentialInfo', input: { ref: 'MODEL_KEY' } })
+  expect(info).toEqual({ MODEL_KEY: { configured: true, writable: true, source: 'software' } })
+  expect(JSON.stringify(info)).not.toContain('fixture-key')
+})
 
 it('overrides DSH namespaces across connected, future, and reconnected instances', async () => {
   const initial = await invoke('softwareSettings', { action: 'read' }) as { dsh: Record<string, unknown> }
   const dsh = { ...initial.dsh, transcriptView: 'normal', deepseekBaseURL: 'https://gateway.test/anthropic',
-    deepseekMaxTokens: 8192, defaultPreset: 'custom', modeSelectionEnabled: false }
+    deepseekMaxTokens: 8192, defaultPreset: 'custom' }
   await invoke('softwareSettings', { action: 'dshUpdate', input: { value: dsh } })
   const a = await create('A'); await invoke('open', { id: a.id })
   const b = await create('B'); await invoke('open', { id: b.id })
@@ -455,7 +515,7 @@ it('overrides DSH namespaces across connected, future, and reconnected instances
     expect(local.settings.namespaces.find(item => item.ns === 'llm-deepseek')!.value).toMatchObject({
       baseURL: dsh.deepseekBaseURL, maxTokens: 8192, unrelated: true,
     })
-    expect(local.settings.namespaces.find(item => item.ns === 'agent-presets')!.value).toEqual({ default: 'custom', modeSelectionEnabled: false })
+    expect(local.settings.namespaces.find(item => item.ns === 'agent-preset-registry')!.value).toMatchObject({ selectedDefault: 'custom' })
   }
   await invoke('softwareSettings', { action: 'dshUpdate', input: { value: { ...dsh, deepseekMaxTokens: 4096 } } })
   expect(harness.Local.all.map(local => local.settings.namespaces.find(item => item.ns === 'llm-deepseek')!.value.maxTokens)).toEqual([4096, 4096])
@@ -481,7 +541,7 @@ it('dispatches coexisting settings fields and native motion using each namespace
   const values = Object.fromEntries(local.settings.namespaces.map(section => [section.ns, section.value]))
   expect(values['ui-theme']).toMatchObject({ motionEnabled: false, customization: DEFAULT_PERSONAL_APPEARANCE })
   expect(values['ui-chat']).toMatchObject({ transcriptView: 'normal' })
-  expect(values['agent-presets']).toMatchObject({ default: 'custom' })
+  expect(values['agent-preset-registry']).toMatchObject({ selectedDefault: 'custom' })
   expect(values['llm-deepseek']).toMatchObject({ baseURL: initial.dsh.deepseekBaseURL })
   expect(values['llm-deepseek']).not.toHaveProperty('protocol')
   expect(values['llm-deepseek']).not.toHaveProperty('reasoningEffort')
@@ -489,6 +549,17 @@ it('dispatches coexisting settings fields and native motion using each namespace
   expect(await invoke('softwareSettings', { action: 'read' })).toMatchObject({ syncErrors: {},
     settingsSupport: { [a.id]: { fields: { motionEnabled: { namespace: 'ui-theme', field: 'motionEnabled' },
       reasoningEffort: { namespace: 'agent-default-model', field: 'reasoningEffort' } } } } })
+})
+
+it('surfaces Creator mode preset load failures from the live DSH roster', async () => {
+  const instance = await create('Creator diagnostics')
+  await invoke('open', { id: instance.id })
+  const local = harness.Local.all.at(-1)!
+  local.presetRoster = { presets: [{ id: 'standard' }, { id: 'cordis', broken: 'missing plugin dependency' }] }
+  const current = await invoke('softwareSettings', { action: 'read' }) as SoftwareSettingsSnapshot
+  await invoke('softwareSettings', { action: 'dshUpdate', input: { value: current.dsh } })
+  const updated = await invoke('softwareSettings', { action: 'read' }) as SoftwareSettingsSnapshot & { syncErrors: Record<string, string> }
+  expect(updated.syncErrors[instance.id]).toContain('Creator mode failed to load: missing plugin dependency')
 })
 
 it('retains software values and the connection when an instance lacks a DSH namespace', async () => {
@@ -591,6 +662,24 @@ it('captures rebound shortcuts in instance content and suspends them during reco
   await invoke('shortcutCapture', { visible: true })
   harness.Window.all[0]!.webContents.emit('before-input-event', shellEvent, input)
   expect(shellEvent.preventDefault).not.toHaveBeenCalled()
+  await invoke('kernelShortcuts', { id: item.id, action: 'open' })
+  expect(contents.focus).toHaveBeenCalled()
+  expect(contents.sendInputEvent.mock.calls.some(([event]) => event.type === 'keyDown' && event.keyCode === '/')).toBe(true)
+  expect(contents.sendInputEvent.mock.calls.some(([event]) => event.type === 'keyUp' && event.keyCode === '/')).toBe(true)
+})
+it('uses the connected instance shortcut document instead of the local Desktop file', async () => {
+  const remote = await invoke('save', { config: {
+    name: 'Remote', kind: 'ssh', host: 'host', port: 22, username: 'user', auth: 'password',
+    privateKeyPath: '', executable: 'dsh', home: '/tmp/managed',
+  } }) as InstanceConfig
+  await invoke('open', { id: remote.id, credentials: { password: 'secret' } })
+  const contents = harness.View.all[0]!.webContents
+  contents.executeJavaScript.mockResolvedValueOnce(JSON.stringify({ schemaVersion: 2, profiles: {
+    'web:windows': { 'shortcuts.open': { code: 'KeyK', modifiers: ['primary'] } },
+  } }))
+  await invoke('kernelShortcuts', { id: remote.id, action: 'open' })
+  expect(contents.sendInputEvent.mock.calls.some(([event]) => event.type === 'keyDown'
+    && event.keyCode === 'K' && event.modifiers.includes('control'))).toBe(true)
 })
 it('closing a tab destroys its view without stopping its local process', async () => {
   const item = await create('A')
@@ -617,11 +706,24 @@ it('quitting waits for local stop and does not enable the official updater', asy
   stopped.resolve(undefined)
   await vi.waitFor(() => { expect(harness.app.quit).toHaveBeenCalled() })
 })
+it('warns before quitting with unsaved settings and cancels active package work', async () => {
+  await invoke('dirty', { dirty: true })
+  const event = { preventDefault: vi.fn() }
+  harness.app.emit('before-quit', event)
+  await vi.waitFor(() => {
+    expect(harness.dialog.showMessageBox).toHaveBeenCalledWith(
+      harness.Window.all[0],
+      expect.objectContaining({ message: expect.stringContaining('Unsaved software settings') }),
+    )
+  })
+  await vi.waitFor(() => { expect(harness.app.quit).toHaveBeenCalled() })
+  expect(harness.library.cancel).toHaveBeenCalled()
+  expect(event.preventDefault).toHaveBeenCalled()
+})
 
 async function pluginSender(config: InstanceConfig) {
   await invoke('open', { id: config.id })
-  await invoke('plugins', { id: config.id })
-  const contents = harness.Window.all.at(-1)!.webContents
+  const contents = harness.View.all.at(-1)!.webContents
   return { sender: contents, senderFrame: contents.mainFrame }
 }
 
@@ -644,13 +746,26 @@ it('owns library installation in the shell and injects only into the selected lo
     auth: 'password', privateKeyPath: '', executable: 'dsh', home: '/tmp/managed' } }) as InstanceConfig
   await invoke('open', { id: remote.id, credentials: { password: 'ephemeral-secret' } })
   await harness.handlers.get(DESKTOP_IPC.pluginsInject)!(owner, 'test-plugin', '1.2.3', local.id)
-  expect(harness.Local.all[0]!.mutate).toHaveBeenCalledWith({ type: 'plugin-inject', name: 'test-plugin', version: '1.2.3', source: 'shell-library-profile' })
+  expect(harness.Local.all[0]!.mutate).toHaveBeenCalledWith(
+    { type: 'plugin-inject', name: 'test-plugin', version: '1.2.3', source: 'shell-library-profile' },
+    expect.any(AbortSignal),
+  )
   expect(harness.Local.all[1]!.mutate).not.toHaveBeenCalled()
   await harness.handlers.get(DESKTOP_IPC.pluginsInject)!(owner, 'test-plugin', '1.2.3', remote.id)
-  expect(harness.Local.all[1]!.injectPlugin).toHaveBeenCalledWith({ name: 'test-plugin', version: '1.2.3' }, { password: 'ephemeral-secret' })
+  expect(harness.Local.all[1]!.injectPlugin).toHaveBeenCalledWith(
+    { name: 'test-plugin', version: '1.2.3' }, { password: 'ephemeral-secret' }, expect.any(AbortSignal),
+  )
   expect(harness.Local.all[0]!.injectPlugin).not.toHaveBeenCalled()
   const unauthorized = { sender: harness.View.all[0]!.webContents, senderFrame: contents.mainFrame }
   await expect(harness.handlers.get(DESKTOP_IPC.pluginsInject)!(unauthorized, 'test-plugin', '1.2.3', remote.id)).rejects.toThrow('Rejected')
+})
+
+it('allows only owned plugin surfaces to cancel package work', async () => {
+  const owner = await librarySender()
+  await harness.handlers.get(DESKTOP_IPC.pluginsCancel)!(owner)
+  expect(harness.library.cancel).toHaveBeenCalledOnce()
+  expect(() => harness.handlers.get(DESKTOP_IPC.pluginsCancel)!({ sender: {}, senderFrame: {} }))
+    .toThrow('Rejected plugin IPC sender')
 })
 
 it('binds single-use approval to the shell library and denies installation from instance windows', async () => {
@@ -659,8 +774,8 @@ it('binds single-use approval to the shell library and denies installation from 
   const owner = await librarySender()
   harness.fetch.mockResolvedValueOnce(Response.json({ name: 'test-plugin', version: '1.2.3', dsh: { bundle: { patch: 'patch.yml' } } }))
   const plan = await harness.handlers.get(DESKTOP_IPC.pluginsPlan)!(owner, 'test-plugin@next') as DesktopPluginInstallPlan
-  await expect(harness.handlers.get(DESKTOP_IPC.pluginsPlan)!(instance, 'test-plugin')).rejects.toThrow('Settings')
-  expect(() => harness.handlers.get(DESKTOP_IPC.pluginsAdd)!(instance, plan.id)).toThrow('Settings')
+  await expect(harness.handlers.get(DESKTOP_IPC.pluginsPlan)!(instance, 'test-plugin')).rejects.toThrow('Rejected plugin IPC sender')
+  expect(() => harness.handlers.get(DESKTOP_IPC.pluginsAdd)!(instance, plan.id)).toThrow('Rejected plugin IPC sender')
   expect(() => harness.handlers.get(DESKTOP_IPC.pluginsAdd)!(owner, 'test-plugin@latest')).toThrow('expired')
   await harness.handlers.get(DESKTOP_IPC.pluginsAdd)!(owner, plan.id)
   expect(harness.library.select).toHaveBeenCalledWith('test-plugin', '1.2.3')

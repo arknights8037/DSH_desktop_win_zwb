@@ -3,7 +3,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { DESKTOP_IPC, type DshDesktopStartupApi } from './ipc.ts'
 import type { DesktopBackendState } from './backend-controller.ts'
-import { INSTANCE_OPEN_SETTINGS } from './manager-ipc.ts'
+import { INSTANCE_OPEN_SETTINGS, INSTANCE_OPEN_PLUGINS } from './manager-ipc.ts'
 
 const startup: DshDesktopStartupApi = {
   protocolVersion: 1,
@@ -25,6 +25,12 @@ contextBridge.exposeInMainWorld('dshDesktop', location.protocol === 'dsh-app:' &
   ? startup : { protocolVersion: 1, openSettings: () => ipcRenderer.invoke(INSTANCE_OPEN_SETTINGS) as Promise<void> })
 
 if (location.protocol === 'dsh-app:' && location.hostname === 'app') {
+  contextBridge.exposeInMainWorld('__DSH_PLUGIN_NAVIGATION__', {
+    openList: (mode?: string) => ipcRenderer.invoke(INSTANCE_OPEN_PLUGINS, mode === 'discover' ? 'discover' : 'native') as Promise<void>,
+    openBundle: (packageName: string) => ipcRenderer.invoke(INSTANCE_OPEN_PLUGINS, {
+      mode: 'bundle', packageName,
+    }) as Promise<void>,
+  })
   contextBridge.exposeInMainWorld('__DSH_DIRECTORY_PICKER__', {
     pick: () => ipcRenderer.invoke(DESKTOP_IPC.directoryPick) as Promise<string | null>,
   })

@@ -1,10 +1,11 @@
 /* The settings page and instance recovery window share scoped plugin controls. */
-window.mountPluginManager = async function (root, api, prefix = '') {
+window.mountPluginManager = async function (root, api, prefix = '', options = {}) {
   root.classList.add('plugin-workspace')
+  root.dataset.view = 'discover'
   root.innerHTML = `
     <div class="plugin-overview"><div><h1 id="title"></h1></div><button id="refresh" type="button"></button></div>
     <p id="status" class="plugin-status" role="status" aria-live="polite"></p>
-    <div id="plugin-loading" class="dsh-loading-layer" hidden><div class="dsh-loading-content" role="status" aria-live="polite"><div class="dsh-loader" aria-hidden="true"><span></span></div><p id="plugin-loading-message"></p></div></div>
+    <div id="plugin-loading" class="dsh-loading-layer" hidden><div class="dsh-loading-content" role="status" aria-live="polite"><div class="dsh-loader" aria-hidden="true"><span></span></div><p id="plugin-loading-message"></p><button id="plugin-cancel" type="button" hidden></button></div></div>
     <section id="recovery" hidden><p id="startup-error" role="alert"></p><button id="retry" type="button"></button><button id="disable-all" type="button"></button></section>
     <div class="plugin-columns">
       <div class="plugin-discovery">
@@ -26,8 +27,9 @@ window.mountPluginManager = async function (root, api, prefix = '') {
       <div class="plugin-management">
         <div class="plugin-column-heading"><h2 id="installed-heading"></h2><span id="installed-count" class="plugin-count"></span></div>
         <section id="library-target" hidden><label id="target-label" for="target-instance"></label><select id="target-instance"></select></section>
-        <section id="install-plan" aria-labelledby="plan-heading" hidden>
+        <section id="install-plan" class="plugin-review" aria-labelledby="plan-heading" hidden>
           <div class="plugin-review-heading"><span id="review-label" class="plugin-eyebrow"></span><h2 id="plan-heading" tabindex="-1"></h2></div>
+          <p id="plan-destination" class="plugin-destination"></p><p id="plan-install-note"></p>
           <dl id="plan-fields"></dl>
           <details id="plan-advanced" class="plugin-advanced"><summary id="plan-advanced-label"></summary><dl id="plan-advanced-fields"></dl></details>
           <p id="plan-blockers" role="alert"></p>
@@ -47,6 +49,7 @@ window.mountPluginManager = async function (root, api, prefix = '') {
   const messages = locale.messages
   let library = await api.plugins.library()
   const target = select('#target-instance')
+  let reviewedTarget
   const message = (key, values = {}) => messages[key].replaceAll(/\{([^{}]+)\}/gu, (placeholder, name) => values[name] ?? placeholder)
   if (!prefix) {
     document.documentElement.lang = locale.id
@@ -75,6 +78,7 @@ window.mountPluginManager = async function (root, api, prefix = '') {
 
   select('#retry').textContent = messages.retry
   select('#disable-all').textContent = messages.disableAll
+  select('#plugin-cancel').textContent = messages.cancel
 
   const list = select('#plugins')
   const empty = select('#empty')
@@ -124,12 +128,14 @@ window.mountPluginManager = async function (root, api, prefix = '') {
     select('#plugin-loading-message').textContent = text
   }
 
-  function setBusy(value, statusMessage = '') {
+  function setBusy(value, statusMessage = '', cancelable = false) {
     busy = value
     select('#plugin-loading').hidden = !busy
+    select('#plugin-cancel').hidden = !busy || !cancelable
     select('.plugin-columns').setAttribute('aria-busy', String(busy))
     for (const control of selectAll('button, input, select')) {
-      if (!control.closest('[data-instance-deployments], [data-browse-controls]')) control.disabled = busy
+      if (control.id !== `${prefix}plugin-cancel`
+        && !control.closest('[data-instance-deployments], [data-browse-controls]')) control.disabled = busy
     }
     for (const control of selectAll('[data-unsupported="true"]')) control.disabled = true
     select('#catalog-refresh').disabled = busy || catalogLoading
@@ -143,6 +149,7 @@ window.mountPluginManager = async function (root, api, prefix = '') {
   }
 
   function focusLibrary(name) {
+    show('library')
     libraryQuery.value = ''
     renderInstalled()
     const row = [...list.children].find(item => item.dataset.package === name)
@@ -222,7 +229,10 @@ window.mountPluginManager = async function (root, api, prefix = '') {
     target.value = !targetInitialized ? library.targets.find(instance => instance.available)?.id ?? ''
       : library.targets.some(instance => instance.id === previous && instance.available) ? previous : ''
     targetInitialized = true
-    const targetAvailable = library.targets.some(instance => instance.available)
+    if (options.target) {
+      target.value = options.target()
+      select('#library-target').hidden = true
+    }
     const backend = await api.backend.status()
     select('#recovery').hidden = backend.phase !== 'error'
     select('#startup-error').textContent = backend.phase === 'error' ? backend.message : ''
@@ -233,15 +243,17 @@ window.mountPluginManager = async function (root, api, prefix = '') {
 
   async function run(operation, statusMessage, success) {
     if (busy) return
-    setBusy(true, statusMessage)
+    setBusy(true, statusMessage, true)
     try {
       await operation()
       await render()
       setStatus(success ?? (library.active ? messages.libraryOperationComplete : messages.operationComplete), 'success')
+      return true
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error), 'error')
+      return false
     } finally {
-      setBusy(false)
+    setBusy(false)
     }
   }
 
@@ -257,7 +269,7 @@ window.mountPluginManager = async function (root, api, prefix = '') {
       anchor.textContent = value
       definition.append(anchor)
     } else definition.textContent = value ?? messages.notDeclared
-    select(['source', 'repository', 'integrity', 'snapshotLocation'].includes(key) ? '#plan-advanced-fields' : '#plan-fields').append(term, definition)
+    select(['license', 'compatibility'].includes(key) ? '#plan-fields' : '#plan-advanced-fields').append(term, definition)
   }
 
   async function review(spec, entry) {
@@ -266,13 +278,28 @@ window.mountPluginManager = async function (root, api, prefix = '') {
     selectedPackage = entry?.npm
     renderCatalog()
     activePlan = undefined
+    const requested = options.target ? options.target() : target.value
+    reviewedTarget = options.target ? library.targets.find(instance => instance.id === requested) : undefined
+    if (options.target && requested && (!reviewedTarget || !reviewedTarget.available)) {
+      setStatus(messages.connectFirst, 'error')
+      return
+    }
     catalogEntry = entry
     planSection.hidden = true
+    delete root.dataset.review
     setBusy(true, messages.loadingPlan)
     try {
+      if (options.target) {
+        library = await api.plugins.library()
+        reviewedTarget = library.targets.find(instance => instance.id === requested)
+        if (requested && !reviewedTarget?.available) throw new Error(messages.connectFirst)
+      }
       const plan = await api.plugins.plan(spec)
       activePlan = plan
       select('#plan-heading').textContent = `${plan.name}@${plan.version}`
+      select('#plan-destination').textContent = reviewedTarget ? message('installDestination', { target: reviewedTarget.name }) : messages.libraryOnlyDestination
+      select('#plan-install-note').textContent = reviewedTarget ? messages.installRestartNote : messages.libraryOnlyNote
+      confirm.textContent = reviewedTarget ? messages.installToInstance : messages.installInLibrary
       select('#plan-fields').replaceChildren()
       select('#plan-advanced-fields').replaceChildren()
       select('#plan-advanced').open = false
@@ -291,6 +318,7 @@ window.mountPluginManager = async function (root, api, prefix = '') {
         'missing-bundle': 'missingBundle', 'host-owned': 'hostOwned', 'web-server-required': 'webServerRequired',
       }[key]]).join(' ')
       planSection.hidden = false
+      root.dataset.review = 'true'
       setStatus('')
       select('#plan-heading').focus()
     } catch (error) {
@@ -338,18 +366,21 @@ window.mountPluginManager = async function (root, api, prefix = '') {
       const packageName = document.createElement('span')
       packageName.className = 'plugin-package-name'
       packageName.textContent = entry.npm ?? messages.gitOnly
-      text.append(heading, meta, document.createTextNode(' · '), source, packageName)
+      const description = document.createElement('p')
+      description.className = 'plugin-description'
+      description.textContent = entry.description[locale.id === 'zh-CN' ? 'zh' : 'en'] || entry.description.en || entry.description.zh || ''
+      text.append(heading, description, meta, document.createTextNode(' · '), source, packageName)
       const action = document.createElement('button')
       action.type = 'button'
       action.className = entry.npm && !inLibrary ? 'plugin-primary' : ''
-      action.textContent = inLibrary ? messages.viewLibrary : entry.npm ? messages.reviewPlugin : messages.gitOnlyShort
+      action.textContent = inLibrary && !options.target ? messages.viewLibrary : entry.npm ? messages.install : messages.gitOnlyShort
       action.disabled = busy || !entry.npm
       action.dataset.unsupported = String(!entry.npm)
-      action.addEventListener('click', () => { if (inLibrary) focusLibrary(entry.npm); else void review(entry.npm, entry) })
+      action.addEventListener('click', () => { if (inLibrary && !options.target) focusLibrary(entry.npm); else void review(entry.npm, entry) })
       const actions = document.createElement('span')
       actions.className = 'package-actions'
       actions.append(action)
-      if (inLibrary) {
+      if (inLibrary && !options.target) {
         const latest = document.createElement('button')
         latest.type = 'button'
         latest.textContent = messages.reviewLatest
@@ -412,17 +443,28 @@ window.mountPluginManager = async function (root, api, prefix = '') {
     if (spec === '') return
     void review(spec)
   })
-  confirm.addEventListener('click', () => {
+  confirm.addEventListener('click', async () => {
     if (!eligible() || busy) return
     const plan = activePlan
+    const destination = reviewedTarget
     activePlan = undefined
     selectedPackage = undefined
     planSection.hidden = true
-    void run(async () => { await api.plugins.add(plan.id); input.value = '' }, message('installing', { spec: `${plan.name}@${plan.version}` }))
+    delete root.dataset.review
+    const success = await run(async () => {
+      await api.plugins.add(plan.id)
+      if (destination) await api.plugins.inject(plan.name, plan.version, destination.id)
+      input.value = ''
+    }, message('installing', { spec: `${plan.name}@${plan.version}` }), destination ? message('appliedToTarget', { name: plan.name, version: plan.version, target: destination.name }) : undefined)
+    if (success && destination) {
+      try { await options.installed?.(destination.id) }
+      catch (error) { setStatus(String(error.message || error), 'error') }
+    }
   })
   select('#cancel-install').addEventListener('click', () => {
     activePlan = undefined
     planSection.hidden = true
+    delete root.dataset.review
     selectedPackage = undefined
     renderCatalog()
     setStatus(messages.installCancelled)
@@ -444,11 +486,25 @@ window.mountPluginManager = async function (root, api, prefix = '') {
   select('#catalog-more').addEventListener('click', () => { visible += 30; renderCatalog() })
   select('#retry').addEventListener('click', () => void run(() => api.backend.retry(), messages.retry))
   select('#disable-all').addEventListener('click', () => void run(() => api.plugins.disableAll(), messages.changingActivation))
+  select('#plugin-cancel').addEventListener('click', () => {
+    setStatus(messages.cancelling, 'busy')
+    void api.plugins.cancel().catch(error => {
+      setStatus(error instanceof Error ? error.message : String(error), 'error')
+    })
+  })
   refresh.addEventListener('click', () => void load(messages.refreshing, messages.refreshed))
 
+  function show(view) {
+    root.dataset.view = library.active ? view : 'library'
+    if (!planSection.hidden && view === 'library') { planSection.hidden = true; delete root.dataset.review; activePlan = undefined }
+  }
   await load(messages.loadingPlugins, '')
+  if (!library.active) show('library')
   if (library.active) void loadCatalog()
-  return { refresh: () => busy ? Promise.resolve() : load(messages.refreshing, messages.refreshed) }
+  return {
+    refresh: () => busy ? Promise.resolve() : load(messages.refreshing, messages.refreshed), show,
+    setTarget: id => { if (!busy) { target.value = id; setBusy(false) } },
+  }
 }
 
 const pluginWindowRoot = document.querySelector('[data-plugin-window]')

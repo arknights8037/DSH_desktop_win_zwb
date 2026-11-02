@@ -16,6 +16,7 @@ export const pluginApi: Pick<DshDesktopApi, 'locale' | 'plugins' | 'backend'> = 
     remove: (name, version) => ipcRenderer.invoke(DESKTOP_IPC.pluginsRemove, name, version) as Promise<void>,
     toggle: (name, enabled) => ipcRenderer.invoke(DESKTOP_IPC.pluginsToggle, name, enabled) as Promise<void>,
     disableAll: () => ipcRenderer.invoke(DESKTOP_IPC.pluginsDisableAll) as Promise<void>,
+    cancel: () => ipcRenderer.invoke(DESKTOP_IPC.pluginsCancel) as Promise<void>,
   },
   backend: {
     status: () => ipcRenderer.invoke(DESKTOP_IPC.backendStatus) as ReturnType<DshDesktopApi['backend']['status']>,

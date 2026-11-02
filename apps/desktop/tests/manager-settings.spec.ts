@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest'
-import { instanceSettings } from '../src/manager-settings.ts'
+import { instanceSettings, parseInstancePresetRoster, parsePermissionPresetOptions } from '../src/manager-settings.ts'
 import { DEFAULT_SHORTCUTS, parseShortcuts, shortcutBinding } from '../src/manager-shortcuts.ts'
 import { modelSourceId, sourceRoute } from '../src/model-sources.ts'
 
@@ -32,6 +32,22 @@ it('uses the selected instance API and preserves settings revisions', async () =
   const request = fetcher.mock.calls[0]![0]
   expect(request.url).toBe('https://instance.test/api/settings/mutate')
   expect(request.headers.get('origin')).toBe('https://instance.test')
+})
+it('reads the agent preset roster through its named endpoint', async () => {
+  const fetcher = transport({ presets: [{ id: 'standard' }, { id: 'cordis' }] })
+  expect(await instanceSettings(fetcher, 'dsh-app://app/', 'presetRoster', {})).toEqual({ presets: [{ id: 'standard' }, { id: 'cordis' }] })
+  expect(fetcher.mock.calls[0]![0].url).toBe('dsh-app://app/api/agentPresets/list')
+})
+it('validates preset diagnostics received from an instance', () => {
+  expect(parseInstancePresetRoster({ presets: [{ id: 'cordis', broken: 'dependency error' }] })).toEqual([
+    { id: 'cordis', broken: 'dependency error' },
+  ])
+  expect(() => parseInstancePresetRoster({ presets: [{ id: 4 }] })).toThrow('Invalid agent preset roster')
+})
+it('parses permission defaults from the permission catalog', () => {
+  expect(parsePermissionPresetOptions({ defaultOptions: [{ value: 'workspace-write', name: 'Workspace' }] }))
+    .toEqual(['workspace-write'])
+  expect(() => parsePermissionPresetOptions({ defaultOptions: [{ value: '' }] })).toThrow('Invalid permission preset catalog')
 })
 it('refuses arbitrary RPC names, fields, and unfenced edits before dispatch', async () => {
   const fetcher = transport()
@@ -78,6 +94,9 @@ it('rejects mismatched envelopes and surfaces conflicts without echoing a submit
 })
 it('accepts distinct shortcuts, supports disabling, and rejects collisions or bare typing keys', () => {
   expect(parseShortcuts({ ...DEFAULT_SHORTCUTS, close: '' }).close).toBe('')
+  expect(parseShortcuts({ ...DEFAULT_SHORTCUTS, settings: 'Ctrl+,', add: 'Ctrl+T', close: 'Ctrl+W' })).toMatchObject({
+    settings: DEFAULT_SHORTCUTS.settings, add: DEFAULT_SHORTCUTS.add, close: DEFAULT_SHORTCUTS.close,
+  })
   expect(() => parseShortcuts({ ...DEFAULT_SHORTCUTS, close: DEFAULT_SHORTCUTS.add })).toThrow('already assigned')
   expect(() => parseShortcuts({ ...DEFAULT_SHORTCUTS, add: 'T' })).toThrow('Invalid')
   expect(() => parseShortcuts({ ...DEFAULT_SHORTCUTS, add: 'Shift+T' })).toThrow('Invalid')

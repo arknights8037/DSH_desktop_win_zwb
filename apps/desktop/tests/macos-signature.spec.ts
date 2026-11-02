@@ -40,13 +40,11 @@ describe('desktop macOS release signature', () => {
     const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
     const config = createElectronBuilderConfig(RELEASE_ENVIRONMENT, 'darwin', 'arm64')
     expect(portablePath(config.directories.output)).toContain('/.desktop-build/targets/mac-arm64/artifacts')
-    expect(config.extraResources).toHaveLength(1)
-    expect(config.extraResources[0]?.to).toBe('runtime')
-    expect(portablePath(config.extraResources[0]?.from ?? '')).toContain('/.desktop-build/targets/mac-arm64/runtime')
-    const [dshFiles, dshNodeModules] = config.files.slice(-2)
-    if (!dshFiles || !dshNodeModules || typeof dshFiles === 'string' || typeof dshNodeModules === 'string') {
-      throw new Error('desktop DSH resources must use electron-builder file mappings')
-    }
+    expect(config.extraResources).toHaveLength(3)
+    const runtimeResource = config.extraResources.find((entry: { to: string }) => entry.to === 'runtime')
+    expect(portablePath(runtimeResource?.from ?? '')).toContain('/.desktop-build/targets/mac-arm64/runtime')
+    const dshFiles = config.extraResources.find((entry: { to: string }) => entry.to === 'dsh')
+    const dshNodeModules = config.extraResources.find((entry: { to: string }) => entry.to === 'dsh/node_modules')
     expect(portablePath(dshFiles.from)).toContain('/.desktop-build/targets/mac-arm64/dsh')
     expect(dshFiles.to).toBe('dsh')
     expect(portablePath(dshNodeModules.from)).toContain('/.desktop-build/targets/mac-arm64/dsh/node_modules')

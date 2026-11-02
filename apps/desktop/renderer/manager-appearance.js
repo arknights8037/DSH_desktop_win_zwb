@@ -12,6 +12,11 @@ const personalPresets = {
 let personalDraft
 let personalDirty = false
 let personalReading = false
+let personalPreviewTimer
+let personalPreviewBusy = false
+let personalPreviewAgain = false
+let personalPreviewGeneration = 0
+let personalPreviewTail = Promise.resolve()
 const personalVariables = ['--bg', '--panel', '--panel-hover', '--line', '--tab-strip', '--brand', '--brand-strong', '--brand-foreground', '--text', '--muted',
   '--personal-wallpaper', '--personal-sidebar', '--personal-content', '--personal-input', '--personal-card', '--personal-active-tab']
 
@@ -99,7 +104,50 @@ function previewPersonalAppearance() {
   personalDirty = true
   setShellPersonalAppearance(personalDraft)
   renderPersonalAppearance()
-  void perform(() => settingsCall('previewPersonalization', { value: personalDraft }))
+  reportDirty()
+  clearTimeout(personalPreviewTimer)
+  const generation = ++personalPreviewGeneration
+  personalPreviewTimer = setTimeout(() => { void flushPersonalPreview(generation) }, 120)
+}
+
+async function flushPersonalPreview(generation) {
+  if (generation !== personalPreviewGeneration) return
+  if (personalPreviewBusy) {
+    personalPreviewAgain = true
+    return
+  }
+  personalPreviewBusy = true
+  const request = settingsCall('previewPersonalization', { value: structuredClone(personalDraft) })
+  personalPreviewTail = request.catch(() => {})
+  try {
+    await request
+  } catch (error) {
+    showNotice(error)
+  } finally {
+    personalPreviewBusy = false
+    if (personalPreviewAgain) {
+      personalPreviewAgain = false
+      personalPreviewTimer = setTimeout(() => { void flushPersonalPreview(personalPreviewGeneration) }, 120)
+    }
+  }
+}
+
+function cancelPersonalPreview() {
+  personalPreviewGeneration++
+  personalPreviewAgain = false
+  clearTimeout(personalPreviewTimer)
+}
+
+async function discardPersonalDraft() {
+  cancelPersonalPreview()
+  await personalPreviewTail
+  personalDirty = false
+  personalDraft = structuredClone(softwareDocument?.personalization || personalDefaults())
+  setShellPersonalAppearance(personalDraft)
+  renderPersonalAppearance()
+  try { await settingsCall('previewPersonalization', { value: null }) }
+  catch (error) { showNotice(error) }
+  reportDirty()
 }
 
 for (const [id, field] of Object.entries({ 'wallpaper-enabled': 'backgroundEnabled', 'wallpaper-mask': 'maskEnabled',
@@ -117,21 +165,21 @@ $('appearance-preset').onchange = () => {
 }
 $('appearance-defaults').onclick = () => { personalDraft = personalDefaults(); previewPersonalAppearance() }
 $('appearance-revert').onclick = () => {
-  personalDirty = false
-  setShellPersonalAppearance(softwareDocument.personalization)
-  renderPersonalAppearance()
-  void perform(() => settingsCall('previewPersonalization', { value: null }))
+  void perform(discardPersonalDraft)
 }
 $('personal-appearance-form').onsubmit = event => {
   event.preventDefault()
   const value = structuredClone(personalDraft)
+  cancelPersonalPreview()
   void perform(async () => {
     softwareSaving = true
     renderSettings()
     try {
+      await personalPreviewTail
       softwareDocument = await settingsCall('personalize', { value })
       personalDirty = false
       setShellPersonalAppearance(softwareDocument.personalization)
+      reportDirty()
     } finally { softwareSaving = false; renderSettings() }
   })
 }

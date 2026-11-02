@@ -5,7 +5,7 @@ import { expect, it, onTestFinished } from 'vitest'
 import { SoftwareSettings, type SoftwareEncryption } from '../src/software-settings.ts'
 import { DEFAULT_SHORTCUTS } from '../src/manager-shortcuts.ts'
 import { DEFAULT_PERSONAL_APPEARANCE } from '../src/personal-appearance.ts'
-import { DEFAULT_DSH_SETTINGS } from '../src/dsh-settings.ts'
+import { DEFAULT_DSH_SETTINGS, parseDshSettings } from '../src/dsh-settings.ts'
 import { parseModelSource, modelSourceId, sourceKeyRef } from '../src/model-sources.ts'
 
 const sourceConfig = { name: 'Gateway', protocol: 'openai-completions', baseURL: 'https://gateway.test/v1',
@@ -95,23 +95,30 @@ it('rejects invalid source catalogs, URLs, keys, and protocols before saving', (
 it('persists validated DSH overrides offline without accepting secrets or arbitrary settings', () => {
   const { path, encryption, settings } = fixture()
   const dsh = { ...DEFAULT_DSH_SETTINGS, deepseekBaseURL: 'https://gateway.test/anthropic',
-    deepseekMaxTokens: 8192, modeSelectionEnabled: false, defaultPreset: 'custom' }
+    deepseekMaxTokens: 8192, defaultPreset: 'custom', textFontFamily: 'Noto Sans SC', codeFontFamily: 'Cascadia Code' }
   settings.updateDsh(dsh)
-  expect(new SoftwareSettings(path, encryption).snapshot().dsh).toEqual(dsh)
+  expect(new SoftwareSettings(path, encryption).snapshot().dsh).toEqual(parseDshSettings(dsh))
   const detached = settings.snapshot(); detached.dsh.defaultPreset = 'changed'
   expect(settings.snapshot().dsh.defaultPreset).toBe('custom')
   for (const bad of [null, { ...dsh, apiKey: 'secret' }, { ...dsh, deepseekKeyRef: '../key' },
     { ...dsh, deepseekMaxTokens: 0 }, { ...dsh, deepseekMaxTokens: 1.5 }, { ...dsh, defaultPreset: '' },
     { ...dsh, transcriptView: ['compact'] }, { ...dsh, deepseekProtocol: 'ftp' },
-    { ...dsh, modeSelectionEnabled: 'true' }, { ...dsh, reasoningEffort: '' },
+    { ...dsh, developerToolsEnabled: 'true' }, { ...dsh, reasoningEffort: '' },
     { ...dsh, defaultProvider: 'provider', defaultModel: '' }, { ...dsh, defaultModel: null },
     ...['file:///tmp/key', 'https://user:secret@host.test', 'https://host.test?key=secret'].map(deepseekBaseURL => ({ ...dsh, deepseekBaseURL })),
   ]) expect(() => { settings.updateDsh(bad) }).toThrow()
-  expect(settings.snapshot().dsh).toEqual(dsh)
+  expect(settings.snapshot().dsh).toEqual(parseDshSettings(dsh))
   const file = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
   delete file.dsh
   writeFileSync(path, JSON.stringify(file))
   expect(new SoftwareSettings(path, encryption).snapshot().dsh).toEqual(DEFAULT_DSH_SETTINGS)
+})
+
+it('migrates legacy DSH display modes and fills newly introduced kernel preferences', () => {
+  const legacy = { ...DEFAULT_DSH_SETTINGS, transcriptView: 'normal', modeSelectionEnabled: false }
+  expect(parseDshSettings(legacy)).toMatchObject({ transcriptView: 'detailed', collapseTiming: 'completion',
+    linkOpening: 'sidebar', developerToolsEnabled: true })
+  expect(() => parseDshSettings({ ...DEFAULT_DSH_SETTINGS, codeFontSize: 17 })).toThrow('Invalid DSH settings')
 })
 
 function fixture() {
@@ -131,7 +138,9 @@ it('retains shared preferences and shortcuts independently of instances', () => 
   expect(reloaded.snapshot()).toMatchObject({ appearance: { theme: 'light', language: 'en', fontSize: 16 }, shortcuts: { settings: 'Ctrl+Alt+S' } })
   const detached = reloaded.snapshot(); detached.appearance.theme = 'dark'
   expect(reloaded.snapshot().appearance.theme).toBe('light')
-  for (const [field, value] of [['theme', ['dark']], ['language', ['en']], ['fontSize', 18], ['busyEnter', 'unknown'], ['other', true]]) {
+  settings.update('fontSize', 22)
+  expect(settings.snapshot().appearance.fontSize).toBe(22)
+  for (const [field, value] of [['theme', ['dark']], ['language', ['en']], ['fontSize', 23], ['busyEnter', 'unknown'], ['other', true]]) {
     expect(() => { settings.update(field, value) }).toThrow('Invalid software preference')
   }
 })

@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { satisfies, valid, validRange } from 'semver'
+import { compare, satisfies, valid, validRange } from 'semver'
 import { DesktopProjectManager, packageNameFromSpec, type DesktopRuntimeExecutables } from './project-manager.ts'
 import { resolveDesktopPaths } from './paths.ts'
 import { readDesktopRuntime, desktopRuntimeId, type DesktopRuntimeDescriptor } from './runtime-tree.ts'
@@ -15,19 +15,33 @@ export interface LibraryPlugin { readonly name: string; readonly version: string
 /** Installs each plugin version in its own dependency graph, outside instance profiles. */
 export class DesktopPluginLibrary {
   private pending: Promise<void> | undefined
+  private controller: AbortController | undefined
   private descriptor: DesktopRuntimeDescriptor | undefined
   private runtimeIdentity: string | undefined
   constructor(readonly root: string, private readonly executables: DesktopRuntimeExecutables) {}
 
-  private acquire(): () => void {
+  private acquire(externalSignal?: AbortSignal): { signal: AbortSignal; release: () => void } {
     if (this.pending) throw new Error('Plugin library is being changed')
     const settled = Promise.withResolvers<void>()
     this.pending = settled.promise
-    return () => { this.pending = undefined; settled.resolve() }
+    const controller = new AbortController()
+    this.controller = controller
+    const signal = externalSignal === undefined ? controller.signal : AbortSignal.any([controller.signal, externalSignal])
+    return {
+      signal,
+      release: () => {
+        if (this.controller === controller) this.controller = undefined
+        this.pending = undefined
+        settled.resolve()
+      },
+    }
   }
 
   /** @returns Completion of the current installation or injection, for application shutdown. */
   settled(): Promise<void> { return this.pending ?? Promise.resolve() }
+
+  /** Cancel the active package operation before application shutdown. */
+  cancel(): void { this.controller?.abort(new Error('Plugin library operation cancelled')) }
 
   /** @returns Metadata for this owner's immutable, startup-selected runtime; retained until the owner is released. */
   runtime(): DesktopRuntimeDescriptor { return this.descriptor ??= readDesktopRuntime(this.executables.dsh) }
@@ -40,7 +54,7 @@ export class DesktopPluginLibrary {
   }
 
   /** @returns Completed library installations; failed preparations are excluded. */
-  list(): readonly LibraryPlugin[] {
+  private entries(): readonly LibraryPlugin[] {
     if (!existsSync(this.root)) return []
     const selectionPath = join(this.root, 'selections.json')
     const selected: unknown = existsSync(selectionPath) ? JSON.parse(readFileSync(selectionPath, 'utf8')) : []
@@ -64,6 +78,30 @@ export class DesktopPluginLibrary {
       .sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version))
   }
 
+  /** @returns One current version per package, including legacy library inventories. */
+  list(): readonly LibraryPlugin[] {
+    const latest = new Map<string, LibraryPlugin>()
+    for (const plugin of this.entries()) {
+      const previous = latest.get(plugin.name)
+      if (!previous || compare(plugin.version, previous.version) > 0) latest.set(plugin.name, plugin)
+    }
+    return [...latest.values()].sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  private retain(plugins: readonly LibraryPlugin[]): void {
+    const retained = new Set(plugins.map(plugin => `${plugin.name}@${plugin.version}`))
+    const obsolete = this.entries().filter(plugin => !retained.has(`${plugin.name}@${plugin.version}`))
+    mkdirSync(this.root, { recursive: true, mode: 0o700 })
+    writeFileSync(join(this.root, 'selections.json'), `${JSON.stringify(plugins)}\n`, { mode: 0o600 })
+    for (const plugin of obsolete) removeOwnedDirectory(this.home(plugin.name, plugin.version))
+  }
+
+  /** Remove superseded library copies; instance profiles own independent copies. */
+  pruneSuperseded(): void {
+    const { release } = this.acquire()
+    try { this.retain(this.list()) } finally { release() }
+  }
+
   /**
    * Retain a reviewed version without installing dependencies on the shell's platform.
    * @param name - Registry package name.
@@ -71,11 +109,10 @@ export class DesktopPluginLibrary {
    */
   select(name: string, version: string): void {
     this.home(name, version)
-    const release = this.acquire()
+    const { release } = this.acquire()
     try {
-      const versions = this.list().filter(plugin => plugin.name !== name || plugin.version !== version)
-      mkdirSync(this.root, { recursive: true, mode: 0o700 })
-      writeFileSync(join(this.root, 'selections.json'), `${JSON.stringify([...versions, { name, version }])}\n`, { mode: 0o600 })
+      const versions = this.list().filter(plugin => plugin.name !== name)
+      this.retain([...versions, { name, version }])
     } finally { release() }
   }
 
@@ -86,11 +123,13 @@ export class DesktopPluginLibrary {
    * @param operation - Deployment through the instance's authenticated Web connection.
    * @returns Deployment completion while library changes remain locked.
    */
-  async withSelection(name: string, version: string, operation: () => Promise<void>): Promise<void> {
-    const release = this.acquire()
+  async withSelection(name: string, version: string, operation: (signal: AbortSignal) => Promise<void>, externalSignal?: AbortSignal): Promise<void> {
+    const { signal, release } = this.acquire(externalSignal)
     try {
+      signal.throwIfAborted()
       if (!this.list().some(plugin => plugin.name === name && plugin.version === version)) throw new Error('Add this version to the shell plugin library first')
-      await operation()
+      await operation(signal)
+      signal.throwIfAborted()
     } finally { release() }
   }
 
@@ -101,23 +140,34 @@ export class DesktopPluginLibrary {
    * @param progress - Installation stages; package names are attached by the library.
    * @returns Completion after dependency validation and approved builds.
    */
-  async install(name: string, version: string, progress: DesktopInstallReporter = () => {}): Promise<void> {
-    const release = this.acquire()
-    try { await this.prepareLocal(name, version, progress) }
+  async install(
+    name: string, version: string, progress: DesktopInstallReporter = () => {}, externalSignal?: AbortSignal,
+  ): Promise<void> {
+    const { signal, release } = this.acquire(externalSignal)
+    try {
+      await this.prepareLocal(name, version, progress, signal)
+      signal.throwIfAborted()
+      this.retain([...this.list().filter(plugin => plugin.name !== name), { name, version }])
+    }
     finally { release() }
   }
 
-  private async prepareLocal(name: string, version: string, progress: DesktopInstallReporter = () => {}): Promise<void> {
+  private async prepareLocal(
+    name: string, version: string, progress: DesktopInstallReporter = () => {}, signal?: AbortSignal,
+  ): Promise<void> {
+    signal?.throwIfAborted()
     if (name === 'dshmarket') throw new Error('This plugin requires a Web instance; select a remote instance for injection')
     const home = this.home(name, version)
     if (existsSync(join(home, 'installed.json'))) return
     mkdirSync(home, { recursive: true, mode: 0o700 })
     const manager = new DesktopProjectManager(resolveDesktopPaths(home), this.executables,
       event => progress({ ...event, package: `${name}@${version}` }))
-    await manager.applyRelease()
+    await manager.applyRelease(new Map(), [], signal)
+    signal?.throwIfAborted()
     await manager.mutate({ type: 'plugin-add', spec: `${name}@${version}` }, {
       beforeChange: async () => {}, afterChange: async () => {},
-    })
+    }, signal)
+    signal?.throwIfAborted()
     this.validateEngines(manager.paths.profile, name)
     writeFileSync(join(home, 'installed.json'), `${JSON.stringify({ name, version })}\n`, { mode: 0o600 })
   }
@@ -165,14 +215,15 @@ export class DesktopPluginLibrary {
   async withSource(
     name: string,
     version: string,
-    operation: (source: string) => Promise<void>,
+    operation: (source: string, signal: AbortSignal) => Promise<void>,
     progress: DesktopInstallReporter = () => {},
+    externalSignal?: AbortSignal,
   ): Promise<void> {
-    await this.withSources([{ name, version }], (sources) => {
+    await this.withSources([{ name, version }], (sources, signal) => {
       const source = sources.get(name)
       if (source === undefined) throw new Error(`Missing prepared plugin source: ${name}`)
-      return operation(source)
-    }, progress)
+      return operation(source, signal)
+    }, progress, false, externalSignal)
   }
 
   /**
@@ -183,22 +234,32 @@ export class DesktopPluginLibrary {
    * @returns Deployment completion while library changes remain locked.
    */
   async withSources(
-    plugins: readonly LibraryPlugin[], operation: (sources: ReadonlyMap<string, string>) => Promise<void>,
+    plugins: readonly LibraryPlugin[], operation: (sources: ReadonlyMap<string, string>, signal: AbortSignal) => Promise<void>,
     progress: DesktopInstallReporter = () => {},
+    historical = false,
+    externalSignal?: AbortSignal,
   ): Promise<void> {
-    const release = this.acquire()
+    const { signal, release } = this.acquire(externalSignal)
+    let selected: readonly LibraryPlugin[] | undefined
     try {
-      const selected = this.list()
+      signal.throwIfAborted()
+      selected = this.list()
+      const inventory = selected
       const sources = new Map<string, string>()
       for (const { name, version } of plugins) {
-        if (!selected.some(plugin => plugin.name === name && plugin.version === version)) throw new Error('Add this version to the shell plugin library first')
+        signal.throwIfAborted()
+        if (!historical && !inventory.some(plugin => plugin.name === name && plugin.version === version)) throw new Error('Add this version to the shell plugin library first')
         if (sources.has(name)) throw new Error(`Duplicate plugin deployment: ${name}`)
-        await this.prepareLocal(name, version, progress)
+        await this.prepareLocal(name, version, progress, signal)
         sources.set(name, this.source(name, version))
       }
-      await operation(sources)
+      signal.throwIfAborted()
+      await operation(sources, signal)
     }
-    finally { release() }
+    finally {
+      try { if (historical && selected) this.retain(selected) }
+      finally { release() }
+    }
   }
 
   /**

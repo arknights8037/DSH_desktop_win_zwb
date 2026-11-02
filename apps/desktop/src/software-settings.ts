@@ -50,7 +50,7 @@ const appearance: SoftwareAppearance = { theme: 'system', fontSize: 14, language
 function validAppearance(field: string, value: unknown): boolean {
   switch (field) {
     case 'theme': return typeof value === 'string' && ['system', 'light', 'dark'].includes(value)
-    case 'fontSize': return typeof value === 'number' && Number.isInteger(value) && value >= 12 && value <= 17
+    case 'fontSize': return typeof value === 'number' && Number.isInteger(value) && value >= 10 && value <= 22
     case 'language': return typeof value === 'string' && ['', 'zh', 'en'].includes(value)
     case 'busyEnter': return value === 'queue' || value === 'steer'
     case 'motionEnabled': return typeof value === 'boolean'

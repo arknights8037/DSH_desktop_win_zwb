@@ -23,7 +23,9 @@ import type { DesktopInstallReporter } from './install-progress.ts'
 export async function prepareLocalKernel(
   home: string, manager: DesktopProjectManager, library: DesktopPluginLibrary, updates: readonly LibraryPlugin[] = [],
   progress: DesktopInstallReporter = () => {},
+  signal?: AbortSignal,
 ): Promise<void> {
+  signal?.throwIfAborted()
   const previous = readDesktopProfileState(manager.paths.profile)
   const nodeModules = join(manager.paths.profile, 'node_modules')
   const legacyContainer = lstatSync(nodeModules, { throwIfNoEntry: false })?.isSymbolicLink() === true
@@ -48,11 +50,11 @@ export async function prepareLocalKernel(
       if (updates.some(update => update.name === name)) continue
       const version = manifest.dependencies[name]
       if (version === undefined) throw new Error(`Missing installed plugin version: ${name}`)
-      library.select(name, version)
       deployments.push({ name, version })
     }
   }
-  await library.withSources(deployments, async (sources) => {
+  await library.withSources(deployments, async (sources, operationSignal) => {
+    operationSignal.throwIfAborted()
     const replacements: DesktopPluginReplacement[] = updates.map((update) => {
       const source = sources.get(update.name)
       if (source === undefined) throw new Error(`Missing prepared plugin source: ${update.name}`)
@@ -62,8 +64,9 @@ export async function prepareLocalKernel(
       unlinkSync(nodeModules)
       mkdirSync(nodeModules, { recursive: true, mode: 0o700 })
     }
-    await manager.applyRelease(sources, replacements)
-  }, progress)
+    await manager.applyRelease(sources, replacements, operationSignal)
+  }, progress, true, signal)
+  signal?.throwIfAborted()
   if (!gte(manager.dshVersion(), '0.2.0-rc.2')) return
   const marker = join(manager.paths.root, 'default-plugins.json')
   if (existsSync(marker)) {
@@ -74,13 +77,15 @@ export async function prepareLocalKernel(
     return
   }
   mkdirSync(manager.paths.root, { recursive: true, mode: 0o700 })
-  for (const [index, plugin] of DESKTOP_DEFAULT_PLUGINS.entries()) {
+  for (const [index, baseline] of DESKTOP_DEFAULT_PLUGINS.entries()) {
+    const plugin = library.list().find(plugin => plugin.name === baseline.name) ?? baseline
     if (manager.listPlugins().some(installed => installed.name === plugin.name)) continue
     library.select(plugin.name, plugin.version)
     const report: DesktopInstallReporter = event => progress({ ...event, completed: index, total: DESKTOP_DEFAULT_PLUGINS.length })
-    await library.withSource(plugin.name, plugin.version, source => manager.mutate({ type: 'plugin-inject', ...plugin, source }, {
+    await library.withSource(plugin.name, plugin.version, (source, operationSignal) => manager.mutate({ type: 'plugin-inject', ...plugin, source }, {
       beforeChange: async () => {}, afterChange: async () => {},
-    }), report)
+    }, operationSignal), report, signal)
+    signal?.throwIfAborted()
   }
   writeFileSync(`${marker}.tmp`, `${JSON.stringify({ version: 1 })}\n`, { mode: 0o600 })
   renameSync(`${marker}.tmp`, marker)

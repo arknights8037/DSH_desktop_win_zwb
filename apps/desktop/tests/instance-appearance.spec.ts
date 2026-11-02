@@ -16,6 +16,8 @@ it('keeps the wallpaper in the shell and makes instance surfaces translucent', (
   expect(css).toContain('[class*="Guide"]')
   expect(css).toContain(':is(input, textarea)[placeholder]::placeholder')
   expect(css).toContain('display: none !important')
+  expect(css).toContain('scrollbar-width:thin!important')
+  expect(css).toContain('::-webkit-scrollbar-button')
   expect(css).not.toContain(value.backgroundImage)
 })
 

@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { DESKTOP_IPC, type DshDesktopStartupApi } from '../src/ipc.ts'
-import { INSTANCE_OPEN_SETTINGS } from '../src/manager-ipc.ts'
+import { INSTANCE_OPEN_SETTINGS, INSTANCE_OPEN_PLUGINS } from '../src/manager-ipc.ts'
 
 const electron = vi.hoisted(() => ({
   contextBridge: { exposeInMainWorld: vi.fn() },
@@ -40,4 +40,21 @@ it('provides startup controls and a removable state subscription to shell docume
   dispose()
   expect(electron.ipcRenderer.off).toHaveBeenCalledWith(DESKTOP_IPC.backendState, handler)
   expect(api).not.toHaveProperty('plugins')
+})
+
+it('exposes plugin navigation only to local instance documents', async () => {
+  vi.stubGlobal('location', new URL('dsh-app://app/index.html'))
+  await import('../src/preload-app.ts')
+  const bridge = electron.contextBridge.exposeInMainWorld.mock.calls.find(([name]) => name === '__DSH_PLUGIN_NAVIGATION__')?.[1]
+  expect(Object.keys(bridge)).toEqual(['openList', 'openBundle'])
+  await bridge.openList()
+  expect(electron.ipcRenderer.invoke).toHaveBeenCalledWith(INSTANCE_OPEN_PLUGINS, 'native')
+  await bridge.openBundle('@scope/plugin')
+  expect(electron.ipcRenderer.invoke).toHaveBeenCalledWith(INSTANCE_OPEN_PLUGINS, {
+    mode: 'bundle', packageName: '@scope/plugin',
+  })
+  vi.resetModules(); vi.clearAllMocks()
+  vi.stubGlobal('location', new URL('https://remote.example/'))
+  await import('../src/preload-app.ts')
+  expect(electron.contextBridge.exposeInMainWorld.mock.calls.some(([name]) => name === '__DSH_PLUGIN_NAVIGATION__')).toBe(false)
 })

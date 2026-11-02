@@ -3,6 +3,6 @@ Installable
 In library
 In library
 Manage
-Review latest
+Check for updates
 Add by npm package name
 Package source and recovery details

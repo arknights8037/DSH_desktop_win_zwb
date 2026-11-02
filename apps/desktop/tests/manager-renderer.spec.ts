@@ -16,6 +16,7 @@ import type { InstanceSettingsSupport } from '../src/settings-adapter.ts'
 const id = instanceId('aabbccdd-1234-4321-8123-123456789012')
 function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTabs = false, theme?: string, kernel?: KernelStatus) {
   const dom = new JSDOM(readFileSync(new URL('../renderer/manager.html', import.meta.url), 'utf8'), { runScripts: 'outside-only', url: 'https://manager.test/' })
+  dom.window.confirm = vi.fn(() => true)
   onTestFinished(() => { dom.window.close() })
   Object.defineProperty(dom.window, 'structuredClone', { value: structuredClone })
   dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
@@ -25,7 +26,7 @@ function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTab
   const settings = { revision: 0, debugMode: false, appearance: { theme: theme || 'system', fontSize: 14, language: '', busyEnter: 'queue', motionEnabled: true },
     personalization: structuredClone(DEFAULT_PERSONAL_APPEARANCE),
     dsh: { ...DEFAULT_DSH_SETTINGS }, modelSources: [] as ModelSourceView[], credentials: [] as string[],
-    credentialWritable: true, syncErrors: {}, settingsSupport: {} as Record<string, InstanceSettingsSupport> }
+    credentialWritable: true, syncErrors: {} as Record<string, string>, settingsSupport: {} as Record<string, InstanceSettingsSupport> }
   let shortcutBindings = { ...DEFAULT_SHORTCUTS } as Record<string, string>
   const invoke = vi.fn(async (operation: string, payload?: {
     id?: string
@@ -54,7 +55,9 @@ function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTab
     }
     if (operation === 'save') return { id }
     if (operation === 'rename') snapshot.instances = snapshot.instances.map(item => item.id === payload?.id ? { ...item, name: payload.name! } : item)
-    if (operation === 'open' && payload?.id) snapshot.statuses[payload.id]!.connection = 'connected'
+    if (operation === 'open' && payload?.id) Object.assign(snapshot.statuses[payload.id]!, { process: 'running', connection: 'connected' })
+    if (operation === 'stop' && payload?.id) Object.assign(snapshot.statuses[payload.id]!, { process: 'stopped', connection: 'disconnected' })
+    if (operation === 'restart' && payload?.id) Object.assign(snapshot.statuses[payload.id]!, { process: 'running', connection: 'connected' })
     if (operation === 'close' && payload?.id) {
       snapshot.tabs.ids = snapshot.tabs.ids.filter(item => item !== payload.id)
       if (snapshot.tabs.active === payload.id) snapshot.tabs.active = snapshot.tabs.ids.at(-1) || null
@@ -62,6 +65,7 @@ function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTab
     if (operation === 'shortcuts') { if (payload?.bindings) shortcutBindings = payload.bindings; if (payload?.action === 'reset') shortcutBindings = { ...DEFAULT_SHORTCUTS }; return shortcutBindings }
     if (operation === 'softwareSettings') {
       if (payload?.action === 'read') return structuredClone(settings)
+      if (payload?.action === 'fontRoster') return ['Cascadia Code', 'Segoe UI']
       if (payload?.action === 'debugMode') settings.debugMode = payload.input?.value === true
       if (payload?.action === 'credentialInfo') return { [String(payload.input?.ref)]: { configured: settings.credentials.includes(String(payload.input?.ref)), writable: true, source: 'software' } }
       if (payload?.action === 'update') {
@@ -133,6 +137,23 @@ it('does not offer local data deletion for remote instances and cancel does not 
   expect(invoke).toHaveBeenCalledWith('overlay', { visible: true })
   expect(invoke.mock.calls.some(([operation]) => operation === 'remove')).toBe(false)
 })
+it('shows background process state and exposes stop and restart controls', async () => {
+  const { dom, invoke, snapshot } = page({ id, name: 'Local', kind: 'local' }, 'en', true)
+  const document = dom.window.document
+  await expect.poll(() => snapshot.statuses[id]?.connection).toBe('connected')
+  snapshot.statuses[id] = { process: 'running', connection: 'disconnected' }
+  document.querySelector<HTMLButtonElement>('#settings')!.click()
+  await expect.poll(() => document.querySelector('.instance-status')?.textContent).toBe('Running · Disconnected')
+  document.querySelector<HTMLButtonElement>('.instance-stop')!.click()
+  await expect.poll(() => invoke.mock.calls.some(([operation, payload]) => operation === 'stop' && payload?.id === id)).toBe(true)
+
+  snapshot.statuses[id] = { process: 'running', connection: 'connected' }
+  const tab = document.querySelector<HTMLElement>('.tab:not(.settings-tab)')!
+  tab.dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 50 }))
+  await expect.poll(() => [...document.querySelectorAll('#tab-menu button')].some(button => button.textContent === 'Restart')).toBe(true)
+  ;[...document.querySelectorAll<HTMLButtonElement>('#tab-menu button')].find(button => button.textContent === 'Restart')!.click()
+  await expect.poll(() => invoke.mock.calls.some(([operation, payload]) => operation === 'restart' && payload?.id === id)).toBe(true)
+})
 it('saves the debug switch and opens diagnostic logs from their settings rows', async () => {
   const { dom, invoke, settings } = page()
   const document = dom.window.document
@@ -180,14 +201,21 @@ it('shows exact instance fields, applies schema options and limits, and identifi
     defaultProvider: { namespace: 'agent-default-model', field: 'provider' },
     defaultModel: { namespace: 'agent-default-model', field: 'model' },
     reasoningEffort: { namespace: 'agent-default-model', field: 'reasoningEffort' },
+    defaultPreset: { namespace: 'agent-preset-registry', field: 'selectedDefault', options: ['standard', 'cordis'] },
   } }
   document.querySelector<HTMLButtonElement>('#settings')!.click()
   document.querySelector<HTMLButtonElement>('[data-settings-tab=advanced]')!.click()
+  document.querySelector<HTMLButtonElement>('[data-settings-tab=keys]')!.click()
   await expect.poll(() => document.querySelector<HTMLInputElement>('#dsh-transcriptView')!.disabled).toBe(true)
   expect(document.querySelector('#dsh-transcriptView')!.closest('label')!.textContent).not.toContain('Not supported')
-  expect(document.querySelector('#dsh-defaultModel')!.closest('label')!.textContent).not.toContain('agent-default-model.model')
+  expect(document.querySelector('#dsh-defaultModel')!.closest<HTMLElement>('.deepseek-default-fields')!.hidden).toBe(true)
   expect(document.querySelector<HTMLInputElement>('#dsh-deepseekMaxTokens')!.max).toBe('8192')
   expect(document.querySelector<HTMLOptionElement>('#dsh-deepseekProtocol [value="chat-completions"]')!.disabled).toBe(true)
+  const defaultPreset = document.querySelector<HTMLInputElement>('#dsh-defaultPreset')!
+  expect([...defaultPreset.list!.options].map(option => option.value)).toContain('cordis')
+  defaultPreset.value = 'missing-preset'
+  expect(defaultPreset.validity.patternMismatch).toBe(true)
+  defaultPreset.value = 'standard'
   const provider = document.querySelector<HTMLInputElement>('#dsh-defaultProvider')!
   const model = document.querySelector<HTMLInputElement>('#dsh-defaultModel')!
   provider.value = 'custom-provider'; model.value = 'custom-model'
@@ -232,10 +260,12 @@ it('previews personal colors and text, saves them, and cancels or resets drafts'
   preset.dispatchEvent(new dom.window.Event('change'))
   expect(document.documentElement.style.getPropertyValue('--text')).toBe('#f2eafc')
   expect(settings.personalization.colors.text).toBe('')
+  await expect.poll(() => invoke.mock.calls.some(([operation, payload]) =>
+    operation === 'softwareSettings' && payload?.action === 'previewPersonalization')).toBe(true)
   const preview = invoke.mock.calls.find(([operation, payload]) => operation === 'softwareSettings' && payload?.action === 'previewPersonalization')
   expect(preview?.[1]?.input?.value).toMatchObject({ colors: { text: '#f2eafc' } })
   document.querySelector<HTMLButtonElement>('#appearance-revert')!.click()
-  expect(document.documentElement.style.getPropertyValue('--text')).toBe('')
+  await expect.poll(() => document.documentElement.style.getPropertyValue('--text')).toBe('')
   expect(invoke).toHaveBeenCalledWith('softwareSettings', { action: 'previewPersonalization', input: { value: null } })
   const text = document.querySelector<HTMLInputElement>('#personal-color-text')!
   text.value = '#123456'
@@ -248,7 +278,25 @@ it('previews personal colors and text, saves them, and cancels or resets drafts'
   expect(document.documentElement.style.getPropertyValue('--text')).toBe('')
   expect(settings.personalization.colors.text).toBe('#123456')
   document.querySelector<HTMLButtonElement>('#appearance-revert')!.click()
-  expect(document.documentElement.style.getPropertyValue('--text')).toBe('#123456')
+  await expect.poll(() => document.documentElement.style.getPropertyValue('--text')).toBe('#123456')
+})
+
+it('coalesces rapid appearance input into one bounded preview request', async () => {
+  const { dom, invoke } = page()
+  const document = dom.window.document
+  await expect.poll(() => document.querySelector<HTMLButtonElement>('#source-add')?.disabled).toBe(false)
+  document.querySelector<HTMLButtonElement>('#settings')!.click()
+  document.querySelector<HTMLButtonElement>('[data-settings-tab=appearance]')!.click()
+  const opacity = document.querySelector<HTMLInputElement>('#wallpaper-mask-opacity')!
+  for (let value = 10; value <= 70; value += 10) {
+    opacity.value = String(value)
+    opacity.dispatchEvent(new dom.window.Event('input'))
+  }
+  await expect.poll(() => invoke.mock.calls.filter(([operation, payload]) =>
+    operation === 'softwareSettings' && payload?.action === 'previewPersonalization').length).toBe(1)
+  await new Promise(resolve => setTimeout(resolve, 200))
+  expect(invoke.mock.calls.filter(([operation, payload]) =>
+    operation === 'softwareSettings' && payload?.action === 'previewPersonalization')).toHaveLength(1)
 })
 
 it('shows storage usage and opens a selected storage directory', async () => {
@@ -286,16 +334,20 @@ it('embeds market search and plugin management in settings without opening a lib
   snapshot.packaged = false
   snapshot.pluginManagement = true
   const document = dom.window.document
-  await expect.poll(() => document.querySelector('#plugin-instances strong')?.textContent).toBe('<local>')
+  await expect.poll(() => document.querySelector('#native-plugin-instance option')?.textContent).toBe('<local>')
   document.querySelector<HTMLButtonElement>('#settings')!.click()
   document.querySelector<HTMLButtonElement>('[data-settings-tab=plugins]')!.click()
   expect(document.querySelector<HTMLElement>('#settings-pane-plugins')?.hidden).toBe(false)
   expect(document.querySelector('#settings-title')?.textContent).toBe('Plugins')
-  expect(document.querySelector('#plugin-instances local')).toBeNull()
+  expect(document.querySelector('#native-plugin-instance local')).toBeNull()
+  expect(document.querySelector<HTMLElement>('#native-plugin-settings')!.hidden).toBe(false)
+  expect(document.querySelector<HTMLElement>('#plugin-workspace')!.hidden).toBe(true)
+  document.querySelector<HTMLButtonElement>('#plugin-mode-library')!.click()
+  expect(document.querySelector<HTMLElement>('#plugin-workspace')!.hidden).toBe(false)
   await expect.poll(() => document.querySelector('#library-catalog-status')?.textContent).toContain('0 matching')
   expect(document.querySelector('.plugin-discovery #library-search-query')).not.toBeNull()
   expect(document.querySelector('.plugin-management #library-plugins')).not.toBeNull()
-  expect(document.querySelector('.plugin-management #plugin-instances')).not.toBeNull()
+  expect(document.querySelector('#plugin-instances')).toBeNull()
   expect(document.querySelector('#open-plugin-library')).toBeNull()
   expect(document.querySelector('#library-description')).toBeNull()
   expect(document.querySelector('#library-market-integration')).toBeNull()
@@ -308,7 +360,9 @@ it('embeds market search and plugin management in settings without opening a lib
   await refreshed
   expect(pluginLibrary.plugins.catalog).toHaveBeenCalledOnce()
   expect(invoke.mock.calls.some(([operation]) => operation === 'open')).toBe(false)
-  expect(document.querySelectorAll<HTMLButtonElement>('#plugin-instances button')[1]?.disabled).toBe(true)
+  document.querySelector<HTMLButtonElement>('#plugin-mode-advanced')!.click()
+  expect(document.querySelector<HTMLElement>('#plugin-library-options')!.hidden).toBe(false)
+  expect(document.querySelector<HTMLElement>('#plugin-workspace')!.dataset.view).toBe('library')
 })
 it('shows kernel controls and the plugin library in an unpackaged runtime-backed shell', async () => {
   const kernel: KernelStatus = { phase: 'idle', current: '0.2.1-rc.2', automatic: false, restartRequired: false, modernSettings: true }
@@ -425,13 +479,13 @@ it('targets tab menu actions at the clicked tab and renders multiline logs', asy
     await expect.poll(() => document.querySelector<HTMLDivElement>('#tab-menu')!.hidden).toBe(false)
   }
   await context()
-  document.querySelectorAll<HTMLButtonElement>('#tab-menu button')[2]!.click()
+  ;[...document.querySelectorAll<HTMLButtonElement>('#tab-menu button')].find(button => button.textContent === 'Logs')!.click()
   await expect.poll(() => document.querySelector<HTMLDialogElement>('#log-dialog')!.open).toBe(true)
   expect(invoke).toHaveBeenCalledWith('logs', { id })
   expect(document.querySelector('#log-content')?.textContent).toBe('Connected\nReady')
   document.querySelector<HTMLButtonElement>('#log-close')!.click()
   await context()
-  document.querySelectorAll<HTMLButtonElement>('#tab-menu button')[3]!.click()
+  ;[...document.querySelectorAll<HTMLButtonElement>('#tab-menu button')].find(button => button.textContent === 'Close tab')!.click()
   await expect.poll(() => invoke).toHaveBeenCalledWith('close', { id })
 })
 it('opens localized software settings, saves the shared theme, and returns to instances', async () => {
@@ -452,13 +506,14 @@ it('opens localized software settings, saves the shared theme, and returns to in
   await expect(`${menu}\n\n${document.querySelector('#settings-title')!.textContent}\n${controls.map(node => node.textContent).join('\n')}\n`).toMatchFileSnapshot('expected/manager-controls.txt')
   const applicationTab = document.querySelector<HTMLButtonElement>('[data-settings-tab=general]')!
   applicationTab.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }))
-  expect(document.activeElement).toBe(document.querySelector('[data-settings-tab=instances]'))
-  document.activeElement!.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }))
   expect(document.activeElement).toBe(document.querySelector('[data-settings-tab=appearance]'))
-  expect(document.querySelector('[data-settings-tab=appearance]')!.getAttribute('aria-selected')).toBe('true')
+  document.activeElement!.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }))
+  expect(document.activeElement).toBe(document.querySelector('[data-settings-tab=shortcuts]'))
+  expect(document.querySelector('[data-settings-tab=shortcuts]')!.getAttribute('aria-selected')).toBe('true')
   expect(document.querySelector<HTMLElement>('[data-settings-pane=general]')!.hidden).toBe(true)
-  expect(document.querySelector<HTMLElement>('[data-settings-pane=appearance]')!.hidden).toBe(false)
-  expect(document.querySelector('#settings-title')!.textContent).toBe('外观')
+  expect(document.querySelector<HTMLElement>('[data-settings-pane=shortcuts]')!.hidden).toBe(false)
+  expect(document.querySelector('#settings-title')!.textContent).toBe('快捷键')
+  document.querySelector<HTMLButtonElement>('[data-settings-tab=appearance]')!.click()
   theme.value = 'light'
   theme.dispatchEvent(new dom.window.Event('change'))
   await expect.poll(() => document.documentElement.dataset.theme).toBe('light')
@@ -481,46 +536,100 @@ it('saves shared preferences and model credentials before any instance exists', 
   const secret = document.querySelector<HTMLInputElement>('#api-key-value')!
   await expect.poll(() => secret.disabled).toBe(false)
   secret.value = 'fixture-only-key'
-  document.querySelector<HTMLFormElement>('#api-key-form')!.dispatchEvent(new dom.window.Event('submit', { cancelable: true }))
-  expect(secret.value).toBe('')
+  document.querySelector<HTMLFormElement>('#dsh-settings-form')!.dispatchEvent(new dom.window.Event('submit', { cancelable: true }))
+  await expect.poll(() => secret.value).toBe('')
   await expect.poll(() => settings.credentials).toEqual(['DEEPSEEK_API_KEY'])
+  await expect.poll(() => invoke.mock.calls.some(([, args]) => args?.action === 'dshUpdate')).toBe(true)
+  await expect.poll(() => secret.disabled).toBe(false)
   expect(invoke).toHaveBeenCalledWith('softwareSettings', { action: 'credentialSet', input: { ref: 'DEEPSEEK_API_KEY', value: 'fixture-only-key' } })
   expect(invoke.mock.calls.filter(([operation]) => operation === 'softwareSettings').every(([, args]) => !args?.id)).toBe(true)
   expect(dom.window.localStorage.length).toBe(0)
 })
 
-it('adds multiple sources, edits with a blank key, and confirms deletion inline', async () => {
+it('warns before discarding unsaved DSH settings when settings close', async () => {
+  const { dom, invoke } = page()
+  const document = dom.window.document
+  document.querySelector<HTMLButtonElement>('#settings')!.click()
+  await expect.poll(() => document.querySelector<HTMLInputElement>('#dsh-deepseekMaxTokens')?.disabled).toBe(false)
+  const maxTokens = document.querySelector<HTMLInputElement>('#dsh-deepseekMaxTokens')!
+  maxTokens.value = '4096'
+  maxTokens.dispatchEvent(new dom.window.Event('input'))
+  await expect.poll(() => invoke.mock.calls.some(([operation, payload]) =>
+    operation === 'dirty' && payload?.dirty === true)).toBe(true)
+  document.querySelector<HTMLButtonElement>('#settings-tab button')!.click()
+  await expect.poll(() => dom.window.confirm).toHaveBeenCalledWith('Discard unsaved settings changes?')
+  await expect.poll(() => invoke.mock.calls.some(([operation, payload]) =>
+    operation === 'dirty' && payload?.dirty === false)).toBe(true)
+})
+
+it('reports partial DSH application instead of claiming every instance updated', async () => {
+  const { dom, settings } = page({ id, name: 'Local', kind: 'local' })
+  const document = dom.window.document
+  settings.syncErrors[id] = 'Local rejected a field'
+  await expect.poll(() => document.querySelector('.instance-row')).not.toBeNull()
+  document.querySelector<HTMLButtonElement>('#settings')!.click()
+  document.querySelector<HTMLButtonElement>('[data-settings-tab=advanced]')!.click()
+  const maxTokens = document.querySelector<HTMLInputElement>('#dsh-deepseekMaxTokens')!
+  maxTokens.value = '4096'
+  maxTokens.dispatchEvent(new dom.window.Event('input'))
+  document.querySelector<HTMLFormElement>('#dsh-settings-form')!.dispatchEvent(new dom.window.Event('submit', { cancelable: true }))
+  await expect.poll(() => document.querySelector('[data-dsh-save-status]')?.textContent)
+    .toContain('Saved locally')
+  expect(document.querySelector<HTMLElement>('#software-status')!.hidden).toBe(false)
+})
+
+it('keeps a provider API key in the form when validation fails', async () => {
+  const { dom, invoke } = page()
+  const document = dom.window.document
+  await expect.poll(() => document.querySelector<HTMLButtonElement>('#source-add')?.disabled).toBe(false)
+  document.querySelector<HTMLButtonElement>('#settings')!.click()
+  document.querySelector<HTMLButtonElement>('[data-settings-tab=keys]')!.click()
+  document.querySelector<HTMLButtonElement>('#source-add')!.click()
+  document.querySelector<HTMLInputElement>('#source-name')!.value = 'Invalid source'
+  document.querySelector<HTMLInputElement>('#source-url')!.value = 'https://gateway.test/v1'
+  document.querySelector<HTMLTextAreaElement>('#source-models')!.value = 'model-a'
+  document.querySelector<HTMLInputElement>('#source-key')!.value = 'keep-this-key'
+  const original = invoke.getMockImplementation()!
+  invoke.mockImplementation((operation, payload) => operation === 'softwareSettings' && payload?.action === 'sourceSave'
+    ? Promise.reject(new Error('Invalid model source'))
+    : original(operation, payload))
+  document.querySelector<HTMLFormElement>('#source-form')!.dispatchEvent(new dom.window.Event('submit', { cancelable: true }))
+  await expect.poll(() => document.querySelector('#notice')?.textContent).toContain('Invalid model source')
+  expect(document.querySelector<HTMLInputElement>('#source-key')!.value).toBe('keep-this-key')
+  expect(document.querySelector<HTMLElement>('#source-form')!.hidden).toBe(false)
+})
+
+it('adds a compact third-party provider and can make its model the kernel default', async () => {
   const { dom, settings, invoke } = page()
   const document = dom.window.document
   await expect.poll(() => document.querySelector<HTMLButtonElement>('#source-add')!.disabled).toBe(false)
   document.querySelector<HTMLButtonElement>('#settings')!.click()
   document.querySelector<HTMLButtonElement>('[data-settings-tab=keys]')!.click()
-  for (const [name, protocol] of [['First', 'openai-completions'], ['Second', 'anthropic-messages']]) {
-    document.querySelector<HTMLButtonElement>('#source-add')!.click()
-    document.querySelector<HTMLInputElement>('#source-name')!.value = name!
-    document.querySelector<HTMLSelectElement>('#source-protocol')!.value = protocol!
-    document.querySelector<HTMLInputElement>('#source-url')!.value = 'https://gateway.test/v1'
-    document.querySelector<HTMLTextAreaElement>('#source-models')!.value = 'model-a\nmodel-b'
-    document.querySelector<HTMLInputElement>('#source-key')!.value = 'fixture-source-key'
-    document.querySelector<HTMLFormElement>('#source-form')!.dispatchEvent(new dom.window.Event('submit', { cancelable: true }))
-    expect(document.querySelector<HTMLInputElement>('#source-key')!.value).toBe('')
-    await expect.poll(() => document.querySelector<HTMLElement>('#source-form')!.hidden).toBe(true)
-    await expect.poll(() => document.querySelectorAll('.model-source').length).toBe(name === 'First' ? 1 : 2)
-  }
-  document.querySelector<HTMLButtonElement>('.model-source button')!.click()
-  expect(document.querySelector<HTMLInputElement>('#source-key')!.required).toBe(false)
-  document.querySelector<HTMLInputElement>('#source-name')!.value = 'Renamed'
+  document.querySelector<HTMLButtonElement>('#source-add')!.click()
+  document.querySelector<HTMLInputElement>('#source-name')!.value = 'Team gateway'
+  document.querySelector<HTMLSelectElement>('#source-protocol')!.value = 'openai-completions'
+  document.querySelector<HTMLInputElement>('#source-url')!.value = 'https://gateway.test/v1'
+  document.querySelector<HTMLTextAreaElement>('#source-models')!.value = 'large-model'
+  document.querySelector<HTMLInputElement>('#source-key')!.value = 'fixture-provider-key'
   document.querySelector<HTMLFormElement>('#source-form')!.dispatchEvent(new dom.window.Event('submit', { cancelable: true }))
-  await expect.poll(() => document.querySelector('.model-source strong')!.textContent).toBe('Renamed')
-  expect(invoke.mock.calls.filter(([, args]) => args?.action === 'sourceSave').at(-1)?.[1]?.input?.key).toBe('')
-  const remove = document.querySelectorAll<HTMLButtonElement>('.model-source button')[1]!
-  remove.click()
-  expect(settings.modelSources).toHaveLength(2)
-  expect(remove.textContent).toBe('Confirm deletion')
-  remove.click()
-  await expect.poll(() => document.querySelectorAll('.model-source').length).toBe(1)
-  expect(document.querySelector('.model-source strong')!.textContent).toBe('Second')
-  expect(invoke.mock.calls.some(([operation]) => operation === 'open')).toBe(false)
+  await expect.poll(() => document.querySelectorAll('.provider-row').length).toBe(1)
+  expect(settings.modelSources).toHaveLength(1)
+  expect(invoke.mock.calls.find(([, args]) => args?.action === 'sourceSave')?.[1]?.input).toMatchObject({
+    key: 'fixture-provider-key', config: { name: 'Team gateway', protocol: 'openai-completions', baseURL: 'https://gateway.test/v1', models: ['large-model'] },
+  })
+  document.querySelector<HTMLButtonElement>('.provider-default-row button')!.click()
+  await expect.poll(() => settings.dsh.defaultModel).toBe('large-model')
+  expect(settings.dsh.defaultProvider).toBe(`desktop-${settings.modelSources[0]!.id}`)
+  const original = invoke.getMockImplementation()!
+  invoke.mockImplementation((operation, payload) => operation === 'softwareSettings' && payload?.action === 'sourceModels'
+    ? Promise.resolve(['fetched-large', 'fetched-fast']) : original(operation, payload))
+  await expect.poll(() => document.querySelector<HTMLButtonElement>('.provider-actions button')!.disabled).toBe(false)
+  document.querySelector<HTMLButtonElement>('.provider-actions button')!.click()
+  await expect.poll(() => document.querySelector<HTMLButtonElement>('#source-fetch')!.disabled).toBe(false)
+  document.querySelector<HTMLButtonElement>('#source-fetch')!.click()
+  await expect.poll(() => invoke.mock.calls.some(([, args]) => args?.action === 'sourceModels')).toBe(true)
+  await expect.poll(() => document.querySelector<HTMLTextAreaElement>('#source-models')!.value).toBe('fetched-large\nfetched-fast')
+  expect(document.querySelector('#source-fetch-status')?.textContent).toContain('2')
 })
 
 it('records, disables, and restores window shortcuts', async () => {
@@ -533,8 +642,23 @@ it('records, disables, and restores window shortcuts', async () => {
   input.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Backspace', cancelable: true }))
   await expect.poll(() => input.value).toBe('')
   document.querySelector<HTMLButtonElement>('#shortcut-reset')!.click()
-  await expect.poll(() => document.querySelector<HTMLInputElement>('.shortcut-row input')!.value).toBe('Ctrl+,')
+  await expect.poll(() => document.querySelector<HTMLInputElement>('.shortcut-row input')!.value).toBe('Ctrl+Shift+,')
   expect(invoke).toHaveBeenCalledWith('shortcuts', { action: 'reset' })
+})
+
+it('separates DSH instance shortcuts from desktop shell shortcuts', async () => {
+  const { dom, invoke } = page({ id, name: 'Workspace', kind: 'local' }, 'en', true)
+  const document = dom.window.document
+  await expect.poll(() => invoke).toHaveBeenCalledWith('open', { id })
+  document.querySelector<HTMLButtonElement>('#settings')!.click()
+  document.querySelector<HTMLButtonElement>('[data-settings-tab=shortcuts]')!.click()
+  expect(document.querySelector('#settings-pane-shortcuts h3')?.textContent).toBe('DSH shortcuts')
+  expect(document.querySelector('#kernel-shortcuts-context')?.textContent).toBe('Workspace · managed by DSH')
+  expect([...document.querySelectorAll('.shell-shortcut-list h4')].map(node => node.textContent)).toEqual(['Navigation', 'Instance tabs'])
+  const open = document.querySelector<HTMLButtonElement>('#kernel-shortcuts-open')!
+  expect(open.disabled).toBe(false)
+  open.click()
+  await expect.poll(() => invoke).toHaveBeenCalledWith('kernelShortcuts', { id, action: 'open' })
 })
 
 it('edits DSH settings without an instance selector, connection, or native navigation', async () => {
@@ -542,7 +666,7 @@ it('edits DSH settings without an instance selector, connection, or native navig
   const document = dom.window.document
   await expect.poll(() => document.querySelector<HTMLInputElement>('#dsh-deepseekBaseURL')!.disabled).toBe(false)
   document.querySelector<HTMLButtonElement>('#settings')!.click()
-  document.querySelector<HTMLButtonElement>('[data-settings-tab=advanced]')!.click()
+  document.querySelector<HTMLButtonElement>('[data-settings-tab=keys]')!.click()
   expect(document.querySelector('#settings-instance')).toBeNull()
   expect(document.querySelector('[data-native-section]')).toBeNull()
   const url = document.querySelector<HTMLInputElement>('#dsh-deepseekBaseURL')!
@@ -625,35 +749,4 @@ it('selects the settings tab when the final instance tab closes', async () => {
   await expect.poll(() => document.querySelector('#settings-tab.active')).not.toBeNull()
   expect(document.querySelectorAll('.tab')).toHaveLength(1)
   expect(invoke).toHaveBeenCalledWith('close', { id })
-})
-
-it('keeps configured source keys hidden, fetches catalogs automatically, and discards a closed form response', async () => {
-  const { dom, invoke, settings } = page()
-  const document = dom.window.document
-  await expect.poll(() => document.querySelector<HTMLButtonElement>('#source-add')!.disabled).toBe(false)
-  settings.modelSources.push({ id: 'aabbccdd-1234-4321-8123-123456789012' as ModelSourceView['id'], name: 'API',
-    protocol: 'openai-completions', baseURL: 'https://fixture.test/v1', models: ['saved'], contextWindow: 128000, maxTokens: 4096, keyConfigured: true })
-  let release!: (value: string[]) => void
-  const original = invoke.getMockImplementation()!
-  invoke.mockImplementation((operation, payload) => operation === 'softwareSettings' && payload?.action === 'sourceModels'
-    ? new Promise<string[]>((resolve) => { release = resolve }) : original(operation, payload))
-  document.querySelector<HTMLButtonElement>('#settings')!.click()
-  document.querySelector<HTMLButtonElement>('[data-settings-tab=keys]')!.click()
-  await expect.poll(() => document.querySelector('.source-actions button')).not.toBeNull()
-  document.querySelector<HTMLButtonElement>('.source-actions button')!.click()
-  await expect.poll(() => release).toBeTypeOf('function')
-  expect(document.querySelector<HTMLElement>('#source-key-field')!.hidden).toBe(true)
-  expect(document.querySelector<HTMLInputElement>('#source-key')!.value).toBe('')
-  document.querySelector<HTMLButtonElement>('#source-key-replace')!.click()
-  expect(document.querySelector<HTMLElement>('#source-key-field')!.hidden).toBe(false)
-  document.querySelector<HTMLButtonElement>('#source-cancel')!.click()
-  document.querySelector<HTMLButtonElement>('#source-add')!.click()
-  release(['stale'])
-  await Promise.resolve(); await Promise.resolve()
-  expect(document.querySelector<HTMLTextAreaElement>('#source-models')!.value).toBe('')
-  expect(document.querySelector<HTMLElement>('#source-catalog-field')!.hidden).toBe(true)
-  const template = document.querySelector<HTMLSelectElement>('#source-template')!
-  template.value = 'anthropic'; template.dispatchEvent(new dom.window.Event('change'))
-  expect(document.querySelector<HTMLInputElement>('#source-url')!.value).toBe('https://api.anthropic.com')
-  expect(document.querySelector<HTMLInputElement>('#source-max-tokens')!.value).toBe('4096')
 })

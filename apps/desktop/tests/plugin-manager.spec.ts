@@ -237,7 +237,7 @@ it.each(['en', 'zh-CN'])('searches the catalog, reviews metadata and installs on
     expect(document.querySelector('.plugin-card-description')).toBeNull()
     expect(document.querySelector('#plan-fields')?.textContent).toContain('MIT')
     expect(document.querySelector('#plan-fields')?.textContent).toContain(locale.messages.unknown)
-    expect(document.querySelector('#plan-fields')?.textContent).toContain('network')
+    expect(document.querySelector('#plan-advanced-fields')?.textContent).toContain('network')
     expect(document.querySelector('#plan-advanced-fields')?.textContent).toContain('profile-snapshot')
     expect(Array.from(document.querySelectorAll('#plan-fields dt, #plan-fields dd, #plan-advanced-fields dt, #plan-advanced-fields dd'), element => element.textContent))
       .toMatchSnapshot(`install details ${language}`)

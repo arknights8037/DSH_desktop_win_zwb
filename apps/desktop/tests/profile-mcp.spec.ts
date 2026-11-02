@@ -13,11 +13,17 @@ it('retains one shared resource consumer after the Desktop host overlay', () => 
   try {
     const profileDir = join(home, 'profiles', 'desktop')
     createPluginProfile(profileDir)
-    const installAnchor = fileURLToPath(new URL('../../cli/package.json', import.meta.url))
+    const installAnchor = process.env.DSH_DESKTOP_TEST_RUNTIME ? join(process.env.DSH_DESKTOP_TEST_RUNTIME, 'package.json') : fileURLToPath(new URL('../../cli/package.json', import.meta.url))
     const profile = loadProfileDirectory('dsh desktop', profileDir, installAnchor)
     expect(profile.skippedBundles).toEqual([])
     const overlay = fileURLToPath(new URL('../../desktop-host/config/desktop.cordis.patch.yml', import.meta.url))
     const warnings: string[] = []
+    const bundledRows = composeEntries([
+      ...profile.layers.map(layer => layer.patches),
+      profile.patches,
+    ], message => warnings.push(message))
+    const bundledCreator = bundledRows.find(row => row.id === 'preset-cordis')
+    const expectedCreatorPlugins = (bundledCreator?.config as { plugins: { id: string }[] }).plugins
     const rows = composeEntries([
       ...profile.layers.map(layer => layer.patches),
       profile.patches,
@@ -30,9 +36,12 @@ it('retains one shared resource consumer after the Desktop host overlay', () => 
     expect(rows.filter(row => row.name === '@deepseek-ai/dsh-mcp-client')).toEqual([])
     expect(rows.find(row => row.id === 'webserver')?.disabled).toBe(true)
     expect(rows.find(row => row.id === 'harness-dev-context')?.disabled).toBe(true)
-    for (const id of ['plugin-manager', 'tool-plugin-manager', 'ui-plugin-manager']) {
-      expect(rows.find(row => row.id === id)?.disabled).toBe(true)
-    }
+    expect(rows.find(row => row.id === 'tool-plugin-manager')?.disabled).toBe(true)
+    for (const id of ['plugin-manager', 'ui-plugin-manager']) expect(rows.find(row => row.id === id)?.disabled).toBe(false)
+    const creator = rows.find(row => row.id === 'preset-cordis')
+    expect(creator?.config).toMatchObject({ id: 'cordis', order: 4 })
+    const creatorPlugins = (creator?.config as { plugins: { id: string }[] }).plugins
+    expect(creatorPlugins).toEqual(expectedCreatorPlugins)
     expect(rows.find(row => row.id === 'desktop-workspace-editor')?.name).toBe('@deepseek-ai/dsh-desktop-host')
     const manifest = JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8')) as { dependencies: Record<string, string> }
     expect(manifest.dependencies['@deepseek-ai/dsh-desktop-host']).toBeUndefined()

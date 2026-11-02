@@ -1,4 +1,10 @@
 :root { color-scheme: light dark; font-family: system-ui, sans-serif; color: #202124; background: #fafafa; }
+* { scrollbar-width: thin; scrollbar-color: rgb(123 128 138 / 32%) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-button, *::-webkit-scrollbar-button:single-button, *::-webkit-scrollbar-button:double-button { display: none; width: 0; height: 0; }
+*::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background: transparent; }
+*::-webkit-scrollbar-thumb { background: rgb(123 128 138 / 32%); background-clip: padding-box; border: 2px solid transparent; border-radius: 999px; }
+*::-webkit-scrollbar-thumb:hover { background: rgb(105 111 122 / 52%); background-clip: padding-box; }
 body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
 main { width: min(560px, calc(100vw - 64px)); padding: 40px 0; text-align: center; }
 h1 { margin: 24px 0 12px; font-size: 22px; font-weight: 600; }

@@ -8,6 +8,8 @@ export const MANAGER_SHORTCUT = 'dsh-manager:shortcut'
 export const MANAGER_CHANGED = 'dsh-manager:changed'
 /** Instance documents may request the shell settings tab without receiving manager operations. */
 export const INSTANCE_OPEN_SETTINGS = 'dsh-instance:open-settings'
+/** Local instance main frames may navigate to their shell-owned plugin window. */
+export const INSTANCE_OPEN_PLUGINS = 'dsh-instance:open-plugins'
 /** Public state contains no runtime URLs, host fingerprints, or credentials. */
 export interface ManagerSnapshot {
   version: string
@@ -21,7 +23,7 @@ export interface ManagerSnapshot {
   installationProgress?: Record<string, DesktopInstallProgress>
 }
 /** Closed operation names; main validates every payload and instance ID. */
-export type ManagerOperation = 'snapshot' | 'window' | 'kernel' | 'pluginUpdates' | 'diagnostics' | 'softwareSettings' | 'storage' | 'workspaces' | 'shortcuts' | 'shortcutCapture' | 'rename' | 'save' | 'remove' | 'open' | 'close' | 'disconnect' | 'stop' | 'restart' | 'logs' | 'plugins' | 'disablePlugins' | 'reset' | 'overlay'
+export type ManagerOperation = 'snapshot' | 'window' | 'kernel' | 'pluginUpdates' | 'diagnostics' | 'softwareSettings' | 'storage' | 'workspaces' | 'shortcuts' | 'shortcutCapture' | 'kernelShortcuts' | 'dirty' | 'rename' | 'save' | 'remove' | 'open' | 'close' | 'disconnect' | 'stop' | 'restart' | 'logs' | 'plugins' | 'disablePlugins' | 'reset' | 'overlay'
 /** Only the local manager document receives this bridge. */
 export interface ManagerApi {
   readonly pluginLibrary: Pick<DshDesktopApi, 'locale' | 'plugins' | 'backend'>
