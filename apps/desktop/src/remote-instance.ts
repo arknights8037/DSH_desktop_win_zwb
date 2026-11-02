@@ -1,4 +1,4 @@
-/** SSH authentication, tmux ownership, and loopback tunnel lifecycle. */
+/** SSH authentication, remote process ownership, and loopback tunnel lifecycle. */
 import { readFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { randomUUID } from 'node:crypto'
@@ -11,7 +11,7 @@ import { remoteReadyUrl, remoteScript } from './remote-scripts.ts'
 
 /** Confirmation belongs to the local manager, never to a remote renderer. */
 export type VerifySshHost = (endpoint: string, fingerprint: string) => Promise<boolean>
-/** Remote processes outlive this transport; only stop() terminates the owned tmux session. */
+/** Remote processes outlive this transport; only stop() terminates the owned process. */
 export class RemoteInstance implements InstanceRuntime {
   private client: Client | undefined
   private server: Server | undefined
@@ -66,10 +66,10 @@ export class RemoteInstance implements InstanceRuntime {
     })
     return client
   }
-  private execute(client: Client, script: string, signal?: AbortSignal): Promise<string> {
+  private execute(client: Client, script: string, signal?: AbortSignal, timeout = 20_000): Promise<string> {
     signal?.throwIfAborted()
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { finish(new Error('Remote command timed out')); client.destroy() }, 20_000)
+      const timer = setTimeout(() => { finish(new Error('Remote command timed out')); client.destroy() }, timeout)
       const abort = (): void => { finish(new Error('Connection cancelled')); client.destroy() }
       const closed = (): void => { finish(new Error('SSH connection closed')) }
       const finish = (error?: Error, value = ''): void => {
@@ -84,8 +84,22 @@ export class RemoteInstance implements InstanceRuntime {
       client.exec('sh -s', (error, channel) => {
         if (error) { finish(error); return }
         let output = ''
+        let progress = ''
         let diagnostic = ''
-        channel.on('data', (data: Buffer) => { output = (output + data.toString()).slice(-65536) })
+        channel.on('data', (data: Buffer) => {
+          output = (output + data.toString()).slice(-65536)
+          progress += data.toString()
+          let newline: number
+          while ((newline = progress.indexOf('\n')) >= 0) {
+            const line = progress.slice(0, newline).trim()
+            progress = progress.slice(newline + 1)
+            const phase = line.slice('dsh-manager-phase:'.length)
+            if (line.startsWith('dsh-manager-phase:') && (phase === 'remotePrepare' || phase === 'remoteImport' || phase === 'remoteStart')) {
+              this.report({ process: 'unknown', connection: 'connecting', phase })
+            }
+          }
+          progress = progress.slice(-4096)
+        })
         channel.stderr.on('data', (data: Buffer) => { diagnostic = (diagnostic + data.toString()).slice(-4096) })
         channel.once('error', finish)
         channel.once('close', (code: number | null) => { finish(code === 0 ? undefined : new Error(diagnostic || 'Remote command failed'), output) })
@@ -96,8 +110,11 @@ export class RemoteInstance implements InstanceRuntime {
   /** Connect or resume an owned process and expose its web listener through SSH. */
   async connect(signal: AbortSignal, credentials: InstanceCredentials): Promise<string> {
     await this.disconnect()
+    this.report({ process: 'unknown', connection: 'connecting', phase: 'remoteLogin' })
     const client = await this.authenticate(signal, credentials)
-    await this.execute(client, remoteScript(this.config, 'start'), signal)
+    this.report({ process: 'unknown', connection: 'connecting', phase: 'remotePrepare' })
+    await this.execute(client, remoteScript(this.config, 'start'), signal, this.config.sessionSource ? 300_000 : 20_000)
+    this.report({ process: 'starting', connection: 'connecting', phase: 'remoteReady' })
     const deadline = Date.now() + 90_000
     let ready: URL | undefined
     while (!ready) {
@@ -108,6 +125,7 @@ export class RemoteInstance implements InstanceRuntime {
       await delay(500, undefined, { signal })
     }
     const remotePort = Number(ready.port)
+    this.report({ process: 'running', connection: 'connecting', phase: 'remoteTunnel' })
     const server = createServer((socket) => {
       this.sockets.add(socket)
       socket.once('close', () => { this.sockets.delete(socket) })
@@ -132,7 +150,7 @@ export class RemoteInstance implements InstanceRuntime {
     this.webUrl = ready.href
     return ready.href
   }
-  /** Close all local listeners and SSH channels, leaving tmux and DSH running. */
+  /** Close all local listeners and SSH channels, leaving the remote DSH running. */
   async disconnect(): Promise<void> {
     const server = this.server
     this.server = undefined

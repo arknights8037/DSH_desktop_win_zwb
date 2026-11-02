@@ -102,6 +102,56 @@ function page(config?: InstanceConfig | InstanceConfig[], locale = 'en', openTab
   return { dom, invoke, settings, snapshot, pluginLibrary, shortcut: (action: string) => { onShortcut.mock.calls[0]![0](action) } }
 }
 
+it('renders instance plugin data in the shell and saves configuration with its read revision', async () => {
+  const { dom, invoke, snapshot } = page({ id, name: 'Local', kind: 'local' }, 'en', true)
+  const document = dom.window.document
+  const original = invoke.getMockImplementation()!
+  const plugins = { bundles: [{ name: 'meter', title: '<Cost meter>', installed: true, enabled: true,
+    availability: 'profile', removable: true, version: '1.0.0', rows: [] }], entries: [], configurations: [{ ns: 'terminal' }] }
+  let pendingConfiguration: Promise<unknown> | undefined
+  invoke.mockImplementation(async (operation, payload) => {
+    if (operation !== 'plugins') return original(operation, payload)
+    if (payload?.action === 'read') return structuredClone(plugins)
+    if (payload?.action === 'toggle') return { restartRequired: true }
+    if (payload?.action === 'configuration') return pendingConfiguration ?? { ns: 'terminal', revision: 7, writable: true,
+      value: { enabled: true }, schema: { type: 'object', dict: { enabled: { type: 'boolean', meta: {} } } } }
+    return undefined
+  })
+  await expect.poll(() => snapshot.statuses[id]?.connection).toBe('connected')
+  document.querySelector<HTMLButtonElement>('#settings')!.click()
+  document.querySelector<HTMLButtonElement>('[data-settings-tab=plugins]')!.click()
+  await expect.poll(() => document.querySelector('.installed-plugin-card strong')?.textContent).toBe('<Cost meter>')
+  expect(document.querySelector('Cost')).toBeNull()
+  const search = document.querySelector<HTMLInputElement>('.installed-plugin-toolbar input')!
+  search.value = 'no match'; search.dispatchEvent(new dom.window.Event('input'))
+  expect(document.querySelector('.installed-plugin-content')!.textContent).toContain('No matching plugins')
+  search.value = ''; search.dispatchEvent(new dom.window.Event('input'))
+  document.querySelector<HTMLInputElement>('.installed-plugin-card [role=switch]')!.click()
+  await expect.poll(() => document.querySelector('#native-plugin-status')!.textContent).toContain('Restart this instance')
+  expect(invoke).toHaveBeenCalledWith('plugins', { id, action: 'toggle', input: { kind: 'bundle', target: 'meter', enabled: false } })
+  document.querySelector<HTMLButtonElement>('[data-filter=configuration]')!.click()
+  await expect.poll(() => document.querySelector('.installed-plugin-card strong')?.textContent).toBe('terminal')
+  document.querySelector<HTMLButtonElement>('.installed-plugin-heading button')!.click()
+  await expect.poll(() => document.querySelector('#plugin-config-enabled')).not.toBeNull()
+  document.querySelector<HTMLInputElement>('#plugin-config-enabled')!.click()
+  document.querySelector<HTMLFormElement>('.installed-plugin-configuration')!.requestSubmit()
+  await expect.poll(() => invoke.mock.calls.some(([operation, payload]) => operation === 'plugins' && payload?.action === 'configure')).toBe(true)
+  expect(invoke).toHaveBeenCalledWith('plugins', { id, action: 'configure', input: { target: 'terminal', revision: 7,
+    ops: [{ op: 'set', path: ['enabled'], value: false }] } })
+  await expect.poll(() => document.querySelector<HTMLButtonElement>('.installed-plugin-configuration button[type=submit]')?.disabled).toBe(false)
+  document.querySelector<HTMLButtonElement>('[data-filter=configuration]')!.click()
+  let resolveConfiguration!: (value: unknown) => void
+  pendingConfiguration = new Promise(resolve => { resolveConfiguration = resolve })
+  document.querySelector<HTMLButtonElement>('.installed-plugin-heading button')!.click()
+  document.querySelector<HTMLButtonElement>('[data-filter=installed]')!.click()
+  resolveConfiguration({ ns: 'terminal', revision: 7, writable: true, value: {}, schema: { type: 'object', dict: {} } })
+  await pendingConfiguration
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect(document.querySelector('.installed-plugin-configuration')).toBeNull()
+  expect(document.querySelector('.installed-plugin-card strong')?.textContent).toBe('<Cost meter>')
+  expect(invoke.mock.calls.some(([, payload]) => payload?.action === 'embed')).toBe(false)
+})
+
 it('confirms local instance removal and optionally deletes its data', async () => {
   const { dom, invoke } = page({ id, name: 'Local', kind: 'local' })
   const document = dom.window.document

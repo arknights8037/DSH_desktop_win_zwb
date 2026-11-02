@@ -111,23 +111,25 @@ export class DesktopPluginUpdates {
       const fetcher: typeof fetch = (input, init) => this.fetcher(input, {
         ...init, signal: AbortSignal.any([signal, deadline, ...(init?.signal ? [init.signal] : [])]),
       })
-      for (const [index, plugin] of installed.entries()) {
+      let inspected = 0
+      await Promise.all(installed.map(async plugin => {
         signal.throwIfAborted()
-        report({ stage: 'checking', package: plugin.name, completed: index, total: installed.length })
         try {
           const plan = await inspectPluginInstall(plugin.name, this.library.runtime(), manager.snapshotPath(), fetcher)
-          if (!gt(plan.version, plugin.version)) continue
+          if (!gt(plan.version, plugin.version)) return
           const declaresKernel = plan.requirements.some(item => item.name === 'dsh' || item.name.startsWith('@deepseek-ai/dsh-'))
           if (!declaresKernel || plan.compatibility !== 'compatible' || plan.blockers.length > 0) {
             diagnostics.push({ name: plugin.name, reason: 'skipped', detail: `${plan.version}: ${declaresKernel ? plan.compatibility : 'DSH compatibility unknown'}${plan.blockers.length ? `; ${plan.blockers.join(', ')}` : ''}` })
-            continue
+            return
           }
           candidates.push({ name: plan.name, version: plan.version, from: plugin.version })
         } catch (error) {
           signal.throwIfAborted()
           diagnostics.push({ name: plugin.name, reason: 'unavailable', detail: error instanceof Error ? error.message : String(error) })
+        } finally {
+          report({ stage: 'checking', package: plugin.name, completed: ++inspected, total: installed.length })
         }
-      }
+      }))
       for (const [index, candidate] of candidates.entries()) {
         signal.throwIfAborted()
         try {

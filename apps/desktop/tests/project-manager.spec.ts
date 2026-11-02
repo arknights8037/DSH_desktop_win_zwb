@@ -71,11 +71,11 @@ function calls(root: string): { args: string[]; registry: string; electronRunAsN
 it('retries interrupted baseline installation and respects later removal and disabled versions', async () => {
   const { root, manager } = setup()
   const library = new DesktopPluginLibrary(join(root, 'library'), manager.runtime)
-  const original = library.withSource.bind(library)
+  const original = library.withSources.bind(library)
   let interrupted = true
-  library.withSource = async (name, version, operation) => {
-    if (name === 'dsh-context' && interrupted) { interrupted = false; throw new Error('offline') }
-    return original(name, version, operation)
+  library.withSources = async (...args) => {
+    if (interrupted) { interrupted = false; throw new Error('offline') }
+    return original(...args)
   }
   await expect(prepareLocalKernel(join(root, '.dsh'), manager, library)).rejects.toThrow('offline')
   expect(existsSync(join(manager.paths.root, 'default-plugins.json'))).toBe(false)
@@ -89,7 +89,7 @@ it('retries interrupted baseline installation and respects later removal and dis
   expect(manager.listPlugins().find(plugin => plugin.name === 'dsh-context')?.enabled).toBe(false)
 })
 
-it('backs up the complete instance home and prepares the same plugin versions for a newer kernel', async () => {
+it('backs up user data without package files and prepares the same plugin versions for a newer kernel', async () => {
   const { root, manager } = setup()
   const home = join(root, '.dsh')
   const library = new DesktopPluginLibrary(join(root, 'library'), manager.runtime)
@@ -111,6 +111,10 @@ it('backs up the complete instance home and prepares the same plugin versions fo
   const recovery = join(root, '.dsh-kernel-backups')
   const backup = join(recovery, readdirSync(recovery)[0]!)
   expect(readFileSync(join(backup, 'home/session.jsonl'), 'utf8')).toBe('existing-session\n')
+  expect(readFileSync(join(backup, 'home/profiles/desktop/cordis.patch.yml'), 'utf8')).toBe('[]\n')
+  expect(existsSync(join(backup, 'home/profiles/desktop/node_modules'))).toBe(false)
+  expect(existsSync(join(backup, 'home/profiles/desktop/desktop-plugin-copies'))).toBe(false)
+  expect(existsSync(join(backup, 'home/desktop'))).toBe(false)
   expect(JSON.parse(readFileSync(join(backup, 'complete.json'), 'utf8'))).toEqual({ from: '1.0.0', to: '1.1.0' })
   expect(readFileSync(join(next.paths.profile, 'cordis.patch.yml'), 'utf8')).toBe('[]\n')
 })
@@ -210,10 +214,11 @@ it('prunes legacy versions numerically and cleans temporary historical sources a
   library.select('other-plugin', '1.0.0')
 })
 
-it('restores the previous injected copy and configuration when its replacement cannot start', async () => {
+it.each([false, true])('restores the previous injected copy when replacement fails, with legacy dependencies: %s', async (legacy) => {
   const { root, manager } = setup()
   const library = new DesktopPluginLibrary(join(root, 'shell-library'), manager.runtime)
   await manager.applyRelease()
+  if (legacy) await manager.mutate({ type: 'plugin-add', spec: 'legacy@1.0.0' }, hooks())
   await library.install('plugin', '1.0.0')
   await manager.mutate({ type: 'plugin-inject', name: 'plugin', version: '1.0.0', source: library.source('plugin', '1.0.0') }, hooks())
   await library.install('plugin', '2.0.0')
@@ -222,7 +227,10 @@ it('restores the previous injected copy and configuration when its replacement c
     afterChange: async () => { if (++attempts === 1) throw new Error('new plugin startup failed') },
   }))).rejects.toThrow('original Profile restored')
   expect(attempts).toBe(2)
-  expect(manager.listPlugins()).toEqual([{ name: 'plugin', version: '1.0.0', enabled: true }])
+  expect(manager.listPlugins()).toEqual([
+    ...(legacy ? [{ name: 'legacy', version: '1.0.0', enabled: true }] : []),
+    { name: 'plugin', version: '1.0.0', enabled: true },
+  ])
   const link = realpathSync(join(manager.paths.profile, 'node_modules', 'plugin'))
   expect(link.startsWith(realpathSync(manager.paths.profile))).toBe(true)
   expect(existsSync(join(link, 'bundle.yml'))).toBe(true)
@@ -635,7 +643,7 @@ describe('desktop external plugin profile', () => {
     expect(existsSync(join(manager.snapshotPath(), 'lock'))).toBe(false)
   })
 
-  it.each(['rebuild', 'validation', 'startup'] as const)('restores exact dependency bytes, configuration and links after %s failure', async (failure) => {
+  it.each(['rebuild', 'validation', 'startup'] as const)('restores user configuration and reinstalls locked dependencies after %s failure', async (failure) => {
     const { root, manager } = setup()
     await manager.applyRelease()
     await manager.mutate({ type: 'plugin-add', spec: 'plugin@1.0.0' }, hooks())
@@ -653,8 +661,10 @@ describe('desktop external plugin profile', () => {
     const failing = join(root, 'failure.mjs')
     writeFileSync(failing, `await import(${JSON.stringify(pathToFileURL(manager.runtime.pnpm).href)});
       import {writeFileSync} from 'node:fs';
-      if (${JSON.stringify(failure)} === 'rebuild' && process.argv.includes('rebuild')) process.exitCode = 1;
-      if (${JSON.stringify(failure)} === 'validation') writeFileSync('node_modules/plugin/package.json', '{}');`)
+      import {readFileSync} from 'node:fs';
+      const version = JSON.parse(readFileSync('package.json', 'utf8')).dependencies.plugin;
+      if (version === '2.0.0' && ${JSON.stringify(failure)} === 'rebuild' && process.argv.includes('rebuild')) process.exitCode = 1;
+      if (version === '2.0.0' && ${JSON.stringify(failure)} === 'validation') writeFileSync('node_modules/plugin/package.json', '{}');`)
     const worker = new DesktopProjectManager(manager.paths, { ...manager.runtime, pnpm: failing })
     await worker.applyRelease()
     let starts = 0
@@ -669,7 +679,9 @@ describe('desktop external plugin profile', () => {
     expect(worker.listPlugins()).toEqual([{ name: 'plugin', version: '1.0.0', enabled: false }])
     expect(readFileSync(join(manager.paths.profile, 'package.json'), 'utf8')).toBe(before)
     expect(readFileSync(join(manager.paths.profile, 'pnpm-lock.yaml'), 'utf8')).toBe(lock)
-    expect(readFileSync(bytes)).toEqual(Buffer.from([0, 10, 255]))
+    expect(existsSync(bytes)).toBe(false)
+    expect(existsSync(join(manager.snapshotPath(), 'node_modules'))).toBe(false)
+    expect(JSON.parse(readFileSync(join(manager.paths.profile, 'node_modules/plugin/package.json'), 'utf8')).version).toBe('1.0.0')
     expect(readFileSync(config, 'utf8')).toBe('user configuration\n')
     expect(readFileSync(join(external, 'sentinel'), 'utf8')).toBe('outside')
     expect(realpathSync(join(manager.paths.profile, 'linked-data'))).toBe(realpathSync(external))

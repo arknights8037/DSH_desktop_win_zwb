@@ -173,18 +173,6 @@ async function main(diagnostics: DesktopDiagnostics): Promise<void> {
     diagnostics.error('plugin-library-prune', error)
   }
   const views = new Map<InstanceId, WebContentsView>()
-  let nativePluginPanel: { id: InstanceId; packageName?: string; x: number; y: number; width: number; height: number } | undefined
-  let nativePluginEpoch = 0
-  const hideNativePlugins = (): void => {
-    nativePluginEpoch++
-    const previous = nativePluginPanel
-    nativePluginPanel = undefined
-    const view = previous && views.get(previous.id)
-    if (view && !view.webContents.isDestroyed()) {
-      void view.webContents.executeJavaScript('globalThis.__DSH_NATIVE_PLUGINS__?.hide()')
-        .catch(error => diagnostics.error('native-plugin-panel-close', error))
-    }
-  }
   const presentationStyles = new Map<InstanceId, string>()
   let previewAppearance: PersonalAppearance | undefined
   const locals = new Map<InstanceId, LocalInstance>()
@@ -235,12 +223,6 @@ async function main(diagnostics: DesktopDiagnostics): Promise<void> {
     const active = registry.snapshot().tabs.active
     const [width = 1440, height = 920] = window.getContentSize()
     for (const [id, view] of views) {
-      if (overlay && nativePluginPanel?.id === id) {
-        const panel = nativePluginPanel
-        view.setBounds({ x: panel.x, y: panel.y, width: Math.max(0, Math.min(panel.width, width - panel.x)), height: Math.max(0, Math.min(panel.height, height - panel.y)) })
-        view.setVisible(service.status(registry.get(id)).connection === 'connected')
-        continue
-      }
       view.setBounds({ x: 0, y: 42, width, height: Math.max(0, height - 42) })
       view.setVisible(!overlay && id === active && service.status(registry.get(id)).connection === 'connected')
     }
@@ -714,37 +696,31 @@ async function main(diagnostics: DesktopDiagnostics): Promise<void> {
     }
     if (operation === 'overlay') {
       if (typeof args.visible !== 'boolean') throw new Error('Invalid visibility')
-      hideNativePlugins()
       overlay = args.visible; layout(); return
     }
-    if (operation === 'plugins' && args.action === 'hide') { hideNativePlugins(); layout(); return }
-    if (operation === 'plugins' && args.action === 'embed') {
+    if (operation === 'plugins') {
       const id = instanceId(args.id)
       const view = views.get(id)
       if (registry.get(id).kind !== 'local' || service.status(registry.get(id)).connection !== 'connected' || !view
         || !view.webContents.getURL().startsWith('dsh-app://app/')) throw new Error('Open a local instance before managing its kernel plugins')
-      const bounds = payload(args.input)
-      const packageName = args.packageName === undefined ? undefined : text(args.packageName)
-      const [width = 1440, height = 920] = window.getContentSize()
-      if (!['x', 'y', 'width', 'height'].every(key => Number.isSafeInteger(bounds[key]))
-        || Number(bounds.x) < 0 || Number(bounds.y) < 42 || Number(bounds.width) < 1 || Number(bounds.height) < 1
-        || Number(bounds.x) + Number(bounds.width) > width || Number(bounds.y) + Number(bounds.height) > height) throw new Error('Invalid plugin panel bounds')
-      if (nativePluginPanel?.id !== id || nativePluginPanel.packageName !== packageName) {
-        hideNativePlugins()
-        const epoch = nativePluginEpoch
-        await view.webContents.executeJavaScript(`if (!globalThis.__DSH_NATIVE_PLUGINS__) throw new Error("Kernel plugin panel is not ready"); globalThis.__DSH_NATIVE_PLUGINS__.show(${JSON.stringify(packageName)})`)
-        if (epoch !== nativePluginEpoch) {
-          await view.webContents.executeJavaScript('globalThis.__DSH_NATIVE_PLUGINS__?.hide()')
-          return
-        }
+      if (mutations.has(id)) throw new Error('Instance configuration is being changed')
+      const action = text(args.action)
+      if (!['read', 'toggle', 'configuration', 'configure', 'remove'].includes(action)) throw new Error('Unsupported plugin action')
+      const input = payload(args.input)
+      if (action !== 'read' && (!text(input.target) || text(input.target).length > 256)) throw new Error('Invalid plugin target')
+      if (action === 'remove') {
+        await changePlugins(id, { type: 'plugin-remove', name: text(input.target) })
+        return
       }
-      nativePluginPanel = {
-        id, ...(packageName === undefined ? {} : { packageName }),
-        x: Number(bounds.x), y: Number(bounds.y), width: Number(bounds.width), height: Number(bounds.height),
-      }
-      overlay = true
-      layout()
-      return
+      if (action === 'toggle' && (!['bundle', 'row'].includes(String(input.kind)) || typeof input.enabled !== 'boolean')) throw new Error('Invalid plugin toggle')
+      if (action === 'configure' && (!Number.isSafeInteger(input.revision) || Number(input.revision) < 0
+        || !Array.isArray(input.ops) || !input.ops.length || input.ops.length > 256
+        || input.ops.some(op => {
+          const item = payload(op)
+          return !['set', 'unset'].includes(String(item.op)) || !Array.isArray(item.path) || !item.path.length
+            || item.path.some(key => typeof key !== 'string' || !key || ['__proto__', 'constructor', 'prototype'].includes(key))
+        }) || JSON.stringify(input).length > 1024 * 1024)) throw new Error('Invalid plugin configuration')
+      return view.webContents.executeJavaScript(`if (!globalThis.__DSH_DESKTOP_PLUGINS__) throw new Error("Desktop plugin data is not ready"); globalThis.__DSH_DESKTOP_PLUGINS__[${JSON.stringify(action)}](${JSON.stringify(input)})`)
     }
     if (operation === 'save') {
       const id = args.id === undefined ? undefined : instanceId(args.id)

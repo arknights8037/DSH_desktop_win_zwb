@@ -59,7 +59,7 @@ export function createElectronBuilderConfig(
     appId,
     electronVersion: '44.7.0',
     productName: 'DshManager',
-    extraMetadata: { productName: 'DshManager', version: '0.1.3' },
+    extraMetadata: { productName: 'DshManager', version: '0.1.4' },
     artifactName: 'DshManager-V${version}-${os}-${arch}-Setup.${ext}',
     icon: fileURLToPath(new URL('./renderer/icon.png', import.meta.url)),
     directories: { output: unsigned ? join(buildPaths.root, 'unsigned-artifacts') : buildPaths.artifacts },

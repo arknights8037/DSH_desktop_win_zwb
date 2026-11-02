@@ -1,4 +1,4 @@
-/** Check real Linux tmux ownership and survival with a synthetic long-running DSH launcher. */
+/** Check Linux background process ownership and survival with a synthetic DSH launcher. */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -21,30 +21,34 @@ DSH_FIXTURE
 chmod 700 ${shellQuote(scratch + '/dsh')}
 `)
 const config = {
-  id: instanceId(randomUUID()), name: 'tmux smoke', kind: 'ssh' as const, host: 'fixture', port: 22,
-  username: 'fixture', auth: 'password' as const, privateKeyPath: '', executable: scratch + '/dsh', home: scratch + '/home',
+  id: instanceId(randomUUID()), name: 'remote smoke', kind: 'ssh' as const, host: 'fixture', port: 22,
+  username: 'fixture', auth: 'password' as const, privateKeyPath: '', executable: scratch + '/dsh', home: scratch + "/managed home's data",
 }
 try {
   run(remoteScript(config, 'start'))
-  const pane = (): string => run(`tmux -L dsh-agent-manager list-panes -t ${shellQuote('dsh-' + config.id)} -F '#{pane_pid}'\n`).trim()
-  const original = pane()
+  const processRecord = (): string => run(`cat ${shellQuote(config.home + '/.manager-process')}\n`).trim()
+  const original = processRecord()
   const deadline = Date.now() + 10_000
   let ready: URL | undefined
   while (!ready && Date.now() < deadline) {
     ready = remoteReadyUrl(run(remoteScript(config, 'read')))
     if (!ready) await delay(50)
   }
-  assert.ok(ready, 'tmux launcher announces readiness')
+  assert.ok(ready, 'background launcher announces readiness after its initiating shell exits')
   run(remoteScript(config, 'start'))
-  assert.equal(pane(), original, 'reconnecting does not replace the remote process')
+  assert.equal(processRecord(), original, 'reconnecting does not replace the remote process')
   run(`printf wrong-owner > ${shellQuote(config.home + '/.manager-owner')}\n`)
   assert.throws(() => run(remoteScript(config, 'stop')), /ownership mismatch/u)
-  assert.equal(pane(), original, 'an ownership mismatch cannot stop the process')
+  assert.equal(processRecord(), original, 'an ownership mismatch cannot stop the process')
   run(`printf %s ${shellQuote(config.id)} > ${shellQuote(config.home + '/.manager-owner')}\n`)
   run(remoteScript(config, 'stop'))
-  assert.throws(() => pane())
-  console.log('Linux tmux smoke passed: launch, process survival, reuse, ownership refusal, and stop. This fixture does not execute a real Agent.')
+  assert.equal(processRecord(), '')
+  assert.throws(() => run(remoteScript(config, 'read')), /Remote DSH process exited/u)
+  run(remoteScript(config, 'start'))
+  assert.notEqual(processRecord(), original, 'connecting a stopped instance starts a new process')
+  console.log('Linux remote smoke passed: background launch, process survival, reuse, ownership refusal, stop, and restart. This fixture does not execute a real Agent.')
 } finally {
   run(`printf %s ${shellQuote(config.id)} > ${shellQuote(config.home + '/.manager-owner')}\n`)
   run(remoteScript(config, 'stop'))
+  run(`rm -r -- ${shellQuote(scratch)}\n`)
 }

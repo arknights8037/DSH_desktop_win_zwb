@@ -24,7 +24,7 @@
 - id: directory-picker
   disabled: true
 
-# Native management supplies official bundles, component controls and config pages.
+# The shell renders plugin management; retain its Host API without the browser page.
 - id: plugin-manager
   disabled: false
 
@@ -32,7 +32,7 @@
   disabled: true
 
 - id: ui-plugin-manager
-  disabled: false
+  disabled: true
 
 
 - id: workspace

@@ -9,7 +9,35 @@
 .plugin-mode-switch { display: flex; gap: 24px; border-bottom: 1px solid var(--line); margin-bottom: 20px; }
 #settings-page .plugin-mode-switch button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 13px 2px; background: transparent; color: var(--muted); font-size: 13px; }
 #settings-page .plugin-mode-switch [aria-selected=true] { border-bottom-color: var(--brand); color: var(--text); font-weight: 600; }
-#native-plugin-surface { height: max(360px, calc(100dvh - 300px)); overflow: hidden; }
+#native-plugin-surface { min-height: 360px; }
+.installed-plugin-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 24px; }
+#settings-page .installed-plugin-toolbar input { flex: 1; width: auto; min-width: 180px; }
+.installed-plugin-filters { display: flex; flex-basis: 100%; gap: 6px; flex-wrap: wrap; }
+#settings-page .installed-plugin-filters button { border-color: transparent; background: transparent; color: var(--muted); }
+#settings-page .installed-plugin-filters [aria-pressed=true] { color: var(--brand); background: color-mix(in srgb, var(--brand) 8%, transparent); }
+.installed-plugin-group { margin-bottom: 28px; }
+.installed-plugin-list { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); overflow: hidden; }
+.installed-plugin-card + .installed-plugin-card { border-top: 1px solid var(--line); }
+.installed-plugin-heading, .installed-plugin-row { display: flex; align-items: center; gap: 14px; padding: 18px; }
+.installed-plugin-copy { flex: 1; min-width: 0; }
+.installed-plugin-copy strong { display: block; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.installed-plugin-copy small, .installed-plugin-copy p { display: block; color: var(--muted); font-size: 12px; line-height: 1.65; margin: 4px 0 0; overflow-wrap: anywhere; }
+.installed-plugin-rows { padding: 0 18px 18px; }
+.installed-plugin-row { border-top: 1px solid var(--line); padding: 14px 0; }
+#settings-page .installed-plugin-remove { color: var(--danger); }
+.installed-plugin-configuration { padding: 20px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.installed-plugin-field { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(0, 1.5fr) auto; gap: 12px; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--line); }
+#settings-page .installed-plugin-field label { margin: 0; overflow-wrap: anywhere; }
+.installed-plugin-field > small { grid-column: 1 / -1; color: var(--muted); font-size: 12px; line-height: 1.6; }
+#settings-page .installed-plugin-field textarea { box-sizing: border-box; width: 100%; padding: 10px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; resize: vertical; font: 12px var(--mono); }
+.installed-plugin-actions { display: flex; justify-content: space-between; gap: 12px; margin-top: 20px; }
+#native-plugin-status { display: flex; align-items: center; gap: 12px; }
+@media (max-width: 760px) {
+  .installed-plugin-heading, .installed-plugin-row { flex-wrap: wrap; }
+  .installed-plugin-copy { flex-basis: 65%; }
+  .installed-plugin-field { grid-template-columns: minmax(0, 1fr) auto; }
+  .installed-plugin-field > label { grid-column: 1 / -1; }
+}
 #native-plugin-status:empty { display: none; }
 #native-plugin-status { color: var(--danger); font-size: 13px; }
 .plugin-empty-state { text-align: center; padding: 80px 24px; border: 1px dashed var(--line); border-radius: 10px; }

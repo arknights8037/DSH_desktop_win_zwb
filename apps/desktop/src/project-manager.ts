@@ -29,6 +29,7 @@ import type { DesktopPaths } from './paths.ts'
 import { removeOwnedDirectory, renameOwnedDirectory } from './owned-directory.ts'
 import type { DesktopRelease } from './release.ts'
 import type { DesktopInstallReporter } from './install-progress.ts'
+import { profileUserData } from './user-data-backup.ts'
 import { desktopRuntimeId, readDesktopRuntime, type DesktopRuntimeDescriptor } from './runtime-tree.ts'
 import {
   desktopPluginLockHash, linkDesktopHostPackages, readDesktopProfileState, recordDesktopRuntimeProfile,
@@ -487,6 +488,12 @@ export class DesktopProjectManager {
       signal?.throwIfAborted()
       this.currentRuntime()
       if (!existsSync(this.paths.profile)) throw new Error('desktop project: active profile is not installed')
+      if (mutation.type === 'plugin-add') {
+        const name = packageNameFromSpec(mutation.spec)
+        if (this.currentRuntime().sharedPackages.some(entry => entry.name === name)) {
+          throw new Error(`desktop project: cannot install host-owned package ${name}`)
+        }
+      }
       await hooks.beforeChange()
       let snapshotReady = false
       let startupAttempted = false
@@ -549,14 +556,43 @@ export class DesktopProjectManager {
     this.progress({ stage: 'restoring' })
     for (const entry of readdirSync(this.paths.profile)) {
       const path = join(this.paths.profile, entry)
-      if (path !== this.paths.lock) this.removeProfileEntry(path)
+      if (profileUserData(this.paths.profile, path)) this.removeProfileEntry(path)
     }
     await this.copyProfile(this.snapshotPath(), this.paths.profile)
+    // Package files are reproducible; only recovery reinstalls them from the retained manifest and lockfile.
+    removeOwnedDirectory(join(this.paths.profile, 'node_modules'))
+    const manifest = projectManifest(this.paths.profile)
+    const injected = manifest.dsh.profile.injectedPlugins ?? {}
+    const reinstall = Object.keys(manifest.dependencies).some(name => !Object.hasOwn(injected, name))
+    if (reinstall) {
+      await this.runPnpm(this.paths.profile, ['install', '--frozen-lockfile', '--ignore-scripts'])
+    }
+    for (const [name, generation] of Object.entries(injected)) {
+      const link = join(this.paths.profile, 'node_modules', name)
+      const target = join(this.paths.profile, 'desktop-plugin-copies', generation, 'node_modules', name)
+      if (!existsSync(target)) throw new Error(`desktop project: missing retained plugin deployment ${name}`)
+      const existing = lstatSync(link, { throwIfNoEntry: false })
+      if (existing) this.removeProfileEntry(link)
+      mkdirSync(dirname(link), { recursive: true })
+      symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir')
+    }
+    if (reinstall) {
+      await this.finishPackageOperation(this.paths.profile)
+      for (const file of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml']) {
+        const source = join(this.snapshotPath(), file)
+        if (existsSync(source)) writeFileSync(join(this.paths.profile, file), readFileSync(source), { mode: 0o600 })
+      }
+      this.prepareProfile(this.paths.profile)
+    }
+    else {
+      if (existsSync(this.pendingPackages)) unlinkSync(this.pendingPackages)
+      this.prepareProfile(this.paths.profile)
+    }
   }
 
   private async copyProfile(source: string, destination: string): Promise<void> {
     for (const entry of readdirSync(source)) {
-      if (entry === 'lock') continue
+      if (!profileUserData(source, join(source, entry))) continue
       await cp(join(source, entry), join(destination, entry), {
         recursive: true, dereference: false, verbatimSymlinks: true, preserveTimestamps: true,
       })
@@ -654,9 +690,6 @@ export class DesktopProjectManager {
       }
       case 'plugin-add': {
         const requestedName = packageNameFromSpec(mutation.spec)
-        if (this.currentRuntime().sharedPackages.some(entry => entry.name === requestedName)) {
-          throw new Error(`desktop project: cannot install host-owned package ${requestedName}`)
-        }
         await this.runPnpm(projectDir, ['add', mutation.spec, '--save-exact', '--ignore-scripts'], signal)
         signal?.throwIfAborted()
         if (this.runtime.profileResolution === 'runtime') await this.runPnpm(projectDir, ['install', '--ignore-scripts'], signal)

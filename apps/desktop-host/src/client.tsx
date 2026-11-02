@@ -15,7 +15,7 @@ import { installWorkspaceMenu } from './workspace-menu.ts'
 import { installNativePluginPanel } from './native-plugin-panel.ts'
 
 /** Services required before the shell editor can register its controls. */
-export const inject = ['workspaces', 'locale', 'slots', 'layout', 'pluginNavigation']
+export const inject = ['workspaces', 'locale', 'slots', 'layout', 'remote.pluginManager', 'configForms']
 
 interface EditorActions {
   settle: () => void

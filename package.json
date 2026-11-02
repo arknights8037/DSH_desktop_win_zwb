@@ -1,0 +1,24 @@
+{
+  "name": "dsh-desktop-build",
+  "version": "0.1.4",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.28.5",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "build:release": "pnpm --dir apps/desktop run build:release",
+    "dev:desktop": "pnpm --dir apps/desktop run dev",
+    "start:desktop": "pnpm --dir apps/desktop run start",
+    "package:desktop:win:x64:unsigned": "pnpm --dir apps/desktop run package:win:x64:unsigned",
+    "test:package-set": "vitest run --config vitest.desktop.config.mts apps/desktop/tests/prepare-package-set.spec.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.0",
+    "pnpm": "11.28.5",
+    "tsx": "^4.23.13",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.11"
+  }
+}

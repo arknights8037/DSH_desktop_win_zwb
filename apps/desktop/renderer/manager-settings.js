@@ -361,37 +361,266 @@ let pluginPanelLoading
 let nativePluginMode = true
 let pluginMode = 'native'
 let nativePanelTimer
-let nativePanelTask = Promise.resolve()
 let nativePluginTarget
+let nativePluginDocument
+let nativePluginDocumentId
+let nativePluginFilter = 'all'
+let nativePluginQuery = ''
+let nativePluginLoading = false
+let nativePluginBusy = false
+let nativeConfigurationDirty = false
+let nativeConfigurationGeneration = 0
+let nativePluginGeneration = 0
+const corePluginBundles = new Set(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-headless', '@deepseek-ai/dsh-sdk-app', '@deepseek-ai/dsh-acp-app', '@deepseek-ai/dsh-sdk-minimal'])
+function pluginElement(tag, text = '', className = '') {
+  const node = document.createElement(tag)
+  node.textContent = text
+  node.className = className
+  return node
+}
+async function instancePluginCall(action, input = {}, id = $('native-plugin-instance').value) {
+  return api.invoke('plugins', { id, action, input })
+}
+function discardPluginDraft() {
+  if (nativeConfigurationDirty && !window.confirm(t('discardSettingsConfirm'))) return false
+  nativeConfigurationGeneration++
+  nativeConfigurationDirty = false
+  reportDirty()
+  return true
+}
+async function loadNativePlugins(force = false) {
+  const id = $('native-plugin-instance').value
+  if (nativePluginLoading || !force && nativePluginDocumentId === id && nativePluginDocument) return
+  const generation = ++nativePluginGeneration
+  nativePluginLoading = true
+  $('native-plugin-status').textContent = t('pluginLoading')
+  try {
+    const value = await instancePluginCall('read', {}, id)
+    if (generation !== nativePluginGeneration || id !== $('native-plugin-instance').value) return
+    nativePluginDocument = value
+    nativePluginDocumentId = id
+    renderNativePlugins()
+    $('native-plugin-status').textContent = ''
+  } catch (error) {
+    if (generation === nativePluginGeneration) $('native-plugin-status').textContent = String(error.message || error)
+  } finally {
+    nativePluginLoading = false
+    if (generation !== nativePluginGeneration) scheduleNativePanel()
+  }
+}
+async function changeNativePlugin(kind, target, enabled) {
+  if (nativePluginBusy || !discardPluginDraft()) return
+  const id = $('native-plugin-instance').value
+  nativePluginBusy = true
+  renderNativePlugins()
+  try {
+    const result = await instancePluginCall('toggle', { kind, target, enabled }, id)
+    if (id !== $('native-plugin-instance').value) return
+    await loadNativePlugins(true)
+    if (result.restartRequired) {
+      $('native-plugin-status').replaceChildren(pluginElement('span', t('pluginRestartRequired')), button('pluginRestart', async () => {
+        await api.invoke('restart', { id })
+        if (id !== $('native-plugin-instance').value) return
+        nativePluginDocumentId = undefined
+        await refresh()
+        await loadNativePlugins(true)
+      }))
+    }
+  } catch (error) { if (id === $('native-plugin-instance').value) $('native-plugin-status').textContent = String(error.message || error) }
+  finally { nativePluginBusy = false; renderNativePlugins() }
+}
+function pluginSwitch(kind, target, enabled, label, readOnly) {
+  const control = pluginElement('input')
+  control.type = 'checkbox'
+  control.setAttribute('role', 'switch')
+  control.setAttribute('aria-label', label)
+  control.checked = enabled
+  control.disabled = nativePluginBusy || !!readOnly
+  if (typeof readOnly === 'string') control.title = readOnly
+  control.onchange = () => { void changeNativePlugin(kind, target, control.checked) }
+  return control
+}
+function renderNativePlugins() {
+  if (!nativePluginDocument || nativePluginDocumentId !== $('native-plugin-instance').value) return
+  const surface = $('native-plugin-surface')
+  let toolbar = surface.querySelector('.installed-plugin-toolbar')
+  if (!toolbar) {
+    toolbar = pluginElement('div', '', 'installed-plugin-toolbar')
+    const search = pluginElement('input')
+    search.type = 'search'; search.value = nativePluginQuery
+    search.placeholder = t('pluginSearchInstance'); search.setAttribute('aria-label', search.placeholder)
+    search.oninput = () => { nativePluginQuery = search.value; renderNativePlugins() }
+    const filters = pluginElement('div', '', 'installed-plugin-filters')
+    filters.setAttribute('role', 'group'); filters.setAttribute('aria-label', t('pluginNativeTab'))
+    for (const [id, key] of [['all', 'pluginAll'], ['installed', 'pluginInstalled'], ['configuration', 'pluginBuiltIn'], ['experimental', 'pluginExperimental']]) {
+      const action = button(key, async () => {
+        if (!discardPluginDraft()) return
+        nativePluginFilter = id; nativePluginTarget = undefined; renderNativePlugins()
+      })
+      action.dataset.filter = id
+      filters.append(action)
+    }
+    toolbar.append(search, button('pluginRefresh', async () => {
+      if (discardPluginDraft()) { nativePluginTarget = undefined; await loadNativePlugins(true) }
+    }), filters)
+    surface.replaceChildren(toolbar, pluginElement('div', '', 'installed-plugin-content'))
+  }
+  for (const item of toolbar.querySelectorAll('[data-filter]')) item.setAttribute('aria-pressed', String(item.dataset.filter === nativePluginFilter))
+  const content = surface.querySelector('.installed-plugin-content')
+  if (nativePluginTarget?.kind === 'configuration') return
+  content.replaceChildren()
+  const needle = nativePluginQuery.trim().toLocaleLowerCase()
+  const bundles = nativePluginDocument.bundles.filter(pkg => !corePluginBundles.has(pkg.name))
+  const groups = [
+    ['installed', 'pluginInstalled', bundles.filter(pkg => pkg.installed || pkg.enabled)],
+    ['configuration', 'pluginBuiltIn', nativePluginDocument.configurations],
+    ['experimental', 'pluginExperimental', bundles.filter(pkg => pkg.official && !pkg.installed && !pkg.enabled)],
+  ]
+  let count = 0
+  for (const [group, title, values] of groups) {
+    if (nativePluginFilter !== 'all' && nativePluginFilter !== group) continue
+    const list = pluginElement('div', '', 'installed-plugin-list')
+    for (const pkg of values) {
+      const name = pkg.title || pkg.ns || pkg.name
+      if (needle && ![name, pkg.name, pkg.description].filter(Boolean).join(' ').toLocaleLowerCase().includes(needle)) continue
+      count++
+      const card = pluginElement('article', '', 'installed-plugin-card')
+      const heading = pluginElement('div', '', 'installed-plugin-heading')
+      const copy = pluginElement('div', '', 'installed-plugin-copy')
+      copy.append(pluginElement('strong', name), pluginElement('small', pkg.version ? pkg.name + ' · ' + pkg.version : pkg.name || pkg.ns))
+      if (pkg.description) copy.append(pluginElement('p', pkg.description))
+      heading.append(copy)
+      if (group === 'configuration') heading.append(button('pluginConfigure', () => openPluginConfiguration(pkg.ns)))
+      else {
+        if (pkg.availability !== 'missing') heading.append(pluginSwitch('bundle', pkg.name, pkg.enabled, name, pkg.readOnlyReason))
+        else heading.append(button('pluginLibraryTab', async () => { setPluginMode('library') }))
+        const details = button('pluginDetails', async () => {
+          if (!discardPluginDraft()) return
+          nativePluginTarget = nativePluginTarget?.name === pkg.name ? undefined : { kind: 'bundle', name: pkg.name }
+          renderNativePlugins()
+        })
+        details.setAttribute('aria-expanded', String(nativePluginTarget?.name === pkg.name))
+        heading.append(details)
+      }
+      card.append(heading)
+      if (pkg.error) card.append(pluginElement('p', pkg.error.diagnostic || pkg.error.code, 'settings-hint'))
+      if (nativePluginTarget?.name === pkg.name && group !== 'configuration') {
+        const rows = pluginElement('div', '', 'installed-plugin-rows')
+        for (const row of pkg.rows) {
+          const live = nativePluginDocument.entries.find(entry => entry.entryId === row.entryId)
+          const line = pluginElement('div', '', 'installed-plugin-row')
+          const label = row.title || row.moduleName
+          const copy = pluginElement('div', '', 'installed-plugin-copy')
+          copy.append(pluginElement('strong', label), pluginElement('small', (live?.fiberPhase || t('pluginDisabled')) + ' · ' + row.moduleName))
+          if (row.description) copy.append(pluginElement('p', row.description))
+          line.append(copy)
+          const namespace = nativePluginDocument.configurations.find(section => section.ns === row.entryId || section.ns === row.rowId)
+          if (namespace) line.append(button('pluginConfigure', () => openPluginConfiguration(namespace.ns)))
+          line.append(pluginSwitch('row', row.entryId, live?.enabled === true, label, !row.entryId || live?.readOnlyReason))
+          rows.append(line)
+        }
+        if (pkg.installed && pkg.removable) rows.append(button('pluginRemove', async () => {
+          if (!window.confirm(t('pluginRemoveConfirm').replace('{name}', name))) return
+          await instancePluginCall('remove', { target: pkg.name })
+          nativePluginTarget = undefined
+          await refresh(); await loadNativePlugins(true)
+        }, 'installed-plugin-remove'))
+        card.append(rows)
+      }
+      list.append(card)
+    }
+    if (list.childElementCount) {
+      const section = pluginElement('section', '', 'installed-plugin-group')
+      section.append(pluginElement('h3', t(title) + ' · ' + list.childElementCount), list)
+      content.append(section)
+    }
+  }
+  if (!count) content.append(pluginElement('p', t('pluginNoMatch'), 'plugin-empty-state'))
+}
+async function openPluginConfiguration(target) {
+  if (!discardPluginDraft()) return
+  const generation = nativeConfigurationGeneration
+  const id = $('native-plugin-instance').value
+  const section = await instancePluginCall('configuration', { target }, id)
+  if (generation !== nativeConfigurationGeneration || id !== $('native-plugin-instance').value) return
+  nativePluginTarget = { kind: 'configuration', name: target }
+  const content = $('native-plugin-surface').querySelector('.installed-plugin-content')
+  const form = pluginElement('form', '', 'installed-plugin-configuration')
+  const edits = new Map()
+  const collectFields = schema => schema?.type === 'intersect' ? Object.assign({}, ...schema.list.map(collectFields)) : schema?.dict || {}
+  const change = (field, op) => { edits.set(field, op); nativeConfigurationDirty = true; reportDirty() }
+  form.append(pluginElement('h3', target))
+  for (const [field, schema] of Object.entries(collectFields(section.schema))) {
+    if (schema.type === 'const' || JSON.stringify(schema).includes('"role":"secret"') || schema.meta?.hidden) continue
+    const row = pluginElement('div', '', 'installed-plugin-field')
+    const label = pluginElement('label', field)
+    let input
+    let read
+    const options = schema.type === 'union' && schema.list.every(item => item.type === 'const') ? schema.list : undefined
+    const value = section.value[field] ?? schema.meta?.default
+    if (options) {
+      input = pluginElement('select')
+      for (const [index, option] of options.entries()) {
+        const item = pluginElement('option', String(option.value)); item.value = String(index)
+        item.selected = JSON.stringify(option.value) === JSON.stringify(value)
+        input.append(item)
+      }
+      read = () => options[Number(input.value)].value
+    } else if (schema.type === 'boolean') {
+      input = pluginElement('input'); input.type = 'checkbox'; input.checked = value === true
+      input.setAttribute('role', 'switch'); read = () => input.checked
+    } else if (schema.type === 'string' || schema.type === 'number') {
+      input = pluginElement('input'); input.type = schema.type === 'number' ? 'number' : 'text'; input.value = value ?? ''
+      if (schema.type === 'number') for (const attribute of ['min', 'max', 'step']) input[attribute] = schema.meta?.[attribute] ?? (attribute === 'step' ? 'any' : '')
+      read = () => schema.type === 'number' ? input.valueAsNumber : input.value
+    } else {
+      input = pluginElement('textarea'); input.value = JSON.stringify(value ?? null, null, 2)
+      input.rows = 5; input.spellcheck = false; input.title = t('pluginComplexValue')
+      read = () => JSON.parse(input.value)
+    }
+    input.id = 'plugin-config-' + field
+    label.htmlFor = input.id
+    input.disabled = !section.writable
+    input.oninput = () => change(field, { op: 'set', path: [field], read })
+    const reset = button('pluginResetField', async () => {
+      input.disabled = true; change(field, { op: 'unset', path: [field] })
+    })
+    reset.type = 'button'; reset.disabled = !section.writable
+    row.append(label, input, reset)
+    if (typeof schema.meta?.description === 'string') row.append(pluginElement('small', schema.meta.description))
+    form.append(row)
+  }
+  if (!form.querySelector('input, select, textarea')) form.append(pluginElement('p', t('pluginNoConfiguration'), 'settings-hint'))
+  const status = pluginElement('p', '', 'settings-hint'); status.setAttribute('role', 'status')
+  const save = pluginElement('button', t('saveAndApply'), 'primary'); save.type = 'submit'; save.disabled = !section.writable
+  const back = button('pluginBack', async () => { if (discardPluginDraft()) { nativePluginTarget = undefined; renderNativePlugins() } })
+  back.type = 'button'
+  const actions = pluginElement('div', '', 'installed-plugin-actions'); actions.append(back, save)
+  form.append(status, actions)
+  form.onsubmit = async event => {
+    event.preventDefault()
+    if (!edits.size) return
+    save.disabled = true
+    try {
+      const ops = [...edits.values()].map(op => op.op === 'unset' ? op : { op: 'set', path: op.path, value: op.read() })
+      await instancePluginCall('configure', { target, revision: section.revision, ops }, id)
+      if (generation !== nativeConfigurationGeneration || !form.isConnected) return
+      nativeConfigurationDirty = false; reportDirty()
+      await openPluginConfiguration(target)
+    } catch (error) { status.textContent = String(error.message || error); save.disabled = false }
+  }
+  content.replaceChildren(form)
+}
 function scheduleNativePanel() {
   clearTimeout(nativePanelTimer)
   nativePanelTimer = setTimeout(() => {
-    nativePanelTask = nativePanelTask.then(async () => {
-      const id = $('native-plugin-instance').value
-      const visible = nativePluginMode && settingsTab === 'plugins' && settingsOpen && managerVisible
-      const connected = state.statuses[id]?.connection === 'connected' && state.instances.some(instance => instance.id === id && instance.kind === 'local')
-      $('native-plugin-empty').hidden = !!connected
-      $('native-plugin-surface').hidden = !connected
-      const bounds = $('native-plugin-surface').getBoundingClientRect()
-      const x = Math.ceil(bounds.x + 1), y = Math.ceil(bounds.y + 1)
-      const width = Math.floor(Math.min(bounds.width - 2, window.innerWidth - x))
-      const height = Math.floor(Math.min(bounds.height - 2, window.innerHeight - y - 8))
-      if (!visible || !connected || y < 42 || width < 1 || height < 1) {
-        await api.invoke('plugins', { action: 'hide' })
-        $('native-plugin-status').textContent = ''
-        return
-      }
-      try {
-        await api.invoke('plugins', {
-          id, action: 'embed', input: { x, y, width, height },
-          ...(nativePluginTarget ? { packageName: nativePluginTarget } : {}),
-        })
-        $('native-plugin-status').textContent = ''
-      } catch (error) {
-        await api.invoke('plugins', { action: 'hide' })
-        $('native-plugin-status').textContent = String(error.message || error)
-      }
-    }).catch(error => { $('native-plugin-status').textContent = String(error.message || error) })
+    const id = $('native-plugin-instance').value
+    const visible = nativePluginMode && settingsTab === 'plugins' && settingsOpen && managerVisible
+    const connected = state.statuses[id]?.connection === 'connected' && state.instances.some(instance => instance.id === id && instance.kind === 'local')
+    $('native-plugin-empty').hidden = !!connected
+    $('native-plugin-surface').hidden = !connected
+    if (!connected) { nativePluginDocumentId = undefined; return }
+    if (visible) void loadNativePlugins()
   }, 30)
 }
 function setPluginMode(mode) {
@@ -409,11 +638,18 @@ function setPluginMode(mode) {
   scheduleNativePanel()
 }
 async function showNativePlugins(id, packageName) {
+  if (!discardPluginDraft()) return
   await showSettings('plugins')
+  if (id !== $('native-plugin-instance').value) {
+    nativePluginGeneration++
+    nativePluginDocument = undefined
+    $('native-plugin-surface').replaceChildren()
+  }
   $('native-plugin-instance').value = id
-  nativePluginTarget = packageName
+  nativePluginTarget = packageName ? { kind: 'bundle', name: packageName } : undefined
   renderPluginSettings()
   setPluginMode('native')
+  renderNativePlugins()
 }
 $('plugin-mode-library').onclick = () => setPluginMode('library')
 $('plugin-mode-native').onclick = () => setPluginMode('native')
@@ -425,7 +661,11 @@ document.querySelector('.plugin-mode-switch').onkeydown = event => {
   if (next) { event.preventDefault(); next.click(); next.focus() }
 }
 $('native-plugin-instance').onchange = () => {
+  if (!discardPluginDraft()) { $('native-plugin-instance').value = nativePluginDocumentId || ''; return }
+  nativePluginGeneration++
+  nativePluginDocument = undefined
   nativePluginTarget = undefined
+  $('native-plugin-surface').replaceChildren()
   renderPluginSettings()
   scheduleNativePanel()
 }
@@ -436,10 +676,7 @@ $('native-plugin-open').onclick = () => { void perform(async () => {
 }) }
 $('plugin-empty-open').onclick = () => $('native-plugin-open').click()
 $('plugin-empty-discover').onclick = () => setPluginMode('library')
-window.addEventListener('resize', scheduleNativePanel)
-document.querySelector('.settings-content').addEventListener('scroll', scheduleNativePanel)
 document.addEventListener('manager-rendered', () => { if (nativePluginMode) scheduleNativePanel() })
-if (typeof ResizeObserver !== 'undefined') new ResizeObserver(scheduleNativePanel).observe($('native-plugin-surface'))
 async function loadPluginPanel() {
   if (!state.pluginManagement) return
   if (pluginPanelLoading) return pluginPanelLoading
@@ -600,11 +837,15 @@ $('dsh-settings-form').onsubmit = event => {
 }
 
 function hasUnsavedSettings() {
-  return dshDirty || credentialDraftDirty || (typeof personalDirty !== 'undefined' && personalDirty)
+  return dshDirty || credentialDraftDirty || nativeConfigurationDirty || (typeof personalDirty !== 'undefined' && personalDirty)
     || !$('source-form').hidden
 }
 
 async function discardUnsavedSettings() {
+  nativeConfigurationGeneration++
+  nativeConfigurationDirty = false
+  nativePluginTarget = undefined
+  renderNativePlugins()
   dshDirty = false
   credentialDraftDirty = false
   credentialEditing = false

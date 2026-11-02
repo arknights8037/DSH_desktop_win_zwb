@@ -3,6 +3,7 @@ const api = window.dshManager
 const $ = id => document.getElementById(id)
 let state
 let editing
+let savingInstance = false
 let credentialTarget
 let credentialOperation = 'open'
 let managerVisible = true
@@ -345,7 +346,7 @@ function render() {
     $('recover').hidden = busy
     $('instance-state-stop').hidden = !busy
     $('state-title').textContent = `${config.name} — ${t(status.connection)}`
-    $('state-message').textContent = status.message || t(status.process)
+    $('state-message').textContent = status.phase ? t(status.phase) : status.message || t(status.process)
     const progress = state.installationProgress?.[config.id]
     if (busy && progress) {
       $('state-message').textContent = installationText(progress)
@@ -354,18 +355,31 @@ function render() {
 }
 function sshFields() {
   const form = $('edit-form').elements
-  $('ssh-fields').hidden = form.kind.value !== 'ssh'
+  const remote = form.kind.value === 'ssh'
+  const connectNow = remote && !editing
+  $('ssh-fields').hidden = !remote
   $('key-field').hidden = form.auth.value !== 'key'
-  form.host.required = form.username.required = form.kind.value === 'ssh'
-  form.privateKeyPath.required = form.kind.value === 'ssh' && form.auth.value === 'key'
+  form.host.required = form.username.required = remote
+  form.name.required = !remote
+  form.privateKeyPath.required = remote && form.auth.value === 'key'
+  $('connection-secret-field').hidden = !connectNow
+  $('connection-secret-label').textContent = t(form.auth.value === 'password' ? 'password' : 'passphrase')
+  form.connectionSecret.required = connectNow && form.auth.value === 'password'
+  const inherit = remote && form.inheritSessions.value === 'sessions'
+  $('session-source-fields').hidden = !inherit
+  form.sessionSource.required = inherit
+  $('edit-submit').dataset.copy = connectNow ? 'saveConnect' : 'save'
+  $('edit-submit').textContent = t($('edit-submit').dataset.copy)
 }
 async function edit(config, initialKind) {
   editing = config
   await api.invoke('overlay', { visible: true })
   $('edit-form').reset()
+  $('ssh-advanced').open = false
   const form = $('edit-form').elements
   form.kind.disabled = Boolean(config)
   if (config) for (const [key, value] of Object.entries(config)) if (form.namedItem(key)) form.namedItem(key).value = value
+  form.inheritSessions.value = config?.sessionSource ? 'sessions' : 'none'
   if (!config && initialKind) form.kind.value = initialKind
   $('edit-title').textContent = t(config ? 'edit' : 'add')
   sshFields()
@@ -374,16 +388,30 @@ async function edit(config, initialKind) {
 async function restoreOverlay() { await api.invoke('overlay', { visible: managerVisible }) }
 $('edit-form').elements.kind.onchange = sshFields
 $('edit-form').elements.auth.onchange = sshFields
+$('edit-form').elements.inheritSessions.onchange = sshFields
 $('edit-form').onsubmit = event => {
   event.preventDefault()
+  if (savingInstance) return
+  savingInstance = true
+  $('edit-submit').disabled = true
   void perform(async () => {
     const form = $('edit-form').elements
     const config = Object.fromEntries(['name', 'kind', 'host', 'username', 'auth', 'privateKeyPath', 'executable', 'home'].map(key => [key, form[key].value]))
     config.port = Number(form.port.value)
-    await api.invoke('save', { ...(editing ? { id: editing.id } : {}), config })
+    if (config.kind === 'ssh') {
+      config.name = config.name.trim() || `${config.username.trim()}@${config.host.trim()}`
+      if (form.inheritSessions.value === 'sessions') config.sessionSource = form.sessionSource.value
+    }
+    const connectNow = config.kind === 'ssh' && !editing
+    const credentials = { [config.auth === 'password' ? 'password' : 'passphrase']: form.connectionSecret.value }
+    const saved = await api.invoke('save', { ...(editing ? { id: editing.id } : {}), config })
+    form.connectionSecret.value = ''
     $('editor').close()
-    await showManager()
-  })
+    if (connectNow) {
+      managerVisible = false
+      await api.invoke('open', { id: saved.id, credentials })
+    } else await showManager()
+  }).finally(() => { savingInstance = false; $('edit-submit').disabled = false })
 }
 $('credential-form').onsubmit = event => {
   event.preventDefault()
@@ -407,6 +435,7 @@ $('remove-form').onsubmit = event => {
 $('remove-cancel').onclick = () => $('remove-dialog').close('cancel')
 for (const id of ['editor', 'credentials', 'log-dialog', 'remove-dialog']) $(id).addEventListener('close', () => {
   $('secret').value = ''
+  $('edit-form').elements.connectionSecret.value = ''
   void perform(restoreOverlay)
 })
 async function showSettings(tab) {

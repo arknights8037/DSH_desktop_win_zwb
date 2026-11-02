@@ -70,9 +70,9 @@ async function fixture(auth: 'password' | 'key' = 'password', rejectScript?: (sc
               channel.end()
               return
             }
-            if (script.includes('new-session')) running = true
-            if (script.includes('kill-session')) running = false
-            const reading = script.includes('tail -c')
+            if (script.includes("operation='start'")) running = true
+            if (script.includes("operation='stop'")) running = false
+            const reading = script.includes("operation='read'")
             if (reading && running) channel.write(`dsh web: http://127.0.0.1:${webAddress.port}/?token=secret-token\n`)
             channel.exit(reading && !running ? 1 : 0)
             channel.end()
@@ -110,7 +110,7 @@ it('authenticates, tunnels HTTP, disconnects without stopping, and resumes the s
   expect(test.verify).toHaveBeenCalledWith(expect.stringContaining('127.0.0.1:'), expect.stringMatching(/^[a-f0-9]{64}$/u))
   await test.runtime.disconnect()
   expect(test.isRunning()).toBe(true)
-  expect(test.commands.some(command => command.includes('kill-session'))).toBe(false)
+  expect(test.commands.some(command => command.includes("operation='stop'"))).toBe(false)
   await test.runtime.connect(new AbortController().signal, { password: 'test-secret' })
   await test.runtime.stop({ password: 'test-secret' })
   expect(test.isRunning()).toBe(false)
@@ -129,7 +129,7 @@ it('deploys through authenticated Web RPC and uses SSH only for process lifecycl
     ['/api/profile-plugins/apply', { preparation: 'remote-copy' }],
   ])
   expect(test.commands.join('\n')).not.toMatch(/pnpm|plugin --profile|cp -a|manager-plugin-snapshot/u)
-  expect(test.commands.filter(command => command.includes('new-session'))).toHaveLength(2)
+  expect(test.commands.filter(command => command.includes("operation='start'"))).toHaveLength(2)
   expect(test.isRunning()).toBe(true)
 })
 it.each(['missing', 'install'] as const)('preserves the running instance when the Web API rejects preparation: %s', async (failure) => {
@@ -138,7 +138,7 @@ it.each(['missing', 'install'] as const)('preserves the running instance when th
   test.setWebFailure(failure)
   await expect(test.runtime.injectPlugin({ name: 'plugin', version: '1.2.3' }, { password: 'test-secret' }))
     .rejects.toThrow(failure === 'missing' ? 'update the remote DSH' : 'Target dependency preparation failed')
-  expect(test.commands.some(command => command.includes('kill-session'))).toBe(false)
+  expect(test.commands.some(command => command.includes("operation='stop'"))).toBe(false)
   expect(test.isRunning()).toBe(true)
 })
 it('refuses Web requests to an unrelated origin', async () => {

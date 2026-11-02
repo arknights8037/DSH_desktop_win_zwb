@@ -8,13 +8,14 @@ export type InstanceId = string & { readonly __instanceId: unique symbol }
 /** One local environment or one Linux host environment. */
 export type InstanceConfig = { id: InstanceId; name: string } & (
   | { kind: 'local' }
-  | { kind: 'ssh'; host: string; port: number; username: string; auth: 'password' | 'key'; privateKeyPath: string; executable: string; home: string }
+  | { kind: 'ssh'; host: string; port: number; username: string; auth: 'password' | 'key'; privateKeyPath: string; executable: string; home: string; sessionSource?: string }
 )
 /** Live process knowledge is independent of the availability of its connection. */
 export interface InstanceStatus {
   process: 'stopped' | 'starting' | 'running' | 'unknown' | 'error'
   connection: 'disconnected' | 'connecting' | 'connected' | 'error'
   message?: string
+  phase?: 'remoteLogin' | 'remotePrepare' | 'remoteImport' | 'remoteStart' | 'remoteReady' | 'remoteTunnel'
 }
 /** Open tabs survive restarts without implicitly starting every backend. */
 export interface TabState { ids: InstanceId[]; active: InstanceId | null }
@@ -58,7 +59,12 @@ export function parseInstance(value: unknown, id: InstanceId): InstanceConfig {
   const executable = field(row, 'executable') || 'dsh'
   const home = field(row, 'home') || `~/.local/share/dsh-manager/instances/${id}`
   if ((!home.startsWith('/') && !home.startsWith('~/')) || home.split('/').includes('..') || home === '/' || home === '~/') throw new Error('Use a dedicated absolute or ~/ remote data directory')
-  return { id, name, kind: 'ssh', host, port: Number(row.port), username, auth: row.auth, privateKeyPath, executable, home }
+  const sessionSource = row.sessionSource === undefined ? '' : field(row, 'sessionSource')
+  if (sessionSource && ((!sessionSource.startsWith('/') && !sessionSource.startsWith('~/'))
+    || sessionSource.split('/').includes('..') || sessionSource === '/' || sessionSource === '~/'
+    || sessionSource.replace(/\/+$/u, '') === home.replace(/\/+$/u, ''))) throw new Error('Use a separate absolute or ~/ source DSH directory')
+  return { id, name, kind: 'ssh', host, port: Number(row.port), username, auth: row.auth, privateKeyPath, executable, home,
+    ...(sessionSource ? { sessionSource } : {}) }
 }
 /** Validate ephemeral secrets at the IPC boundary. */
 export function parseCredentials(value: unknown): InstanceCredentials {

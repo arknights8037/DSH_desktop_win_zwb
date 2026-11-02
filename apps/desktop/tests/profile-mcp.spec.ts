@@ -37,7 +37,8 @@ it('retains one shared resource consumer after the Desktop host overlay', () => 
     expect(rows.find(row => row.id === 'webserver')?.disabled).toBe(true)
     expect(rows.find(row => row.id === 'harness-dev-context')?.disabled).toBe(true)
     expect(rows.find(row => row.id === 'tool-plugin-manager')?.disabled).toBe(true)
-    for (const id of ['plugin-manager', 'ui-plugin-manager']) expect(rows.find(row => row.id === id)?.disabled).toBe(false)
+    expect(rows.find(row => row.id === 'plugin-manager')?.disabled).toBe(false)
+    expect(rows.find(row => row.id === 'ui-plugin-manager')?.disabled).toBe(true)
     const creator = rows.find(row => row.id === 'preset-cordis')
     expect(creator?.config).toMatchObject({ id: 'cordis', order: 4 })
     const creatorPlugins = (creator?.config as { plugins: { id: string }[] }).plugins

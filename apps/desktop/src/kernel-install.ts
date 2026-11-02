@@ -170,14 +170,16 @@ export async function prepareDesktopKernel(
     const runtime: DesktopRuntimeExecutables = { ...bundled, dsh: stage, profileResolution: 'runtime' }
     const library = new DesktopPluginLibrary(libraryRoot, runtime)
     const manager = new DesktopProjectManager(resolveDesktopPaths(home), runtime, progress)
-    await manager.applyRelease(new Map(), [], externalSignal)
     for (const plugin of DESKTOP_DEFAULT_PLUGINS) {
       library.select(plugin.name, plugin.version)
-      await library.withSource(plugin.name, plugin.version, (source, signal) => manager.mutate({ type: 'plugin-inject', ...plugin, source }, {
-        beforeChange: async () => {}, afterChange: async () => {},
-      }, signal), progress, externalSignal)
-      externalSignal?.throwIfAborted()
     }
+    await library.withSources(DESKTOP_DEFAULT_PLUGINS, async (sources, signal) => {
+      await manager.applyRelease(sources, DESKTOP_DEFAULT_PLUGINS.map(plugin => {
+        const source = sources.get(plugin.name)
+        if (source === undefined) throw new Error(`Missing prepared plugin source: ${plugin.name}`)
+        return { ...plugin, source }
+      }), signal)
+    }, progress, false, externalSignal)
     const launchedHost = new DesktopHostProcess(runtime.node, stage, manager.paths.profile, undefined, { ...process.env, DSH_HOME: home }, () => {})
     host = launchedHost
     progress({ stage: 'starting', package: `DSH ${version}` })

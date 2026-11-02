@@ -247,6 +247,9 @@ input, select { width: 100%; min-width: 0; padding: 10px; color: var(--text); ba
 fieldset { padding: 0; margin: 0; border: 0; }
 fieldset[hidden] { display: none; }
 .columns { display: grid; grid-template-columns: 3fr 1fr; gap: 12px; }
+.connection-hint { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 0 0 14px; }
+#ssh-advanced summary { cursor: pointer; margin-bottom: 14px; }
+#ssh-advanced summary:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .help { color: var(--muted); font-size: 12px; line-height: 1.6; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 23px; }
 #log-dialog { width: min(1000px, 92vw); }

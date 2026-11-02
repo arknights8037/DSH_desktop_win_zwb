@@ -93,15 +93,21 @@ Desktop 覆盖配置禁用内核工作区注册表，并挂载 Desktop Host 中�
 
 ## 远程连接
 
-远程实例需要一个已安装 DSH 和 tmux 的 Linux SSH 账户。填写主机、SSH 端口、用户名、密码或私钥认证方式，以及 DSH 可执行文件路径。密码和私钥口令在连接时输入，仅保留在管理器进程中，不会写入注册表。配置保存私钥路径，不保存私钥内容。
+远程实例需要一个已安装 DSH 的 Linux SSH 账户，以及 Linux 标准工具 `nohup`、`setsid` 和 `flock`，不需要 tmux 或 root 权限。填写主机、SSH 端口、用户名、密码或私钥认证方式，以及 DSH 可执行文件路径。密码和私钥口令在连接时输入，仅保留在管理器进程中，不会写入注册表。配置保存私钥路径，不保存私钥内容。
+
+新建 SSH 连接在同一表单填写认证信息并点击**保存并连接**，名称留空时使用 `用户名@主机`。可执行文件和目标数据目录位于**高级连接设置**。连接过程显示 SSH 登录、环境检查、可选的会话继承、启动、等待就绪和建立隧道等阶段。编辑已有连接只保存配置。服务器仍需预先安装 DSH，此流程不自动安装服务器软件。
+
+**数据继承 → 仅继承会话数据**可指定原 DSH home，默认 `~/.dsh`。先停止原 DSH，并选择尚无会话数据的新目标目录。管理器在启动前复制标准 `sessions/`、可选的 `attachments/` 和 JSON 工作区登记 `storages/workspace.json`，排除设置、凭据、profile、插件及缓存。文件在复制前后校验哈希，再从私有快照发布并记录完成状态。重连跳过已完成的导入；发布中断后校验并继续已有快照。复制中断时保留 `.manager-session-import` 供检查，不启动数据不完整的实例。完成后不允许更换来源。原数据保持不变，后续原实例新增的会话不会持续同步。
+
+导入需要 SSH 命令环境能够找到 Node.js，单次命令限时五分钟。不导入自定义存储路径或后端。项目文件和临时工具输出继续使用原服务器路径，需要保持可用。外壳管理的设置和凭据沿用现有连接流程下发；插件通过外壳插件库单独部署，不复制旧 profile，也不会自动安装整个插件库。历史会话可能需要兼容的内核版本、插件和预设才能继续。
 
 首次连接需要确认服务器指纹。指纹变化时连接被阻止。管理器按主机和端口固定服务器密钥，修改信任记录前应核实变化原因。第一版使用明确的主机信息，不导入 SSH 配置别名或跳板机。
 
 远端数据目录留空时使用 `~/.local/share/dsh-manager/instances/<id>` 下的独立目录，也可填写专用的绝对路径或 `~/` 路径。已存在但不包含本实例归属标记的目录会被拒绝。不要使用已有的个人 Harness home。
 
-管理器在所属 tmux 会话中启动 `dsh --profile web --no-open --port 0`。通过 SSH 读取带认证信息的启动地址，并将本地回环端口转发到远端回环监听器。远端实例提供与其版本配套的 Web UI。认证 URL 不进入管理器日志或配置。
+管理器检查所属进程，未运行时使用 `nohup` 和 `setsid` 将 `dsh --profile web --no-open --port 0` 启动为独立后台进程。标准输入断开，输出写入实例日志，关闭 SSH 后 DSH 继续运行。此方式不安装开机启动服务。通过 SSH 读取带认证信息的启动地址，并将本地回环端口转发到远端回环监听器。远端实例提供与其版本配套的 Web UI。认证 URL 不进入管理器日志或配置。
 
-SSH 断开时显示远端进程状态未知。重连会先检查所属 tmux 会话，再决定是否启动进程。显式**停止实例**会核实目录和 tmux 归属后再停止该会话。启动失败时可检查远端实例目录中的 `.manager-startup.log`，该文件包含认证信息，不应分享。
+SSH 断开时显示远端进程状态未知。重连复用所属的运行中进程。进程记录包含 Linux 启动标识和进程启动时间，用于识别过期或复用的 PID。显式**停止实例**会核实目录、进程身份和归属，再终止所属进程组；停止超时会报告错误，不强制杀死进程。旧版本创建的所属 tmux 会话仍可连接和停止，下次启动改用后台进程方式。启动失败时可检查远端实例目录中的 `.manager-startup.log`，该文件包含认证信息，不应分享。
 
 <a id="lifecycle-and-storage"></a>
 
@@ -113,7 +119,7 @@ Windows 安装程序在首次安装时提供独立的数据目录选择；已有
 |---|---|---|
 | 关闭标签页 | 关闭视图，进程继续 | 断开 SSH，进程继续 |
 | 断开连接 | 分离视图，进程继续 | 关闭隧道，进程状态变为未知 |
-| 停止 | 停止所选 Host | 通过 SSH 停止所属 tmux 会话 |
+| 停止 | 停止所选 Host | 通过 SSH 停止所属远端进程组 |
 | 退出管理器 | 确认后停止本地 Host | 断开连接，远端任务继续 |
 | 移除配置 | 停止 Host，默认保留数据；勾选**同时删除本地实例的全部数据**后删除其 home | 忘记连接；远端进程和数据保留 |
 
@@ -151,7 +157,7 @@ $env:DSH_DESKTOP_APP_ID = 'dev.dsh.agentmanager'
 pnpm run package:desktop:win:x64:unsigned
 ```
 
-DshManager V0.1.3 安装包输出到 `apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts`。应用版本独立于内置 DSH 内核版本，内核版本固定在 `apps/desktop/config/kernel-release.json`。正式构建在隔离临时目录中安装对应版本的已发布 npm 包；DSH 源码包不属于构建输入。Desktop Host 和 Electron 外壳源码使用这些已安装包的声明编译，Host 通过注入式插件提供外壳 API。Electron 固定为内置原生加载器明确支持的版本，打包时会在最终 Electron 运行时中实际调用该加载器做兼容性检查。复制资源前，electron-builder 校验内核版本、第一方包版本、平台、文件清单和已准备的工具版本；陈旧资源会阻止打包。官方外壳安装包更新器关闭，独立内核更新使用应用设置。应用和安装程序图标使用 [DeepSeek 官网的鲸鱼 favicon](https://www.deepseek.com/favicon.ico)，转换为 PNG 和多尺寸 Windows ICO；品牌素材归 DeepSeek 所有。
+DshManager V0.1.4 安装包输出到 `apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts`。应用版本独立于内置 DSH 内核版本，内核版本固定在 `apps/desktop/config/kernel-release.json`。正式构建在隔离临时目录中安装对应版本的已发布 npm 包；DSH 源码包不属于构建输入。Desktop Host 和 Electron 外壳源码使用这些已安装包的声明编译，Host 通过注入式插件提供外壳 API。Electron 固定为内置原生加载器明确支持的版本，打包时会在最终 Electron 运行时中实际调用该加载器做兼容性检查。复制资源前，electron-builder 校验内核版本、第一方包版本、平台、文件清单和已准备的工具版本；陈旧资源会阻止打包。官方外壳安装包更新器关闭，独立内核更新使用应用设置。应用和安装程序图标使用 [DeepSeek 官网的鲸鱼 favicon](https://www.deepseek.com/favicon.ico)，转换为 PNG 和多尺寸 Windows ICO；品牌素材归 DeepSeek 所有。
 
 <a id="implementation"></a>
 
